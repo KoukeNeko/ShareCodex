@@ -9,6 +9,8 @@ permissions:
 
 env:
   WAILS_VERSION: v3.0.0-beta.25
+  # Must match the image in deploy/docker-compose.yml.
+  SERVER_IMAGE: ghcr.io/koukeneko/sharecodex-server
 
 jobs:
   desktop:
@@ -135,19 +137,62 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - run: |
+      - name: Build binaries
+        run: |
           for arch in amd64 arm64; do
             CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags="-s -w" \
               -o sharecodex-server ./cmd/sharecodex-server
             tar czf "sharecodex-server-linux-$arch.tar.gz" sharecodex-server
           done
+      # The bundle pins the image to this release so an extracted copy keeps
+      # running the version it was downloaded with.
+      - name: Bundle Docker Compose files
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          dir=sharecodex-server-compose
+          mkdir "$dir"
+          sed "s/SHARECODEX_VERSION:-latest/SHARECODEX_VERSION:-$version/" deploy/docker-compose.yml > "$dir/docker-compose.yml"
+          grep -q "sharecodex-server:\${SHARECODEX_VERSION:-$version}" "$dir/docker-compose.yml"
+          cp deploy/.env.example "$dir/.env.example"
+          zip -r "$dir.zip" "$dir"
       - uses: actions/upload-artifact@v7
         with:
           name: server
-          path: sharecodex-server-linux-*.tar.gz
+          path: |
+            sharecodex-server-linux-*.tar.gz
+            sharecodex-server-compose.zip
+
+  server-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.SERVER_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
   publish:
-    needs: [desktop, server]
+    needs: [desktop, server, server-image]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8

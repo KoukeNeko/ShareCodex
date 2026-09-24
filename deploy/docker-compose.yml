@@ -1,4 +1,4 @@
-# Run from this directory: cp .env.example .env, edit it, then
+# Copy .env.example to .env, edit it, then:
 #   docker compose up -d
 # and open PUBLIC_URL/admin/ to manage members, accounts and devices.
 services:
@@ -17,9 +17,7 @@ services:
       retries: 10
 
   server:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
+    image: ghcr.io/koukeneko/sharecodex-server:${SHARECODEX_VERSION:-latest}
     restart: unless-stopped
     depends_on:
       db:

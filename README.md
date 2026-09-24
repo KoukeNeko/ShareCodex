@@ -22,13 +22,17 @@ Only token counts, model names, timestamps and quota percentages are uploaded. P
 
 Requires Docker. The server does not terminate TLS; put it behind a reverse proxy such as Caddy or nginx.
 
+Download `sharecodex-server-compose.zip` from the [latest release](https://github.com/KoukeNeko/ShareCodex/releases/latest). It runs the published image `ghcr.io/koukeneko/sharecodex-server` (linux/amd64 and linux/arm64), pinned to that release.
+
 ```bash
-cd deploy
+unzip sharecodex-server-compose.zip && cd sharecodex-server-compose
 cp .env.example .env    # set POSTGRES_PASSWORD, PUBLIC_URL and ADMIN_PASSWORD
 docker compose up -d
 ```
 
-`PUBLIC_URL` is the address members reach the server at. It appears in join links.
+`PUBLIC_URL` is the address members reach the server at. It appears in join links. To upgrade, set `SHARECODEX_VERSION` in `.env` to the new release (or use a newer bundle) and run `docker compose up -d` again.
+
+To build the server from a checkout instead, run `docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build` in `deploy/`.
 
 ## Administration
 
@@ -81,7 +85,7 @@ domain  ←  provider adapters  ←  client / server  ←  Wails / HTTP / SQL / 
 
 ## Releases
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds a universal macOS `.app`, a Windows `.exe` and Linux server binaries, and creates a GitHub Release.
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds a universal macOS `.app`, a Windows `.exe`, Linux server binaries and the Docker Compose bundle, pushes the server image to `ghcr.io/koukeneko/sharecodex-server`, and creates a GitHub Release.
 
 Code signing runs only when the repository secrets below are set. Without them, the macOS app is only ad-hoc signed, and users must allow it the first time in System Settings › Privacy & Security.
 

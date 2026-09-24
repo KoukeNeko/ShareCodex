@@ -22,13 +22,17 @@
 
 需要 Docker。server 本身不處理 TLS，請放在反向代理（例如 Caddy、nginx）後面。
 
+從[最新 release](https://github.com/KoukeNeko/ShareCodex/releases/latest) 下載 `sharecodex-server-compose.zip`。它使用已發佈的映像檔 `ghcr.io/koukeneko/sharecodex-server`（linux/amd64 與 linux/arm64），並固定在該 release 的版本。
+
 ```bash
-cd deploy
+unzip sharecodex-server-compose.zip && cd sharecodex-server-compose
 cp .env.example .env    # 設定 POSTGRES_PASSWORD、PUBLIC_URL 與 ADMIN_PASSWORD
 docker compose up -d
 ```
 
-`PUBLIC_URL` 是成員連到 server 的網址，會出現在加入連結裡。
+`PUBLIC_URL` 是成員連到 server 的網址，會出現在加入連結裡。升級時，把 `.env` 的 `SHARECODEX_VERSION` 設為新版本（或改用新版 bundle），再執行一次 `docker compose up -d`。
+
+若要從原始碼建置 server，在 `deploy/` 執行 `docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build`。
 
 ## 管理
 
@@ -81,7 +85,7 @@ domain  ←  provider adapters  ←  client / server  ←  Wails / HTTP / SQL / 
 
 ## 發佈
 
-推送 `v*` tag 會觸發 `.github/workflows/release.yml`，產生 macOS universal `.app`、Windows `.exe` 與 Linux server binary，並建立 GitHub Release。
+推送 `v*` tag 會觸發 `.github/workflows/release.yml`，產生 macOS universal `.app`、Windows `.exe`、Linux server binary 與 Docker Compose bundle，把 server 映像檔推送到 `ghcr.io/koukeneko/sharecodex-server`，並建立 GitHub Release。
 
 簽署在設定下列 repository secrets 後才會執行；沒有設定時，macOS 版只有 ad-hoc 簽署，第一次開啟需在「系統設定 › 隱私權與安全性」允許。
 

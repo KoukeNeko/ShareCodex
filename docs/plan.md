@@ -85,7 +85,7 @@ ShareCodex/
 ├── frontend/                      # Vite + Svelte 5 + TS；src/{components,features/{overview,settings},lib}
 ├── build/                         # Wails 建置設定、圖示、Info.plist、Windows 資源
 ├── testdata/{claude,codex}/       # 合成的 fixture（無真實 prompt）
-├── deploy/                        # Dockerfile、docker-compose.yml、.env.example
+├── deploy/                        # Dockerfile、docker-compose.yml（使用 GHCR 映像檔）、docker-compose.build.yml（從原始碼建置）、.env.example
 ├── .github/workflows/             # ci.yml、release.yml
 └── docs/                          # plan.md、spikes.md
 ```
@@ -215,7 +215,7 @@ ShareCodex/
 - **M3 Server 與同步**：Postgres schema、`/admin` 網頁管理介面、pairing、冪等 `/sync`、outbox、`deploy/`。
 - **M4 桌面 popup**：Wails v3 系統匣／選單列、Svelte popup、設定頁（加入、statusLine、登入時啟動）。
 - **M5 歸因與 overview**：分配、估計用量、未歸屬、`/overview`。
-- **M6 發佈**：CI（Go 三平台、Postgres 整合、前端檢查、桌面建置）、release workflow（macOS universal、Windows、server binary）、更新提示。
+- **M6 發佈**：CI（Go 三平台、Postgres 整合、前端檢查、桌面建置、server 映像檔建置）、release workflow（macOS universal、Windows、server binary、GHCR 多架構映像檔、Docker Compose bundle）、更新提示。
   macOS Developer ID 簽署與公證、Windows 程式碼簽章在設定對應 secrets 後才會執行，見 README。
 
 ## 錯誤處理原則
