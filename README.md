@@ -1,99 +1,101 @@
 # ShareCodex
 
-幾個人共用 Claude Max／Pro 與 ChatGPT Plus 訂閱時，用來回答兩件事：
+English | [繁體中文](README.zh-TW.md)
 
-- 每個共用帳號的 5 小時與每週額度還剩多少。
-- 每個人分到多少、估計用了多少。
+When a few people share Claude Max/Pro and ChatGPT Plus subscriptions, ShareCodex answers two questions:
 
-只計算 coding agent 的用量（Claude Code 與 Codex CLI／Desktop／IDE），不計算 ChatGPT 網頁聊天。
+- How much of each shared account's 5-hour and weekly quota is left.
+- How much each person is allotted, and roughly how much each has used.
 
-- 設計與決策：[docs/plan.md](docs/plan.md)
-- 實測驗證紀錄：[docs/spikes.md](docs/spikes.md)
+Only coding-agent usage counts (Claude Code, and the Codex CLI, desktop app and IDE extension). ChatGPT web chat is not tracked.
 
-## 運作方式
+- Design and decisions: [docs/plan.md](docs/plan.md) (Traditional Chinese)
+- Verification notes: [docs/spikes.md](docs/spikes.md) (Traditional Chinese)
 
-每位成員的電腦（macOS 選單列、Windows 系統匣）跑一個桌面 app。它讀取本機的 Claude Code transcript 與 Codex rollout 紀錄，透過官方 CLI 確認目前登入的帳號（不讀取任何憑證檔），再把 token 用量與額度快照上傳到自架的 server。server 彙整所有人的資料，算出每個帳號的額度與每人占比。
+## How it works
 
-上傳的只有 token 數、模型、時間與額度百分比；prompt、工作目錄與專案路徑都不會離開本機。
+Each member runs a desktop app (macOS menu bar, Windows system tray). It reads the local Claude Code transcripts and Codex rollout logs, asks the official CLIs which account is signed in (no credential files are read), and uploads token usage and quota snapshots to a self-hosted server. The server combines everyone's data into each account's quota and each person's share.
 
-## 架設 server
+Only token counts, model names, timestamps and quota percentages are uploaded. Prompts, working directories and project paths never leave the device.
 
-需要 Docker。server 本身不處理 TLS，請放在反向代理（例如 Caddy、nginx）後面。
+## Running the server
+
+Requires Docker. The server does not terminate TLS; put it behind a reverse proxy such as Caddy or nginx.
 
 ```bash
 cd deploy
-cp .env.example .env    # 設定 POSTGRES_PASSWORD 與 PUBLIC_URL
+cp .env.example .env    # set POSTGRES_PASSWORD and PUBLIC_URL
 docker compose up -d
 ```
 
-`PUBLIC_URL` 是成員連到 server 的網址，會出現在加入連結裡。
+`PUBLIC_URL` is the address members reach the server at. It appears in join links.
 
-## 管理
+## Administration
 
-所有管理動作都在 server 上用 CLI 執行：
+All admin tasks run as CLI commands on the server:
 
 ```bash
-docker compose exec server sharecodex-server admin person add --name 江董 --admin
+docker compose exec server sharecodex-server admin person add --name Alice --admin
 ```
 
-| 指令 | 用途 |
+| Command | Purpose |
 |---|---|
-| `admin person add --name NAME [--admin]` | 新增成員 |
-| `admin person list` | 列出成員 |
-| `admin invite --person PERSON [--ttl 24h]` | 產生一次性加入連結 |
-| `admin account list` | 列出帳號（自動建立，`HINT` 是遮罩過的 email） |
-| `admin account label --account ACCOUNT --label LABEL` | 幫帳號命名 |
-| `admin share list --account ACCOUNT` | 查看分配 |
-| `admin share set --account ACCOUNT --person PERSON --weight W` | 調整分配權重 |
-| `admin device list` | 列出裝置 |
-| `admin device revoke --id DEVICE` | 撤銷裝置 |
+| `admin person add --name NAME [--admin]` | Add a member |
+| `admin person list` | List members |
+| `admin invite --person PERSON [--ttl 24h]` | Create a single-use join link |
+| `admin account list` | List accounts (created automatically; `HINT` is the masked email) |
+| `admin account label --account ACCOUNT --label LABEL` | Name an account |
+| `admin share list --account ACCOUNT` | Show allotments |
+| `admin share set --account ACCOUNT --person PERSON --weight W` | Change an allotment weight |
+| `admin device list` | List devices |
+| `admin device revoke --id DEVICE` | Revoke a device |
 
-`PERSON` 與 `ACCOUNT` 可以填 ID，也可以填完整名稱。
+`PERSON` and `ACCOUNT` accept either an ID or the exact name.
 
-## 成員加入
+## Joining
 
-1. admin 執行 `admin person add` 建立成員，再用 `admin invite` 產生加入連結（24 小時內有效、只能用一次），傳給對方。
-2. 成員安裝桌面 app，在 popup 貼上加入連結。同一人的每台電腦各需要一條連結。
-3. 成員在自己電腦上用共用帳號登入 Claude Code 或 Codex。app 第一次看到該帳號時，server 自動建立帳號與成員關係（權重 1），不需要 admin 手動設定。
-4. 要取得 Claude 的額度，需在 app 的設定頁啟用「statusLine 擷取」。app 會修改 `~/.claude/settings.json`（先備份），原本的 statusLine 照常顯示，停用時會還原。
+1. An admin creates the member with `admin person add`, then runs `admin invite` to get a join link (valid for 24 hours, single use) and sends it to them.
+2. The member installs the desktop app and pastes the join link into the popup. Each of a person's computers needs its own link.
+3. The member signs in to the shared account in Claude Code or Codex on their own computer. The first time the app sees that account, the server creates the account and the membership (weight 1). No admin setup is needed.
+4. To get Claude's quota, the member turns on statusLine capture on the app's settings page. The app edits `~/.claude/settings.json` after backing it up. The member's existing statusLine keeps working, and turning the feature off restores the original.
 
-加入之前的歷史用量不會上傳。撤銷裝置後，該裝置已上傳的紀錄仍保留。
+Usage from before joining is not uploaded. Revoking a device keeps the records it already uploaded.
 
-## 額度分配
+## Quota allotment
 
-- **分配**：每位成員在每個帳號上都有一個權重，分到的比例為 `權重 ÷ 該帳號所有成員權重總和`。預設全部是 1，也就是平均分配；權重設為 0 表示不分配，但保留該成員的用量紀錄。
-- **估計用量**：provider 只回報整個帳號用了幾 %。每人的部分依同一視窗內的 API 等價成本比例估算，因此一律標示「估計」。視窗內有額度消耗、卻沒有任何人的紀錄時，那部分列為「未歸屬」。
-- 分配只是參考，沒有強制力，超出時會標示「超出分配」。
+- **Allotment:** each member has a weight on each account. Their share is `weight ÷ sum of all members' weights on that account`. All weights default to 1, which splits the quota evenly. A weight of 0 removes a member from the allotment but keeps their usage records.
+- **Estimated usage:** providers report only the percentage used for the whole account. Each person's part is estimated from their share of API-equivalent cost within the same window, so it is always labelled as an estimate. Quota consumed in a window with no matching records from anyone is shown as unattributed.
+- Allotments are informational and are not enforced. A member who uses more than their allotment is marked as over.
 
-## 開發
+## Development
 
-需要 Go 1.27、Node 24、pnpm、Wails CLI（`go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.25`）。
+Requires Go 1.27, Node 24, pnpm, and the Wails CLI (`go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.25`).
 
 ```bash
-go test ./...                     # server 整合測試需另設 TEST_DATABASE_URL
-wails3 task dev                   # 開發模式執行桌面 app
-wails3 task package VERSION=0.1.0 # 打包（macOS 產生 bin/ShareCodex.app）
-go run . scan                     # 印出本機每日 token 用量，不寫入資料庫
+go test ./...                     # server integration tests also need TEST_DATABASE_URL
+wails3 task dev                   # run the desktop app in development mode
+wails3 task package VERSION=0.1.0 # package the app (bin/ShareCodex.app on macOS)
+go run . scan                     # print local daily token totals without writing to the database
 ```
 
-`SHARECODEX_HOME` 可以指定另一個資料目錄，方便在同一台電腦模擬多台裝置。
+Set `SHARECODEX_HOME` to use another data directory, for example to simulate several devices on one computer.
 
-### 相依規則
+### Dependency rule
 
 ```
 domain  ←  provider adapters  ←  client / server  ←  Wails / HTTP / SQL / OS
 ```
 
-`internal/account`、`identity`、`usage`、`quota`、`attribution` 不可以依賴儲存、網路、桌面框架或 provider 程式碼，由 `internal/architecture_test.go` 檢查。
+`internal/account`, `identity`, `usage`, `quota` and `attribution` must not depend on storage, networking, the desktop framework or provider code. `internal/architecture_test.go` enforces this.
 
-## 發佈
+## Releases
 
-推送 `v*` tag 會觸發 `.github/workflows/release.yml`，產生 macOS universal `.app`、Windows `.exe` 與 Linux server binary，並建立 GitHub Release。
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds a universal macOS `.app`, a Windows `.exe` and Linux server binaries, and creates a GitHub Release.
 
-簽署在設定下列 repository secrets 後才會執行；沒有設定時，macOS 版只有 ad-hoc 簽署，第一次開啟需在「系統設定 › 隱私權與安全性」允許。
+Code signing runs only when the repository secrets below are set. Without them, the macOS app is only ad-hoc signed, and users must allow it the first time in System Settings › Privacy & Security.
 
-| Secret | 用途 |
+| Secret | Purpose |
 |---|---|
-| `MACOS_CERT_P12`（base64）、`MACOS_CERT_PASSWORD`、`MACOS_SIGN_IDENTITY` | Developer ID 簽署 |
-| `APPLE_ID`、`APPLE_TEAM_ID`、`APPLE_APP_PASSWORD` | 公證 |
-| `WINDOWS_CERT_PFX`（base64）、`WINDOWS_CERT_PASSWORD` | Windows 程式碼簽章 |
+| `MACOS_CERT_P12` (base64), `MACOS_CERT_PASSWORD`, `MACOS_SIGN_IDENTITY` | Developer ID signing |
+| `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD` | Notarization |
+| `WINDOWS_CERT_PFX` (base64), `WINDOWS_CERT_PASSWORD` | Windows code signing |
