@@ -31,7 +31,7 @@ func List(roots []string) (map[string]FileState, error) {
 			if d.IsDir() || !strings.HasSuffix(d.Name(), ".jsonl") {
 				return nil
 			}
-			info, err := d.Info()
+			info, err := fileInfo(path, d)
 			if err != nil {
 				if errors.Is(err, fs.ErrNotExist) {
 					return nil

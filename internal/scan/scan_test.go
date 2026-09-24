@@ -46,3 +46,37 @@ func TestListAndChanged(t *testing.T) {
 		t.Fatalf("touched file should be changed, got %v", got)
 	}
 }
+
+// A writer that keeps the log open (Codex does) must still show growth, or
+// its usage is only picked up once the file is closed.
+func TestListSeesGrowthOfFileHeldOpen(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "rollout.jsonl")
+	w, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	if _, err := w.WriteString("{}\n"); err != nil {
+		t.Fatal(err)
+	}
+
+	before, err := List([]string{dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.WriteString(`{"type":"event_msg"}` + "\n"); err != nil {
+		t.Fatal(err)
+	}
+	after, err := List([]string{dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := after[path].Size, int64(3+21); got != want {
+		t.Fatalf("size while held open = %d, want %d", got, want)
+	}
+	if changed := Changed(before, after); len(changed) != 1 {
+		t.Fatalf("growth of an open file was not reported as a change: %v", changed)
+	}
+}
