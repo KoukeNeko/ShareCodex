@@ -46,7 +46,7 @@ Claude Code 與 Codex 紀錄，透過官方 CLI 確認目前登入的帳號，�
 
 <p align="center">
   <img src="docs/images/admin-overview.png" width="49%" alt="管理介面總覽">
-  <img src="docs/images/admin-accounts.png" width="49%" alt="管理介面帳號">
+  <img src="docs/images/admin-accounts.png" width="49%" alt="管理介面帳號（深色）">
 </p>
 
 ## 能看到什麼

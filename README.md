@@ -48,7 +48,7 @@ ChatGPT web chat is not tracked.
 
 <p align="center">
   <img src="docs/images/admin-overview.png" width="49%" alt="Admin console overview">
-  <img src="docs/images/admin-accounts.png" width="49%" alt="Admin console accounts">
+  <img src="docs/images/admin-accounts.png" width="49%" alt="Admin console accounts, dark">
 </p>
 
 ## What it shows
