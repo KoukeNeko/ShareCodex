@@ -1,0 +1,37 @@
+# Run from this directory: cp .env.example .env, edit it, then
+#   docker compose up -d
+# Admin commands run inside the server container, e.g.
+#   docker compose exec server sharecodex-server admin person add --name NAME --admin
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sharecodex
+      POSTGRES_USER: sharecodex
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sharecodex -d sharecodex"]
+      interval: 5s
+      retries: 10
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://sharecodex:${POSTGRES_PASSWORD}@db:5432/sharecodex?sslmode=disable
+      LISTEN_ADDR: ":8080"
+      PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env}
+    # Publish on localhost only; expose it through a TLS reverse proxy.
+    ports:
+      - "127.0.0.1:${PORT:-8080}:8080"
+
+volumes:
+  db:
