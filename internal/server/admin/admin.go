@@ -107,6 +107,7 @@ func parsePages() (map[string]*template.Template, error) {
 		"bucket":   bucketName,
 		"when":     formatTime,
 		"over":     func(m syncapi.MemberShare) bool { return m.UsedPercent > m.AllottedPercent+0.5 },
+		"tokens":   compactTokens,
 	}
 	pages := map[string]*template.Template{}
 	for _, name := range []string{"login", "overview", "people", "accounts", "devices"} {
@@ -499,6 +500,19 @@ func (c *Console) revoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/admin/devices", http.StatusSeeOther)
+}
+
+// compactTokens renders a token count as 950, 12.3K, 4.5M.
+func compactTokens(n int64) string {
+	switch {
+	case n >= 1_000_000_000:
+		return strconv.FormatFloat(float64(n)/1e9, 'f', 1, 64) + "B"
+	case n >= 1_000_000:
+		return strconv.FormatFloat(float64(n)/1e6, 'f', 1, 64) + "M"
+	case n >= 1_000:
+		return strconv.FormatFloat(float64(n)/1e3, 'f', 1, 64) + "K"
+	}
+	return strconv.FormatInt(n, 10)
 }
 
 func providerName(p string) string {

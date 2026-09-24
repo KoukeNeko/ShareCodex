@@ -35,6 +35,16 @@
           {{end}}
           </tbody>
         </table></div>
+        {{if .Models}}
+        <div class="table-wrap"><table class="small">
+          <thead><tr><th>模型</th><th>請求</th><th>Tokens</th><th>估計用量</th></tr></thead>
+          <tbody>
+          {{range .Models}}
+            <tr><td>{{.Model}}</td><td class="num">{{.Requests}}</td><td class="num">{{tokens .Tokens}}</td><td class="num">{{pct .UsedPercent}}</td></tr>
+          {{end}}
+          </tbody>
+        </table></div>
+        {{end}}
       </div>
     {{end}}
   </section>

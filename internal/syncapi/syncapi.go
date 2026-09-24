@@ -118,6 +118,18 @@ type BucketOverview struct {
 	// events from any member's device.
 	UnattributedPercent float64       `json:"unattributed_percent"`
 	Members             []MemberShare `json:"members"`
+	Models              []ModelUsage  `json:"models"`
+}
+
+// ModelUsage is one model's usage within a quota window, across members.
+type ModelUsage struct {
+	Model    string `json:"model"`
+	Requests int    `json:"requests"`
+	// Tokens counts input, cached input, cache writes and output together.
+	Tokens int64 `json:"tokens"`
+	// UsedPercent is an estimate, apportioned by weighted token cost like
+	// MemberShare.UsedPercent.
+	UsedPercent float64 `json:"used_percent"`
 }
 
 type MemberShare struct {
@@ -130,6 +142,13 @@ type MemberShare struct {
 	// UsedPercent is an estimate, apportioned by weighted token cost.
 	UsedPercent float64 `json:"used_percent"`
 	Requests    int     `json:"requests"`
+	// Models splits UsedPercent by model, in the bucket's Models order.
+	Models []MemberModel `json:"models"`
+}
+
+type MemberModel struct {
+	Model       string  `json:"model"`
+	UsedPercent float64 `json:"used_percent"`
 }
 
 func FromEvent(e usage.Event) Event {

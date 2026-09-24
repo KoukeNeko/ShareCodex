@@ -11,6 +11,12 @@
   --warn-soft: #fbecd4;
   --danger: #c4312b;
   --radius: 10px;
+  /* Model segments, in fixed slot order (validated for adjacent use). */
+  --model-1: #2a78d6;
+  --model-2: #eb6834;
+  --model-3: #1baf7a;
+  --model-4: #eda100;
+  --model-other: #9aa1ad;
   color-scheme: light;
 }
 
@@ -27,6 +33,11 @@
     --warn: #f0a640;
     --warn-soft: #3d2f18;
     --danger: #f06a63;
+    --model-1: #3987e5;
+    --model-2: #d95926;
+    --model-3: #199e70;
+    --model-4: #c98500;
+    --model-other: #6b7280;
     color-scheme: dark;
   }
 }

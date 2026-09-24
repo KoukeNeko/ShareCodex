@@ -1,7 +1,7 @@
 <script lang="ts">
-  import QuotaBar from '../../components/QuotaBar.svelte'
+  import QuotaBar, { type Segment } from '../../components/QuotaBar.svelte'
   import type { BucketOverview } from '../../lib/api'
-  import { bucketName, percent, providerName, resetsIn } from '../../lib/format'
+  import { bucketName, percent, providerName, resetsIn, tokens } from '../../lib/format'
 
   let { provider, label, planType, buckets, now, local = false }: {
     provider: string
@@ -17,6 +17,25 @@
 
   function tone(used: number): 'accent' | 'warn' | 'danger' {
     return used >= 90 ? 'danger' : used >= 70 ? 'warn' : 'accent'
+  }
+
+  // Colors follow the model's rank in this window; past the fourth, models
+  // share the "other" color so hues are never generated.
+  const modelSlots = 4
+  const modelColor = $derived.by(() => {
+    const colors = new Map<string, string>()
+    ;(bucket?.models ?? []).forEach((m, i) =>
+      colors.set(m.model, i < modelSlots ? `var(--model-${i + 1})` : 'var(--model-other)'),
+    )
+    return colors
+  })
+
+  function segmentsFor(models: { model: string; used_percent: number }[] | null | undefined): Segment[] {
+    return (models ?? []).map((m) => ({
+      value: m.used_percent,
+      color: modelColor.get(m.model) ?? 'var(--model-other)',
+      label: `${m.model} ${percent(m.used_percent)}`,
+    }))
   }
 </script>
 
@@ -62,7 +81,7 @@
                 估計 {percent(m.used_percent)}<span class="muted allot">分配 {percent(m.allotted_percent)}</span>
               </span>
             </div>
-            <QuotaBar value={m.used_percent} marker={m.allotted_percent} tone={over ? 'warn' : 'accent'} thin />
+            <QuotaBar value={m.used_percent} marker={m.allotted_percent} segments={segmentsFor(m.models)} thin />
           </li>
         {/each}
         {#if bucket.unattributed_percent > 0}
@@ -75,6 +94,18 @@
           </li>
         {/if}
       </ul>
+
+      {#if (bucket.models ?? []).length > 0}
+        <ul class="models">
+          <li class="muted small">模型</li>
+          {#each bucket.models ?? [] as model (model.model)}
+            <li class="row">
+              <span class="model"><i class="swatch" style:background={modelColor.get(model.model)}></i>{model.model}</span>
+              <span class="num"><span class="muted">{tokens(model.tokens)} tokens</span>估計 {percent(model.used_percent)}</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
     {/if}
   {/if}
 </section>
@@ -121,6 +152,10 @@
   .members { list-style: none; margin: 0; padding: 8px 0 0; border-top: 1px solid var(--line); display: grid; gap: 9px; }
   .members li { display: grid; gap: 4px; }
   .allot { margin-left: 8px; }
+  .models { list-style: none; margin: 0; padding: 8px 0 0; border-top: 1px solid var(--line); display: grid; gap: 5px; }
+  .models .muted { margin-right: 8px; }
+  .model { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; display: flex; align-items: center; gap: 6px; }
+  .swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
   .name { display: flex; align-items: center; gap: 6px; }
   .you {
     font-size: 10.5px;

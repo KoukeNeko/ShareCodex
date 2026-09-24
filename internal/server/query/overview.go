@@ -52,7 +52,8 @@ func Overview(ctx context.Context, st *storage.Store, viewerPersonID string, now
 }
 
 func bucketOverview(b quota.Observed, now time.Time, members []storage.Member, rows []storage.UsageRow, viewer string) syncapi.BucketOverview {
-	bo := syncapi.BucketOverview{Key: string(b.Key), ResetsAt: b.ResetsAt, ObservedAt: b.ObservedAt, Members: []syncapi.MemberShare{}}
+	bo := syncapi.BucketOverview{Key: string(b.Key), ResetsAt: b.ResetsAt, ObservedAt: b.ObservedAt,
+		Members: []syncapi.MemberShare{}, Models: []syncapi.ModelUsage{}}
 	if b.WindowMinutes != nil {
 		bo.WindowMinutes = *b.WindowMinutes
 	}
@@ -62,16 +63,47 @@ func bucketOverview(b quota.Observed, now time.Time, members []storage.Member, r
 
 	costs := map[string]float64{}
 	requests := map[string]int{}
+	models := map[string]*syncapi.ModelUsage{}
+	modelCosts := map[string]float64{}
+	personModelCosts := map[string]map[string]float64{}
+	var totalCost float64
 	if b.HasReset(now) {
 		// The window closed after the last report; nothing is used yet.
 		bo.Reset = true
 		bo.UsedPercent = 0
 	} else {
 		for _, r := range rows {
-			costs[r.PersonID] += attribution.Cost(r.Model, r.Tokens)
+			cost := attribution.Cost(r.Model, r.Tokens)
+			costs[r.PersonID] += cost
 			requests[r.PersonID] += r.Requests
+			totalCost += cost
+
+			m, ok := models[r.Model]
+			if !ok {
+				m = &syncapi.ModelUsage{Model: r.Model}
+				models[r.Model] = m
+			}
+			m.Requests += r.Requests
+			m.Tokens += r.Tokens.Input + r.Tokens.CachedInput + r.Tokens.CacheWrite + r.Tokens.Output
+			modelCosts[r.Model] += cost
+			if personModelCosts[r.PersonID] == nil {
+				personModelCosts[r.PersonID] = map[string]float64{}
+			}
+			personModelCosts[r.PersonID][r.Model] += cost
 		}
 	}
+	for name, m := range models {
+		if totalCost > 0 {
+			m.UsedPercent = bo.UsedPercent * modelCosts[name] / totalCost
+		}
+		bo.Models = append(bo.Models, *m)
+	}
+	sort.Slice(bo.Models, func(i, j int) bool {
+		if bo.Models[i].UsedPercent != bo.Models[j].UsedPercent {
+			return bo.Models[i].UsedPercent > bo.Models[j].UsedPercent
+		}
+		return bo.Models[i].Model < bo.Models[j].Model
+	})
 
 	weights := map[string]float64{}
 	names := map[string]string{}
@@ -83,7 +115,7 @@ func bucketOverview(b quota.Observed, now time.Time, members []storage.Member, r
 	shares, unattributed := attribution.Apportion(bo.UsedPercent, costs, weights)
 	bo.UnattributedPercent = unattributed
 	for person, s := range shares {
-		bo.Members = append(bo.Members, syncapi.MemberShare{
+		ms := syncapi.MemberShare{
 			PersonID:        person,
 			Name:            names[person],
 			IsYou:           person == viewer,
@@ -91,7 +123,15 @@ func bucketOverview(b quota.Observed, now time.Time, members []storage.Member, r
 			AllottedPercent: s.AllottedPercent,
 			UsedPercent:     s.UsedPercent,
 			Requests:        requests[person],
-		})
+			Models:          []syncapi.MemberModel{},
+		}
+		// Same order as bo.Models so the popup can color segments by model.
+		for _, m := range bo.Models {
+			if c := personModelCosts[person][m.Model]; c > 0 && totalCost > 0 {
+				ms.Models = append(ms.Models, syncapi.MemberModel{Model: m.Model, UsedPercent: bo.UsedPercent * c / totalCost})
+			}
+		}
+		bo.Members = append(bo.Members, ms)
 	}
 	sort.Slice(bo.Members, func(i, j int) bool {
 		if bo.Members[i].UsedPercent != bo.Members[j].UsedPercent {

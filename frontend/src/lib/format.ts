@@ -33,6 +33,14 @@ export function resetsIn(resetsAt: string | null | undefined, now: Date): string
   return `${mins} 分後重置`
 }
 
+/** Compact token count: 950, 12.3K, 4.5M. */
+export function tokens(n: number): string {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`
+  return String(n)
+}
+
 export function clock(iso: string | null | undefined): string {
   if (!iso) return ''
   return new Date(iso).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })

@@ -139,6 +139,10 @@ func TestPairSyncOverview(t *testing.T) {
 	if got["alice"].AllottedPercent != 50 || !got["bob"].IsYou || got["alice"].IsYou {
 		t.Errorf("members = %+v", got)
 	}
+	if len(b.Models) != 1 || b.Models[0].Model != "gpt-5.5" || b.Models[0].Requests != 4 ||
+		b.Models[0].Tokens != 4_000_000 || math.Abs(b.Models[0].UsedPercent-40) > 1e-9 {
+		t.Errorf("models = %+v, want gpt-5.5 with all 4 requests and the whole 40%%", b.Models)
+	}
 
 	// A larger output for a known request replaces the partial one.
 	if st := alice.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event("codex:a1", 10)}}, &res); st != http.StatusOK || res.Accepted != 1 {
