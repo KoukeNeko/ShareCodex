@@ -134,6 +134,7 @@ ShareCodex/
   - 另外顯示「剩餘分配 = allotted% − used%」。
   - 所有個人數字都標示「估算」。帳號本身的 `UsedPercent` 是 provider 回報的實際值，不標示估算。
 - **已知偏差**：成員加入前、同一視窗內的消耗，會按比例分攤給已經有事件的人。帳號的 `UsedPercent` 本身永遠正確。
+- **模型用量**：同一視窗內依模型彙總請求數與 tokens（input、cached、cache write、output 合計），並以相同的加權成本比例估算每個模型占 `UsedPercent` 的多少。popup 與管理介面總覽都會顯示。
 
 ## 資料流細節
 
@@ -183,7 +184,7 @@ ShareCodex/
 |---|---|---|
 | `POST /pair` | 用一次性邀請碼換取 device token | 邀請碼 |
 | `POST /sync` | 批次上傳事件、快照、帳號觀測 | Device token |
-| `GET /overview` | 所有帳號的額度 bucket，以及每人的分配%、估計用量%、unattributed、更新時間 | Device token |
+| `GET /overview` | 所有帳號的額度 bucket，以及每人的分配%、估計用量%、各模型用量、unattributed、更新時間 | Device token |
 | `GET /join/{code}` | 瀏覽器開啟加入連結時，顯示「請在 ShareCodex 桌面 app 貼上此連結」的純文字頁 | 無 |
 
 - Device token 是 32 bytes 隨機值。Server 只存雜湊，client 存在 OS keychain。
