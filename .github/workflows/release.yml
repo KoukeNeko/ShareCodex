@@ -26,14 +26,14 @@ jobs:
       HAS_MACOS_SIGNING: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 != '' && secrets.ASC_KEY_P8_BASE64 != '' }}
       HAS_WINDOWS_SIGNING: ${{ secrets.WINDOWS_CERT_PFX != '' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
@@ -123,7 +123,7 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path bin\ShareCodex.exe -DestinationPath "${{ matrix.asset }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.asset }}
           path: ${{ matrix.asset }}
@@ -131,8 +131,8 @@ jobs:
   server:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - run: |
@@ -141,7 +141,7 @@ jobs:
               -o sharecodex-server ./cmd/sharecodex-server
             tar czf "sharecodex-server-linux-$arch.tar.gz" sharecodex-server
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: server
           path: sharecodex-server-linux-*.tar.gz
@@ -150,7 +150,7 @@ jobs:
     needs: [desktop, server]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
