@@ -1,0 +1,7 @@
+[
+  {"match": "claude-opus",   "input": 5,    "cached_input": 0.5,   "cache_write": 6.25, "output": 25},
+  {"match": "claude-sonnet", "input": 3,    "cached_input": 0.3,   "cache_write": 3.75, "output": 15},
+  {"match": "claude-haiku",  "input": 1,    "cached_input": 0.1,   "cache_write": 1.25, "output": 5},
+  {"match": "mini",          "input": 0.25, "cached_input": 0.025, "cache_write": 0,    "output": 2},
+  {"match": "",              "input": 1.25, "cached_input": 0.125, "cache_write": 0,    "output": 10}
+]
