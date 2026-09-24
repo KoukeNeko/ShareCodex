@@ -49,6 +49,7 @@ func runDesktop() error {
 	if err != nil {
 		return err
 	}
+	ag.RepairInstalledPaths(exe)
 	assets, err := fs.Sub(frontend, "frontend/dist")
 	if err != nil {
 		return err

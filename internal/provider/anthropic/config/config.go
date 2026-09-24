@@ -48,6 +48,23 @@ func ShimCommand(executable string) string {
 	return `"` + executable + `" statusline`
 }
 
+// StatusLine returns the statusLine setting, or nil when none is set.
+func StatusLine(settings []byte) (json.RawMessage, error) {
+	obj, err := decodeObject(settings)
+	if err != nil {
+		return nil, err
+	}
+	return obj.get(statusLineKey), nil
+}
+
+// PointsAt reports whether a statusLine value runs the shim of executable.
+func PointsAt(value json.RawMessage, executable string) bool {
+	var sl struct {
+		Command string `json:"command"`
+	}
+	return json.Unmarshal(value, &sl) == nil && sl.Command == ShimCommand(executable)
+}
+
 // IsShim reports whether a statusLine value points at a ShareCodex shim,
 // including one from an older install location.
 func IsShim(value json.RawMessage) bool {
