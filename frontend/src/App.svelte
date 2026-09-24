@@ -120,7 +120,11 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 10px 14px;
+    /* Fixed so switching between the overview's icons and settings' Done
+       button does not move the title. */
+    flex: none;
+    height: 44px;
+    padding: 0 14px;
     border-bottom: 1px solid var(--line);
     --wails-draggable: drag;
   }
