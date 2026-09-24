@@ -7,9 +7,15 @@ set -euo pipefail
 tag="$1"
 sums="$2"
 version="${tag#v}"
-asset="ShareCodex-windows-amd64.zip"
-sha="$(awk -v f="$asset" '$2 == f || $2 == "*" f { print $1 }' "$sums")"
-[[ ${#sha} -eq 64 ]] || { echo "no SHA-256 for $asset in $sums" >&2; exit 1; }
+sha_for() {
+  local asset="$1" sha
+  sha="$(awk -v f="$asset" '$2 == f || $2 == "*" f { print $1 }' "$sums")"
+  [[ ${#sha} -eq 64 ]] || { echo "no SHA-256 for $asset in $sums" >&2; exit 1; }
+  echo "$sha"
+}
+amd64="$(sha_for ShareCodex-windows-amd64.zip)"
+arm64="$(sha_for ShareCodex-windows-arm64.zip)"
+base="https://github.com/KoukeNeko/ShareCodex/releases/download"
 
 cat <<MANIFEST
 {
@@ -18,8 +24,12 @@ cat <<MANIFEST
     "homepage": "https://github.com/KoukeNeko/ShareCodex",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/KoukeNeko/ShareCodex/releases/download/v$version/$asset",
-            "hash": "$sha"
+            "url": "$base/v$version/ShareCodex-windows-amd64.zip",
+            "hash": "$amd64"
+        },
+        "arm64": {
+            "url": "$base/v$version/ShareCodex-windows-arm64.zip",
+            "hash": "$arm64"
         }
     },
     "shortcuts": [
@@ -34,11 +44,14 @@ cat <<MANIFEST
     "autoupdate": {
         "architecture": {
             "64bit": {
-                "url": "https://github.com/KoukeNeko/ShareCodex/releases/download/v\$version/$asset"
+                "url": "$base/v\$version/ShareCodex-windows-amd64.zip"
+            },
+            "arm64": {
+                "url": "$base/v\$version/ShareCodex-windows-arm64.zip"
             }
         },
         "hash": {
-            "url": "https://github.com/KoukeNeko/ShareCodex/releases/download/v\$version/SHA256SUMS"
+            "url": "$base/v\$version/SHA256SUMS"
         }
     }
 }

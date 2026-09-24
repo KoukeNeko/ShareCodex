@@ -128,7 +128,7 @@ docker compose up -d
 
 ## 相容性
 
-- **桌面：** macOS（Apple silicon 與 Intel）與 Windows
+- **桌面：** macOS（Apple silicon 與 Intel）與 Windows（x64 與 ARM64）
 - **Agent：** 使用 Claude Pro／Max 訂閱的 Claude Code；使用 ChatGPT 訂閱的 Codex CLI、桌面 app 與 IDE 擴充功能
 - **Server：** 任何 Docker 主機，linux/amd64 或 linux/arm64
 - **介面語言：** 繁體中文
@@ -152,7 +152,7 @@ scoop install koukeneko/sharecodex
 ```
 
 也可以從[最新 GitHub Release](https://github.com/KoukeNeko/ShareCodex/releases/latest) 下載
-`ShareCodex-macos-universal.zip` 或 `ShareCodex-windows-amd64.zip`。macOS 版以 Developer ID 簽署並經
+`ShareCodex-macos-universal.zip`、`ShareCodex-windows-amd64.zip` 或 `ShareCodex-windows-arm64.zip`。macOS 版以 Developer ID 簽署並經
 Apple 公證。app 會檢查 GitHub 是否有新版本並提示，但不會自行下載或安裝任何東西。更新請執行
 `brew upgrade --cask sharecodex` 或 `scoop update sharecodex`。
 
@@ -205,7 +205,7 @@ provider 程式碼，由 `internal/architecture_test.go` 檢查。設計與驗�
 
 ### 發佈
 
-推送 `v*` tag 會觸發 `.github/workflows/release.yml`，產生 macOS universal `.app`、Windows `.exe`、
+推送 `v*` tag 會觸發 `.github/workflows/release.yml`，產生 macOS universal `.app`、x64 與 ARM64 的 Windows `.exe`、
 Linux server binary 與 Docker Compose bundle，把 server 映像檔推送到 `ghcr.io/koukeneko/sharecodex-server`，
 並建立附 `SHA256SUMS` 的 GitHub Release。接著執行 `.github/workflows/packages.yml`，更新
 [KoukeNeko/homebrew-tap](https://github.com/KoukeNeko/homebrew-tap) 的 cask 與

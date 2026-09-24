@@ -20,7 +20,11 @@ jobs:
           - os: macos-latest
             asset: ShareCodex-macos-universal.zip
           - os: windows-latest
+            arch: amd64
             asset: ShareCodex-windows-amd64.zip
+          - os: windows-latest
+            arch: arm64
+            asset: ShareCodex-windows-arm64.zip
     runs-on: ${{ matrix.os }}
     # Step-level env is not visible to that step's `if`, so whether signing
     # secrets exist is decided here.
@@ -109,7 +113,7 @@ jobs:
       - name: Build Windows app
         if: runner.os == 'Windows'
         shell: bash
-        run: wails3 task windows:build VERSION="$VERSION"
+        run: wails3 task windows:build VERSION="$VERSION" ARCH="${{ matrix.arch }}"
       - name: Sign Windows app
         if: runner.os == 'Windows' && env.HAS_WINDOWS_SIGNING == 'true'
         shell: pwsh

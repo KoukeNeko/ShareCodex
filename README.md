@@ -141,7 +141,7 @@ Admin sessions are kept in memory, so restarting the server signs the admin out.
 
 ## Compatibility
 
-- **Desktop:** macOS (Apple silicon and Intel) and Windows
+- **Desktop:** macOS (Apple silicon and Intel) and Windows (x64 and ARM64)
 - **Agents:** Claude Code with a Claude Pro/Max subscription; Codex CLI, desktop app and IDE extension
   with a ChatGPT subscription
 - **Server:** any Docker host, linux/amd64 or linux/arm64
@@ -165,7 +165,8 @@ scoop bucket add koukeneko https://github.com/KoukeNeko/scoop-bucket
 scoop install koukeneko/sharecodex
 ```
 
-Or download `ShareCodex-macos-universal.zip` or `ShareCodex-windows-amd64.zip` from the
+Or download `ShareCodex-macos-universal.zip`, `ShareCodex-windows-amd64.zip` or
+`ShareCodex-windows-arm64.zip` from the
 [latest GitHub Release](https://github.com/KoukeNeko/ShareCodex/releases/latest). The macOS app is
 signed with a Developer ID and notarized by Apple. The app checks GitHub for new releases and tells
 you when one is out; it never installs anything by itself. Update with `brew upgrade --cask
@@ -225,8 +226,8 @@ Design notes and verification records are in [docs/plan.md](docs/plan.md) and
 
 ### Releases
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`. It builds a universal macOS `.app`, a
-Windows `.exe`, Linux server binaries and the Docker Compose bundle, pushes the server image to
+Pushing a `v*` tag runs `.github/workflows/release.yml`. It builds a universal macOS `.app`,
+Windows `.exe` files for x64 and ARM64, Linux server binaries and the Docker Compose bundle, pushes the server image to
 `ghcr.io/koukeneko/sharecodex-server`, and creates a GitHub Release with `SHA256SUMS`. It then runs
 `.github/workflows/packages.yml`, which updates the cask in
 [KoukeNeko/homebrew-tap](https://github.com/KoukeNeko/homebrew-tap) and the manifest in
