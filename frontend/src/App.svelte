@@ -46,7 +46,7 @@
     <div class="tools">
       {#if view === 'overview'}
         <button class="icon" title={t('refresh')} aria-label={t('refresh')} onclick={() => Desktop.Refresh()}>
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" /></svg>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.76 5.75A5.5 5.5 0 1 1 8 3M6.5 1.2 8.3 3 6.5 4.8" /></svg>
         </button>
         <button class="icon" title={t('settings')} aria-label={t('settings')} onclick={() => (view = 'settings')}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.2" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke-linecap="round" /></svg>
