@@ -110,10 +110,10 @@ func Run(ag *agent.Agent, assets fs.FS, executable string) error {
 	tray.SetMenu(menu)
 	// Wails multiplies the offset by the display scale on macOS, whose window
 	// coordinates are already in points, so a Retina screen doubles it. Keep
-	// the popup snug under the menu bar there.
+	// the popup directly under the menu bar there, like a native menu.
 	offset := 6
 	if runtime.GOOS == "darwin" {
-		offset = 1
+		offset = 0
 	}
 	tray.AttachWindow(window).WindowOffset(offset)
 
