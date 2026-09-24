@@ -133,7 +133,7 @@
   .content {
     flex: 1;
     overflow-y: auto;
-    padding: 10px 14px 14px;
+    padding: 14px;
     display: grid;
     align-content: start;
     gap: 10px;

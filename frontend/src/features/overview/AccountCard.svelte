@@ -116,7 +116,7 @@
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    padding: 12px 14px;
+    padding: 14px;
     display: grid;
     gap: 10px;
   }
