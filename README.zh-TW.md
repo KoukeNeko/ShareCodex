@@ -53,8 +53,7 @@ Claude Code 與 Codex 紀錄，透過官方 CLI 確認目前登入的帳號，�
 
 ### 所有共用帳號一眼看完
 
-popup 列出每個共用帳號的 5 小時與每週額度、已用多少、何時重置。數字直接來自 Claude Code 與 Codex，
-不是推測。
+popup 列出每個共用帳號的 5 小時與每週額度、已用多少、何時重置。數字直接來自 Claude Code 與 Codex。
 
 ### 誰用了多少
 
