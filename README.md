@@ -56,7 +56,7 @@ ChatGPT web chat is not tracked.
 ### Every shared account at a glance
 
 The popup lists each shared account with its 5-hour and weekly windows, how much of each is used,
-and when it resets. The numbers come straight from Claude Code and Codex, not from a guess.
+and when it resets. The numbers come straight from Claude Code and Codex.
 
 ### Who used what
 
