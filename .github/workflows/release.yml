@@ -20,6 +20,11 @@ jobs:
           - os: windows-latest
             asset: ShareCodex-windows-amd64.zip
     runs-on: ${{ matrix.os }}
+    # Step-level env is not visible to that step's `if`, so whether signing
+    # secrets exist is decided here.
+    env:
+      HAS_MACOS_SIGNING: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 != '' && secrets.ASC_KEY_P8_BASE64 != '' }}
+      HAS_WINDOWS_SIGNING: ${{ secrets.WINDOWS_CERT_PFX != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -42,28 +47,59 @@ jobs:
           plutil -replace CFBundleShortVersionString -string "$VERSION" build/darwin/Info.plist
           plutil -replace CFBundleVersion -string "$VERSION" build/darwin/Info.plist
           wails3 task darwin:package:universal VERSION="$VERSION"
-      # Developer ID signing and notarization run only when the secrets are
-      # configured; otherwise the bundle keeps its ad-hoc signature.
+      # Developer ID signing and notarization (App Store Connect API key) run
+      # only when the secrets are configured; otherwise the bundle keeps its
+      # ad-hoc signature.
       - name: Sign and notarize
-        if: runner.os == 'macOS' && env.MACOS_CERT_P12 != ''
+        if: runner.os == 'macOS' && env.HAS_MACOS_SIGNING == 'true'
         env:
-          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
           MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
-          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
         run: |
-          echo "$MACOS_CERT_P12" | base64 --decode > cert.p12
-          security create-keychain -p ci build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p ci build.keychain
-          security import cert.p12 -k build.keychain -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
-          codesign --force --deep --options runtime --timestamp --sign "$MACOS_SIGN_IDENTITY" bin/ShareCodex.app
-          ditto -c -k --keepParent bin/ShareCodex.app notarize.zip
-          xcrun notarytool submit notarize.zip --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/build.keychain-db"
+          keychain_password="$(uuidgen)"
+          echo "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          echo "$ASC_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
+          # Keep the existing keychains searchable; the list is split on purpose.
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+
+          identity=$(security find-identity -v -p codesigning "$keychain" | awk -F'"' '/Developer ID Application/ {print $2; exit}')
+          if [ -z "$identity" ]; then
+            echo "::error::MACOS_CERTIFICATE_P12_BASE64 contains no Developer ID Application certificate"
+            exit 1
+          fi
+          codesign --force --options runtime --timestamp --sign "$identity" bin/ShareCodex.app
+          codesign --verify --strict --verbose=2 bin/ShareCodex.app
+
+          ditto -c -k --keepParent bin/ShareCodex.app "$RUNNER_TEMP/notarize.zip"
+          result=$(xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --key "$RUNNER_TEMP/AuthKey.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" \
+            --wait --output-format json)
+          echo "$result"
+          if [ "$(echo "$result" | jq -r .status)" != "Accepted" ]; then
+            xcrun notarytool log "$(echo "$result" | jq -r .id)" \
+              --key "$RUNNER_TEMP/AuthKey.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" || true
+            echo "::error::Notarization was not accepted"
+            exit 1
+          fi
           xcrun stapler staple bin/ShareCodex.app
+          spctl --assess --type execute --verbose bin/ShareCodex.app
+      - name: Remove signing material
+        if: always() && runner.os == 'macOS' && env.HAS_MACOS_SIGNING == 'true'
+        run: |
+          security delete-keychain "$RUNNER_TEMP/build.keychain-db" || true
+          rm -f "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/notarize.zip"
       - name: Zip macOS app
         if: runner.os == 'macOS'
         run: ditto -c -k --keepParent bin/ShareCodex.app "${{ matrix.asset }}"
@@ -73,7 +109,7 @@ jobs:
         shell: bash
         run: wails3 task windows:build VERSION="$VERSION"
       - name: Sign Windows app
-        if: runner.os == 'Windows' && env.WINDOWS_CERT_PFX != ''
+        if: runner.os == 'Windows' && env.HAS_WINDOWS_SIGNING == 'true'
         shell: pwsh
         env:
           WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}

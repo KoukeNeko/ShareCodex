@@ -96,6 +96,6 @@ domain  ←  provider adapters  ←  client / server  ←  Wails / HTTP / SQL / 
 
 | Secret | 用途 |
 |---|---|
-| `MACOS_CERT_P12`（base64）、`MACOS_CERT_PASSWORD`、`MACOS_SIGN_IDENTITY` | Developer ID 簽署 |
-| `APPLE_ID`、`APPLE_TEAM_ID`、`APPLE_APP_PASSWORD` | 公證 |
+| `MACOS_CERTIFICATE_P12_BASE64`（base64 編碼的 `.p12`，內含 Developer ID Application 憑證與私鑰）、`MACOS_CERT_PASSWORD` | Developer ID 簽署 |
+| `ASC_KEY_P8_BASE64`（base64 編碼的 App Store Connect API 金鑰 `.p8`）、`APPLE_API_KEY_ID`、`APPLE_API_ISSUER_ID` | 公證 |
 | `WINDOWS_CERT_PFX`（base64）、`WINDOWS_CERT_PASSWORD` | Windows 程式碼簽章 |
