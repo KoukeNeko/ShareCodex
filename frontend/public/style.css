@@ -42,28 +42,29 @@
   }
 }
 
-/* macOS: the window is Liquid Glass, so surfaces are translucent layers over
-   it and colors follow the system's label colors and accent color. */
-:root.macos {
-  --bg: transparent;
-  --surface: rgb(255 255 255 / 0.5);
-  --text: rgb(0 0 0 / 0.85);
-  --muted: rgb(0 0 0 / 0.5);
-  --line: rgb(0 0 0 / 0.08);
-  --track: rgb(0 0 0 / 0.08);
-  --accent: AccentColor;
-  --accent-soft: color-mix(in srgb, AccentColor 18%, transparent);
-  --model-other: rgb(0 0 0 / 0.3);
+/* macOS: the window is Liquid Glass, so the page is translucent over it. In
+   light mode the colors follow the system's label and accent colors; in dark
+   mode the app's own dark palette stays, with see-through backgrounds. */
+@media (prefers-color-scheme: light) {
+  :root.macos {
+    /* Transparent so the glass keeps the tint chosen in System Settings >
+       Appearance > Liquid Glass. */
+    --bg: transparent;
+    --surface: rgb(255 255 255 / 0.5);
+    --text: rgb(0 0 0 / 0.85);
+    --muted: rgb(0 0 0 / 0.5);
+    --line: rgb(0 0 0 / 0.08);
+    --track: rgb(0 0 0 / 0.08);
+    --accent: AccentColor;
+    --accent-soft: color-mix(in srgb, AccentColor 18%, transparent);
+    --model-other: rgb(0 0 0 / 0.3);
+  }
 }
 
 @media (prefers-color-scheme: dark) {
   :root.macos {
-    --surface: rgb(255 255 255 / 0.06);
-    --text: rgb(255 255 255 / 0.88);
-    --muted: rgb(255 255 255 / 0.55);
-    --line: rgb(255 255 255 / 0.1);
-    --track: rgb(255 255 255 / 0.12);
-    --model-other: rgb(255 255 255 / 0.3);
+    --bg: rgb(23 25 29 / 0.35);
+    --surface: rgb(32 35 40 / 0.45);
   }
 }
 
