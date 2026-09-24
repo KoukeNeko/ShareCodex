@@ -90,8 +90,7 @@ server 連不上時照常記錄，恢復連線後再上傳。可以設定登入�
 ## 開始使用
 
 1. **向架設 ShareCodex server 的人取得加入連結。**
-2. **安裝 app**：從[最新 release](https://github.com/KoukeNeko/ShareCodex/releases/latest) 下載，
-   從選單列或系統匣開啟。
+2. **安裝 app**（見[取得 app](#取得-app)），從選單列或系統匣開啟。
 3. **貼上加入連結。** 每台電腦各需要一條連結。
 4. **照常在 Claude Code 或 Codex 登入共用帳號。** app 看到該帳號後就會出現。
 5. **在 app 設定頁啟用 statusLine 擷取**，才能取得 Claude 的額度。原本的 statusLine 照常顯示，
@@ -139,9 +138,23 @@ docker compose up -d
 
 ## 取得 app
 
-從[最新 GitHub Release](https://github.com/KoukeNeko/ShareCodex/releases/latest) 下載桌面 app：
+macOS，使用 [Homebrew](https://brew.sh)：
+
+```bash
+brew install --cask koukeneko/tap/sharecodex
+```
+
+Windows，使用 [Scoop](https://scoop.sh)：
+
+```powershell
+scoop bucket add koukeneko https://github.com/KoukeNeko/scoop-bucket
+scoop install koukeneko/sharecodex
+```
+
+也可以從[最新 GitHub Release](https://github.com/KoukeNeko/ShareCodex/releases/latest) 下載
 `ShareCodex-macos-universal.zip` 或 `ShareCodex-windows-amd64.zip`。macOS 版以 Developer ID 簽署並經
-Apple 公證。app 會檢查 GitHub 是否有新版本並提示，但不會自行下載或安裝任何東西。
+Apple 公證。app 會檢查 GitHub 是否有新版本並提示，但不會自行下載或安裝任何東西。更新請執行
+`brew upgrade --cask sharecodex` 或 `scoop update sharecodex`。
 
 ---
 
@@ -194,9 +207,11 @@ provider 程式碼，由 `internal/architecture_test.go` 檢查。設計與驗�
 
 推送 `v*` tag 會觸發 `.github/workflows/release.yml`，產生 macOS universal `.app`、Windows `.exe`、
 Linux server binary 與 Docker Compose bundle，把 server 映像檔推送到 `ghcr.io/koukeneko/sharecodex-server`，
-並建立 GitHub Release。
+並建立附 `SHA256SUMS` 的 GitHub Release。接著執行 `.github/workflows/packages.yml`，更新
+[KoukeNeko/homebrew-tap](https://github.com/KoukeNeko/homebrew-tap) 的 cask 與
+[KoukeNeko/scoop-bucket](https://github.com/KoukeNeko/scoop-bucket) 的 manifest；也可以手動執行來補發某個 release。
 
-簽署在設定下列 repository secrets 後才會執行；沒有設定時，macOS 版只有 ad-hoc 簽署，
+簽署在設定對應的 repository secrets 後才會執行；沒有設定時，macOS 版只有 ad-hoc 簽署，
 第一次開啟需在「系統設定 › 隱私權與安全性」允許。
 
 | Secret | 用途 |
@@ -204,6 +219,7 @@ Linux server binary 與 Docker Compose bundle，把 server 映像檔推送到 `g
 | `MACOS_CERTIFICATE_P12_BASE64`（base64 編碼的 `.p12`，內含 Developer ID Application 憑證與私鑰）、`MACOS_CERT_PASSWORD` | Developer ID 簽署 |
 | `ASC_KEY_P8_BASE64`（base64 編碼的 App Store Connect API 金鑰 `.p8`）、`APPLE_API_KEY_ID`、`APPLE_API_ISSUER_ID` | 公證 |
 | `WINDOWS_CERT_PFX`（base64）、`WINDOWS_CERT_PASSWORD` | Windows 程式碼簽章 |
+| `HOMEBREW_TAP_TOKEN`、`SCOOP_BUCKET_TOKEN`（對 tap 與 bucket 具 Contents 讀寫權限的 fine-grained token） | 發佈套件；必要 |
 
 <p>
   <a href="https://github.com/KoukeNeko/ShareCodex/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/KoukeNeko/ShareCodex/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI"></a>

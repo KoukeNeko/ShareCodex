@@ -99,8 +99,8 @@ your server. No shell access to the container is needed.
 ## Getting started
 
 1. **Get a join link** from whoever runs your ShareCodex server.
-2. **Install the app** from the [latest release](https://github.com/KoukeNeko/ShareCodex/releases/latest)
-   and open it from the menu bar or system tray.
+2. **Install the app** (see [Get the app](#get-the-app)) and open it from the menu bar or system
+   tray.
 3. **Paste the join link.** Each of your computers needs its own link.
 4. **Sign in to the shared account** in Claude Code or Codex as usual. The account appears once the
    app sees it.
@@ -152,11 +152,24 @@ model provider — is ignored, because it doesn't draw on the shared subscriptio
 
 ## Get the app
 
-Download the desktop app from the
-[latest GitHub Release](https://github.com/KoukeNeko/ShareCodex/releases/latest):
-`ShareCodex-macos-universal.zip` or `ShareCodex-windows-amd64.zip`. The macOS app is signed with a
-Developer ID and notarized by Apple. The app checks GitHub for new releases and tells you when one
-is out; it never installs anything by itself.
+macOS, with [Homebrew](https://brew.sh):
+
+```bash
+brew install --cask koukeneko/tap/sharecodex
+```
+
+Windows, with [Scoop](https://scoop.sh):
+
+```powershell
+scoop bucket add koukeneko https://github.com/KoukeNeko/scoop-bucket
+scoop install koukeneko/sharecodex
+```
+
+Or download `ShareCodex-macos-universal.zip` or `ShareCodex-windows-amd64.zip` from the
+[latest GitHub Release](https://github.com/KoukeNeko/ShareCodex/releases/latest). The macOS app is
+signed with a Developer ID and notarized by Apple. The app checks GitHub for new releases and tells
+you when one is out; it never installs anything by itself. Update with `brew upgrade --cask
+sharecodex` or `scoop update sharecodex`.
 
 ---
 
@@ -214,9 +227,13 @@ Design notes and verification records are in [docs/plan.md](docs/plan.md) and
 
 Pushing a `v*` tag runs `.github/workflows/release.yml`. It builds a universal macOS `.app`, a
 Windows `.exe`, Linux server binaries and the Docker Compose bundle, pushes the server image to
-`ghcr.io/koukeneko/sharecodex-server`, and creates a GitHub Release.
+`ghcr.io/koukeneko/sharecodex-server`, and creates a GitHub Release with `SHA256SUMS`. It then runs
+`.github/workflows/packages.yml`, which updates the cask in
+[KoukeNeko/homebrew-tap](https://github.com/KoukeNeko/homebrew-tap) and the manifest in
+[KoukeNeko/scoop-bucket](https://github.com/KoukeNeko/scoop-bucket); run it by hand to backfill a
+release.
 
-Code signing runs only when these repository secrets are set. Without them, the macOS app is only
+Code signing runs only when its repository secrets are set. Without them, the macOS app is only
 ad-hoc signed and users must allow it the first time in System Settings › Privacy & Security.
 
 | Secret | Purpose |
@@ -224,6 +241,7 @@ ad-hoc signed and users must allow it the first time in System Settings › Priv
 | `MACOS_CERTIFICATE_P12_BASE64` (base64 of a `.p12` containing a Developer ID Application certificate and its key), `MACOS_CERT_PASSWORD` | Developer ID signing |
 | `ASC_KEY_P8_BASE64` (base64 App Store Connect API key `.p8`), `APPLE_API_KEY_ID`, `APPLE_API_ISSUER_ID` | Notarization |
 | `WINDOWS_CERT_PFX` (base64), `WINDOWS_CERT_PASSWORD` | Windows code signing |
+| `HOMEBREW_TAP_TOKEN`, `SCOOP_BUCKET_TOKEN` (fine-grained tokens with Contents read/write on the tap and the bucket) | Publishing packages; required |
 
 <p>
   <a href="https://github.com/KoukeNeko/ShareCodex/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/KoukeNeko/ShareCodex/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI"></a>

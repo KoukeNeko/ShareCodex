@@ -203,6 +203,21 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # Scoop's autoupdate reads hashes from SHA256SUMS.
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum -- * > SHA256SUMS
       - run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
+
+  packages:
+    needs: publish
+    permissions:
+      contents: read
+    uses: ./.github/workflows/packages.yml
+    with:
+      version: ${{ github.ref_name }}
+    secrets:
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
