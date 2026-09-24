@@ -52,7 +52,7 @@ Wails v3 的建置（Taskfile、bindings 產生、`embed frontend/dist`）預設
 ```
 ShareCodex/
 ├── main.go, desktop.go, scan.go   # 桌面 app（main package）；子指令 join、agent、scan、statusline
-├── cmd/sharecodex-server/         # serve 與 admin …（第一版的管理介面）
+├── cmd/sharecodex-server/         # server 進入點（同步 API 與 /admin 管理介面）
 ├── internal/
 │   ├── account/ identity/ usage/ quota/ attribution/   # domain，不依賴任何 adapter
 │   ├── provider/
@@ -80,7 +80,8 @@ ShareCodex/
 │   └── server/
 │       ├── storage/               # Postgres（migrations 以 embed 內嵌）、冪等 ingest
 │       ├── query/                 # overview：額度、分配、估計用量
-│       └── httpapi/               # /internal/api/v1 與 /join/
+│       ├── httpapi/               # /internal/api/v1 與 /join/
+│       └── admin/                 # /admin 網頁管理介面（templates 以 embed 內嵌）
 ├── frontend/                      # Vite + Svelte 5 + TS；src/{components,features/{overview,settings},lib}
 ├── build/                         # Wails 建置設定、圖示、Info.plist、Windows 資源
 ├── testdata/{claude,codex}/       # 合成的 fixture（無真實 prompt）
@@ -108,15 +109,13 @@ ShareCodex/
 
 ## 成員加入流程
 
-1. **建立第一位 admin**（Server 主機上執行）：`sharecodex-server admin person add --name 江董 --admin`。
-2. **建立成員並產生邀請**：
-   - `sharecodex-server admin person add --name 江江江`
-   - `sharecodex-server admin invite --person <id>`
-   - 指令會印出一條加入連結 `https://<server>/join/<code>`。這個連結 24 小時內有效，只能用一次。Server 只存 code 的雜湊。
+1. **管理者登入**：開啟 `PUBLIC_URL/admin/`，以 `.env` 的 `ADMIN_PASSWORD` 登入。管理權限來自這組密碼，不綁定成員身分，所以沒有「第一位 admin」的引導問題。
+2. **建立成員並產生邀請**：在「成員」頁新增成員，按「產生加入連結」。
+   - 頁面顯示一條加入連結 `https://<server>/join/<code>`，24 小時內有效、只能用一次。Server 只存 code 的雜湊，因此連結只顯示這一次。
 3. **成員加入**：成員安裝桌面 app，貼上加入連結。app 會以 `POST /pair` 送出 `{code, device_name, platform}`，換回 `{device_id, person_id, token}`，token 存進 OS keychain。
 4. **同一人的其他裝置**：對同一個 person 再產生一條邀請即可。一條邀請只能綁一台裝置。
-5. **加入帳號**：不需要 admin 手動設定。成員在自己電腦上以共用帳號登入 Claude Code 或 Codex 後，裝置第一次回報該帳號的觀測，Server 就自動建立 Membership（`ShareWeight = 1`）。admin 可以調整權重，或用 `admin share remove` 移除成員。
-6. **退出與撤銷**：`admin device revoke --id` 讓 token 失效，之後該裝置的同步會收到 401，app 顯示「裝置已撤銷」。既有的用量紀錄保留，因為帳本只能新增。
+5. **加入帳號**：不需要 admin 手動設定。成員在自己電腦上以共用帳號登入 Claude Code 或 Codex 後，裝置第一次回報該帳號的觀測，Server 就自動建立 Membership（`ShareWeight = 1`）。admin 可以在「帳號」頁調整權重；權重設為 0 即移出分配，但保留該成員的用量紀錄（Membership 列保留，自動加入不會把人加回來）。
+6. **退出與撤銷**：在「裝置」頁撤銷裝置，讓 token 失效，之後該裝置的同步會收到 401，app 顯示「裝置已撤銷」。既有的用量紀錄保留，因為帳本只能新增。
 
 ## 額度占比分配
 
@@ -124,7 +123,7 @@ ShareCodex/
 
 - **分配（allotment）**：`allotted% = ShareWeight / Σ(該帳號所有成員的 ShareWeight) × 100`。
   - 預設所有人權重都是 1，也就是平均分配。
-  - admin 可以用 `sharecodex-server admin share set --account <id> --person <id> --weight 2` 調整。例如付比較多錢的人權重 2。
+  - admin 可以在「帳號」頁調整，也能把尚未使用該帳號的成員先加進來。例如付比較多錢的人權重 2。
   - 分配只是資訊，**不強制執行**，因為技術上無法阻止某個人繼續使用共用帳號。
 - **估計使用（usage estimate）**：對 bucket 的視窗 `[ResetsAt − WindowMinutes, now]`：
   - 每人的加權成本 `c_p = Σ price(model) · tokens`。價格表嵌入在 `internal/attribution/pricing.json`，只用來算相對比例，不代表實際帳單。
@@ -188,7 +187,10 @@ ShareCodex/
 | `GET /join/{code}` | 瀏覽器開啟加入連結時，顯示「請在 ShareCodex 桌面 app 貼上此連結」的純文字頁 | 無 |
 
 - Device token 是 32 bytes 隨機值。Server 只存雜湊，client 存在 OS keychain。
-- 所有管理動作都用 `sharecodex-server admin …` CLI，直接存取資料庫，第一版不開放管理用的 HTTP API。
+- 管理動作在 `/admin/` 網頁介面完成（Go `html/template` 伺服器端渲染，不另建 SPA）：
+  - 以 `ADMIN_PASSWORD`（至少 12 字元）登入，session 存在記憶體（12 小時，重啟即失效）。登入失敗會延遲 1 秒並序列化，減慢暴力猜測。
+  - Cookie 為 `HttpOnly`、`SameSite=Strict`，`PUBLIC_URL` 為 https 時加上 `Secure`；表單另以 Go 標準庫 `http.CrossOriginProtection` 擋跨站請求。
+  - 頁面：總覽、成員（新增、產生加入連結）、帳號（命名、權重）、裝置（撤銷）。
   管理動作包括：person、invite、account label、share、device revoke。
 - Router 使用 Go 標準庫 `net/http` 的 method routing，不引入 web 框架。
 
@@ -210,7 +212,7 @@ ShareCodex/
 - **M0 技術驗證**：結果見 `docs/spikes.md`。
 - **M1 骨架與本機解析**：domain、兩個 provider 的解析器、`scan`、本機 SQLite、`sharecodex scan`、fixture 測試。
 - **M2 額度與帳號時間軸**：Codex rollout 與 app-server 額度、statusLine shim 與安裝器、帳號觀測與事件歸屬。
-- **M3 Server 與同步**：Postgres schema、admin CLI、pairing、冪等 `/sync`、outbox、`deploy/`。
+- **M3 Server 與同步**：Postgres schema、`/admin` 網頁管理介面、pairing、冪等 `/sync`、outbox、`deploy/`。
 - **M4 桌面 popup**：Wails v3 系統匣／選單列、Svelte popup、設定頁（加入、statusLine、登入時啟動）。
 - **M5 歸因與 overview**：分配、估計用量、未歸屬、`/overview`。
 - **M6 發佈**：CI（Go 三平台、Postgres 整合、前端檢查、桌面建置）、release workflow（macOS universal、Windows、server binary）、更新提示。

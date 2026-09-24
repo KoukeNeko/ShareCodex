@@ -24,7 +24,7 @@
 
 ```bash
 cd deploy
-cp .env.example .env    # 設定 POSTGRES_PASSWORD 與 PUBLIC_URL
+cp .env.example .env    # 設定 POSTGRES_PASSWORD、PUBLIC_URL 與 ADMIN_PASSWORD
 docker compose up -d
 ```
 
@@ -32,29 +32,20 @@ docker compose up -d
 
 ## 管理
 
-所有管理動作都在 server 上用 CLI 執行：
+開啟 `PUBLIC_URL/admin/`，用 `.env` 裡的 `ADMIN_PASSWORD` 登入。管理介面有四頁：
 
-```bash
-docker compose exec server sharecodex-server admin person add --name 江董 --admin
-```
-
-| 指令 | 用途 |
+| 頁面 | 用途 |
 |---|---|
-| `admin person add --name NAME [--admin]` | 新增成員 |
-| `admin person list` | 列出成員 |
-| `admin invite --person PERSON [--ttl 24h]` | 產生一次性加入連結 |
-| `admin account list` | 列出帳號（自動建立，`HINT` 是遮罩過的 email） |
-| `admin account label --account ACCOUNT --label LABEL` | 幫帳號命名 |
-| `admin share list --account ACCOUNT` | 查看分配 |
-| `admin share set --account ACCOUNT --person PERSON --weight W` | 調整分配權重 |
-| `admin device list` | 列出裝置 |
-| `admin device revoke --id DEVICE` | 撤銷裝置 |
+| 總覽 | 每個帳號的 5 小時與每週額度，以及每位成員的分配與估計用量 |
+| 成員 | 新增成員、產生一次性加入連結 |
+| 帳號 | 幫帳號命名、設定每位成員的分配權重 |
+| 裝置 | 查看各裝置最後同步時間、撤銷裝置 |
 
-`PERSON` 與 `ACCOUNT` 可以填 ID，也可以填完整名稱。
+帳號會自動建立，旁邊遮罩過的 email 用來分辨是哪個帳號。管理登入狀態只存在記憶體，重新啟動 server 後需要重新登入。
 
 ## 成員加入
 
-1. admin 執行 `admin person add` 建立成員，再用 `admin invite` 產生加入連結（24 小時內有效、只能用一次），傳給對方。
+1. admin 在「成員」頁新增成員，按「產生加入連結」取得連結（24 小時內有效、只能用一次），傳給對方。
 2. 成員安裝桌面 app，在 popup 貼上加入連結。同一人的每台電腦各需要一條連結。
 3. 成員在自己電腦上用共用帳號登入 Claude Code 或 Codex。app 第一次看到該帳號時，server 自動建立帳號與成員關係（權重 1），不需要 admin 手動設定。
 4. 要取得 Claude 的額度，需在 app 的設定頁啟用「statusLine 擷取」。app 會修改 `~/.claude/settings.json`（先備份），原本的 statusLine 照常顯示，停用時會還原。

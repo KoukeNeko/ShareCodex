@@ -3,59 +3,21 @@ package httpapi_test
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"math"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"os"
 	"testing"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
-
+	"github.com/KoukeNeko/ShareCodex/internal/identity"
 	"github.com/KoukeNeko/ShareCodex/internal/server/httpapi"
 	"github.com/KoukeNeko/ShareCodex/internal/server/storage"
+	"github.com/KoukeNeko/ShareCodex/internal/server/storage/storagetest"
 	"github.com/KoukeNeko/ShareCodex/internal/syncapi"
 )
-
-// newStore creates a throwaway database on the server named by
-// TEST_DATABASE_URL, e.g.
-// postgres://postgres:test@localhost:55432/sharecodex?sslmode=disable
-func newStore(t *testing.T) *storage.Store {
-	t.Helper()
-	base := os.Getenv("TEST_DATABASE_URL")
-	if base == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
-	admin, err := sql.Open("pgx", base)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b := make([]byte, 6)
-	rand.Read(b)
-	name := "sharecodex_test_" + hex.EncodeToString(b)
-	if _, err := admin.Exec("CREATE DATABASE " + name); err != nil {
-		t.Fatal(err)
-	}
-	u, _ := url.Parse(base)
-	u.Path = "/" + name
-	store, err := storage.Open(context.Background(), u.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		store.Close()
-		admin.Exec("DROP DATABASE " + name + " WITH (FORCE)")
-		admin.Close()
-	})
-	return store
-}
 
 type client struct {
 	t     *testing.T
@@ -90,7 +52,7 @@ func (c client) do(method, path string, body, out any) int {
 func pair(t *testing.T, store *storage.Store, base, person string) client {
 	t.Helper()
 	ctx := context.Background()
-	p, err := store.AddPerson(ctx, person, false)
+	p, err := store.AddPerson(ctx, person)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +79,7 @@ func pair(t *testing.T, store *storage.Store, base, person string) client {
 func ptr[T any](v T) *T { return &v }
 
 func TestPairSyncOverview(t *testing.T) {
-	store := newStore(t)
+	store := storagetest.New(t)
 	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
 	defer srv.Close()
 
@@ -186,7 +148,7 @@ func TestPairSyncOverview(t *testing.T) {
 
 func TestShareWeightsAndRevocation(t *testing.T) {
 	ctx := context.Background()
-	store := newStore(t)
+	store := storagetest.New(t)
 	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
 	defer srv.Close()
 
@@ -196,11 +158,18 @@ func TestShareWeightsAndRevocation(t *testing.T) {
 	if st := alice.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version, Observations: []syncapi.Observation{obs}}, nil); st != http.StatusOK {
 		t.Fatalf("sync = %d", st)
 	}
-	acct, err := store.FindAccount(ctx, "ma***")
-	if err != nil {
-		t.Fatal(err)
+	accounts, err := store.Accounts(ctx)
+	if err != nil || len(accounts) != 1 {
+		t.Fatalf("accounts = %v, %v", accounts, err)
 	}
-	bob, _ := store.FindPerson(ctx, "bob")
+	acct := accounts[0]
+	persons, _ := store.Persons(ctx)
+	var bob identity.Person
+	for _, p := range persons {
+		if p.DisplayName == "bob" {
+			bob = p
+		}
+	}
 	if err := store.SetShareWeight(ctx, acct.ID, bob.ID, 3); err != nil {
 		t.Fatal(err)
 	}

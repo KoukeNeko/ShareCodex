@@ -5,7 +5,6 @@ package identity
 type Person struct {
 	ID          string
 	DisplayName string
-	IsAdmin     bool
 }
 
 type Platform string

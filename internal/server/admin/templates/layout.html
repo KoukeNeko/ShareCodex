@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · ShareCodex 管理</title>
+<style>
+:root {
+  --bg: #f6f7f9; --surface: #fff; --text: #16181d; --muted: #69707d; --line: #e3e6eb;
+  --track: #e9ecf1; --accent: #225ed6; --accent-soft: #dde7fb; --warn: #b86b00; --warn-soft: #fbecd4; --danger: #c4312b;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17191d; --surface: #202328; --text: #eceef2; --muted: #9aa1ad; --line: #2f333a;
+    --track: #30343c; --accent: #5b8cf0; --accent-soft: #24345a; --warn: #f0a640; --warn-soft: #3d2f18; --danger: #f06a63;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif; }
+header { background: var(--surface); border-bottom: 1px solid var(--line); }
+.bar { max-width: 960px; margin: 0 auto; padding: 0 16px; display: flex; align-items: center; gap: 12px; height: 52px; }
+.brand { font-weight: 600; }
+nav { display: flex; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; }
+nav a { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 6px; white-space: nowrap; }
+nav a.active { color: var(--text); background: var(--track); }
+main { max-width: 960px; margin: 0 auto; padding: 20px 16px 48px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 15px; margin: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0; }
+.stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.spread { justify-content: space-between; }
+.muted { color: var(--muted); }
+.small { font-size: 12.5px; }
+.num { font-variant-numeric: tabular-nums; }
+.error { color: var(--danger); border: 1px solid var(--danger); border-radius: 8px; padding: 8px 12px; margin: 0; }
+.tag { font-size: 11.5px; border-radius: 4px; padding: 1px 6px; background: var(--accent-soft); color: var(--accent); }
+.tag.warn { background: var(--warn-soft); color: var(--warn); }
+.tag.off { background: var(--track); color: var(--muted); }
+table { width: 100%; border-collapse: collapse; }
+.table-wrap { overflow-x: auto; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { font-weight: 500; color: var(--muted); font-size: 12.5px; }
+tr:last-child td { border-bottom: none; }
+input[type=text], input[type=password], input[type=number], select {
+  font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; }
+input[type=number] { width: 84px; }
+input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+input.grow { flex: 1; min-width: 0; }
+button { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.danger { color: var(--danger); }
+button.link { border: none; background: none; color: var(--muted); padding: 6px 8px; }
+form.inline { display: inline; margin: 0; }
+.meter { position: relative; height: 8px; border-radius: 4px; background: var(--track); }
+.meter.thin { height: 5px; }
+.meter > i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.meter > i.warn { background: var(--warn); }
+.meter > b { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--text); opacity: .55; }
+.grid2 { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); }
+.invite { border-color: var(--accent); }
+.invite input { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <span class="brand">ShareCodex</span>
+    {{if .Authed}}
+    <nav>
+      <a href="/admin/" class="{{if eq .Nav "overview"}}active{{end}}">總覽</a>
+      <a href="/admin/people" class="{{if eq .Nav "people"}}active{{end}}">成員</a>
+      <a href="/admin/accounts" class="{{if eq .Nav "accounts"}}active{{end}}">帳號</a>
+      <a href="/admin/devices" class="{{if eq .Nav "devices"}}active{{end}}">裝置</a>
+    </nav>
+    <form class="inline" method="post" action="/admin/logout"><button class="link">登出</button></form>
+    {{end}}
+  </div>
+</header>
+<main>
+  {{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+  {{template "content" .}}
+</main>
+</body>
+</html>

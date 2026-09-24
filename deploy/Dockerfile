@@ -12,4 +12,3 @@ COPY --from=build /out/sharecodex-server /usr/local/bin/sharecodex-server
 USER sharecodex
 EXPOSE 8080
 ENTRYPOINT ["sharecodex-server"]
-CMD ["serve"]

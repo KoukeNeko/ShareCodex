@@ -24,7 +24,7 @@ Requires Docker. The server does not terminate TLS; put it behind a reverse prox
 
 ```bash
 cd deploy
-cp .env.example .env    # set POSTGRES_PASSWORD and PUBLIC_URL
+cp .env.example .env    # set POSTGRES_PASSWORD, PUBLIC_URL and ADMIN_PASSWORD
 docker compose up -d
 ```
 
@@ -32,29 +32,20 @@ docker compose up -d
 
 ## Administration
 
-All admin tasks run as CLI commands on the server:
+Open `PUBLIC_URL/admin/` and sign in with `ADMIN_PASSWORD` from `.env`. The console has four pages:
 
-```bash
-docker compose exec server sharecodex-server admin person add --name Alice --admin
-```
-
-| Command | Purpose |
+| Page | What you do there |
 |---|---|
-| `admin person add --name NAME [--admin]` | Add a member |
-| `admin person list` | List members |
-| `admin invite --person PERSON [--ttl 24h]` | Create a single-use join link |
-| `admin account list` | List accounts (created automatically; `HINT` is the masked email) |
-| `admin account label --account ACCOUNT --label LABEL` | Name an account |
-| `admin share list --account ACCOUNT` | Show allotments |
-| `admin share set --account ACCOUNT --person PERSON --weight W` | Change an allotment weight |
-| `admin device list` | List devices |
-| `admin device revoke --id DEVICE` | Revoke a device |
+| Overview | See every account's 5-hour and weekly quota, and each member's allotment and estimated usage |
+| Members | Add members and create single-use join links |
+| Accounts | Rename accounts and set each member's allotment weight |
+| Devices | See each device's last sync and revoke devices |
 
-`PERSON` and `ACCOUNT` accept either an ID or the exact name.
+Accounts are created automatically; the masked email next to each one tells them apart. Admin sessions are kept in memory, so restarting the server signs the admin out.
 
 ## Joining
 
-1. An admin creates the member with `admin person add`, then runs `admin invite` to get a join link (valid for 24 hours, single use) and sends it to them.
+1. An admin adds the member on the Members page, then clicks 產生加入連結 to get a join link (valid for 24 hours, single use) and sends it to them.
 2. The member installs the desktop app and pastes the join link into the popup. Each of a person's computers needs its own link.
 3. The member signs in to the shared account in Claude Code or Codex on their own computer. The first time the app sees that account, the server creates the account and the membership (weight 1). No admin setup is needed.
 4. To get Claude's quota, the member turns on statusLine capture on the app's settings page. The app edits `~/.claude/settings.json` after backing it up. The member's existing statusLine keeps working, and turning the feature off restores the original.

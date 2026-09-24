@@ -1,0 +1,43 @@
+{{define "content"}}
+<h1>總覽</h1>
+{{if not .Data.Accounts}}
+  <div class="card"><p class="muted" style="margin:0">尚無帳號</p></div>
+{{end}}
+<div class="grid2">
+{{range .Data.Accounts}}
+  <section class="card">
+    <div class="row">
+      <h2>{{provider .Provider}}</h2><span class="muted">{{.Label}}</span>
+      {{if .PlanType}}<span class="tag">{{.PlanType}}</span>{{end}}
+    </div>
+    {{if not .Buckets}}<p class="muted" style="margin:0">尚無額度資料</p>{{end}}
+    {{range .Buckets}}
+      <div class="stack" style="gap:6px">
+        <div class="row spread">
+          <strong>{{bucket .Key .WindowMinutes}}</strong>
+          <span class="num"><strong>{{pct .UsedPercent}}</strong>
+            <span class="muted small">{{if .Reset}}已重置{{else if .ResetsAt}}{{when .ResetsAt}} 重置{{end}}</span></span>
+        </div>
+        <div class="meter"><i style="width:{{pct .UsedPercent}}"></i></div>
+        <div class="table-wrap"><table class="small">
+          <thead><tr><th>成員</th><th>估計用量</th><th>分配</th><th></th></tr></thead>
+          <tbody>
+          {{range .Members}}
+            <tr>
+              <td>{{.Name}}</td>
+              <td class="num">{{pct .UsedPercent}}</td>
+              <td class="num">{{pct .AllottedPercent}}</td>
+              <td>{{if over .}}<span class="tag warn">超出分配</span>{{end}}</td>
+            </tr>
+          {{end}}
+          {{if gt .UnattributedPercent 0.0}}
+            <tr><td class="muted">未歸屬</td><td class="num muted">{{pct .UnattributedPercent}}</td><td></td><td></td></tr>
+          {{end}}
+          </tbody>
+        </table></div>
+      </div>
+    {{end}}
+  </section>
+{{end}}
+</div>
+{{end}}

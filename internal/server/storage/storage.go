@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 
@@ -33,6 +34,7 @@ var (
 	ErrNotFound      = errors.New("not found")
 	ErrInvalidInvite = errors.New("invite is invalid, expired or already used")
 	ErrUnauthorized  = errors.New("device token is invalid or revoked")
+	ErrDuplicate     = errors.New("already exists")
 )
 
 type Store struct {
@@ -73,10 +75,14 @@ type Device struct {
 	Person identity.Person
 }
 
-func (s *Store) AddPerson(ctx context.Context, name string, admin bool) (identity.Person, error) {
-	p := identity.Person{ID: newID(), DisplayName: name, IsAdmin: admin}
+func (s *Store) AddPerson(ctx context.Context, name string) (identity.Person, error) {
+	p := identity.Person{ID: newID(), DisplayName: name}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO persons (id, display_name, is_admin) VALUES ($1, $2, $3)`, p.ID, p.DisplayName, p.IsAdmin)
+		`INSERT INTO persons (id, display_name) VALUES ($1, $2)`, p.ID, p.DisplayName)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" { // unique_violation on display_name
+		return identity.Person{}, fmt.Errorf("person %q: %w", name, ErrDuplicate)
+	}
 	if err != nil {
 		return identity.Person{}, fmt.Errorf("add person: %w", err)
 	}
@@ -84,7 +90,7 @@ func (s *Store) AddPerson(ctx context.Context, name string, admin bool) (identit
 }
 
 func (s *Store) Persons(ctx context.Context) ([]identity.Person, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, display_name, is_admin FROM persons ORDER BY created_at`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, display_name FROM persons ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +98,7 @@ func (s *Store) Persons(ctx context.Context) ([]identity.Person, error) {
 	var out []identity.Person
 	for rows.Next() {
 		var p identity.Person
-		if err := rows.Scan(&p.ID, &p.DisplayName, &p.IsAdmin); err != nil {
+		if err := rows.Scan(&p.ID, &p.DisplayName); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -100,14 +106,13 @@ func (s *Store) Persons(ctx context.Context) ([]identity.Person, error) {
 	return out, rows.Err()
 }
 
-// FindPerson accepts an ID or an exact display name.
-func (s *Store) FindPerson(ctx context.Context, ref string) (identity.Person, error) {
+func (s *Store) Person(ctx context.Context, id string) (identity.Person, error) {
 	var p identity.Person
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, display_name, is_admin FROM persons WHERE id = $1 OR display_name = $1`, ref).
-		Scan(&p.ID, &p.DisplayName, &p.IsAdmin)
+		`SELECT id, display_name FROM persons WHERE id = $1`, id).
+		Scan(&p.ID, &p.DisplayName)
 	if errors.Is(err, sql.ErrNoRows) {
-		return identity.Person{}, fmt.Errorf("person %q: %w", ref, ErrNotFound)
+		return identity.Person{}, fmt.Errorf("person %q: %w", id, ErrNotFound)
 	}
 	return p, err
 }
@@ -131,9 +136,9 @@ func (s *Store) Pair(ctx context.Context, code, deviceName, platform string) (De
 	token := newSecret()
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
 		err := tx.QueryRowContext(ctx, `
-			SELECT p.id, p.display_name, p.is_admin FROM invites i JOIN persons p ON p.id = i.person_id
+			SELECT p.id, p.display_name FROM invites i JOIN persons p ON p.id = i.person_id
 			WHERE i.code_hash = $1 AND i.used_at IS NULL AND i.expires_at > now()
-			FOR UPDATE OF i`, hashSecret(code)).Scan(&d.Person.ID, &d.Person.DisplayName, &d.Person.IsAdmin)
+			FOR UPDATE OF i`, hashSecret(code)).Scan(&d.Person.ID, &d.Person.DisplayName)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrInvalidInvite
 		}
@@ -163,8 +168,8 @@ func (s *Store) DeviceByToken(ctx context.Context, token string) (Device, error)
 		UPDATE devices SET last_seen_at = now()
 		FROM persons p
 		WHERE devices.token_hash = $1 AND devices.revoked_at IS NULL AND p.id = devices.person_id
-		RETURNING devices.id, devices.name, devices.platform, p.id, p.display_name, p.is_admin`, hashSecret(token)).
-		Scan(&d.ID, &d.Name, &platform, &d.Person.ID, &d.Person.DisplayName, &d.Person.IsAdmin)
+		RETURNING devices.id, devices.name, devices.platform, p.id, p.display_name`, hashSecret(token)).
+		Scan(&d.ID, &d.Name, &platform, &d.Person.ID, &d.Person.DisplayName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Device{}, ErrUnauthorized
 	}
@@ -340,18 +345,17 @@ func (s *Store) Accounts(ctx context.Context) ([]account.Account, error) {
 	return out, rows.Err()
 }
 
-// FindAccount accepts an ID or an exact label.
-func (s *Store) FindAccount(ctx context.Context, ref string) (account.Account, error) {
-	accounts, err := s.Accounts(ctx)
-	if err != nil {
-		return account.Account{}, err
+func (s *Store) Account(ctx context.Context, id string) (account.Account, error) {
+	var a account.Account
+	var provider string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, provider, ref_hash, hint, label, plan_type FROM accounts WHERE id = $1`, id).
+		Scan(&a.ID, &provider, &a.ExternalRefHash, &a.Hint, &a.Label, &a.PlanType)
+	if errors.Is(err, sql.ErrNoRows) {
+		return account.Account{}, fmt.Errorf("account %q: %w", id, ErrNotFound)
 	}
-	for _, a := range accounts {
-		if a.ID == ref || a.Label == ref {
-			return a, nil
-		}
-	}
-	return account.Account{}, fmt.Errorf("account %q: %w", ref, ErrNotFound)
+	a.Provider = account.Provider(provider)
+	return a, err
 }
 
 func (s *Store) SetAccountLabel(ctx context.Context, id, label string) error {
