@@ -19,6 +19,7 @@ const (
 	PathPair     = "/internal/api/v1/pair"
 	PathSync     = "/internal/api/v1/sync"
 	PathOverview = "/internal/api/v1/overview"
+	PathInvite   = "/internal/api/v1/invite"
 	PathJoin     = "/join/"
 )
 
@@ -84,6 +85,13 @@ type PairResponse struct {
 	PersonID   string `json:"person_id"`
 	PersonName string `json:"person_name"`
 	Token      string `json:"token"`
+}
+
+// InviteResponse is a join link code for another device of the same
+// person. The client adds its own server URL to make the link.
+type InviteResponse struct {
+	Code      string    `json:"code"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 type Error struct {

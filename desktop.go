@@ -1,3 +1,5 @@
+//go:build !linux
+
 package main
 
 import (
@@ -7,7 +9,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/KoukeNeko/ShareCodex/internal/client/agent"
 	"github.com/KoukeNeko/ShareCodex/internal/client/desktop"
@@ -32,17 +33,9 @@ func runDesktop() error {
 	defer logFile.Close()
 	log := slog.New(slog.NewTextHandler(logFile, nil))
 
-	exe, err := os.Executable()
+	exe, err := executable()
 	if err != nil {
 		return err
-	}
-	// Scoop runs the app through its `current` junction; resolving it would
-	// pin the statusLine hook and login item to a versioned folder that
-	// `scoop cleanup` deletes after an update.
-	if runtime.GOOS != "windows" {
-		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-			exe = resolved
-		}
 	}
 
 	ag, err := agent.New(context.Background(), version, log)

@@ -16,7 +16,7 @@
 <p align="center">
   <a href="https://github.com/KoukeNeko/ShareCodex/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/KoukeNeko/ShareCodex?style=for-the-badge&logo=github&label=RELEASE&color=225ED6"></a>
   <a href="https://github.com/KoukeNeko/ShareCodex/releases"><img alt="GitHub downloads" src="https://img.shields.io/github/downloads/KoukeNeko/ShareCodex/total?style=for-the-badge&logo=github&label=DOWNLOADS&color=4CAF50"></a>
-  <img alt="macOS | Windows" src="https://img.shields.io/badge/DESKTOP-macOS%20%7C%20Windows-414141?style=for-the-badge&logo=apple&logoColor=white">
+  <img alt="macOS | Windows | Linux" src="https://img.shields.io/badge/CLIENT-macOS%20%7C%20Windows%20%7C%20Linux-414141?style=for-the-badge&logo=apple&logoColor=white">
   <a href="https://github.com/KoukeNeko/ShareCodex/pkgs/container/sharecodex-server"><img alt="Server image" src="https://img.shields.io/badge/SERVER-ghcr.io-2496ED?style=for-the-badge&logo=docker&logoColor=white"></a>
   <a href="https://github.com/KoukeNeko/ShareCodex/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/KoukeNeko/ShareCodex?style=for-the-badge&logo=github&label=STARS&color=225ED6"></a>
 </p>
@@ -32,8 +32,9 @@ one thing: how much of the whole account is gone. ShareCodex adds the rest — *
 5-hour and weekly window is left, how much each person is allotted, roughly how much each has
 used, and which models used it.**
 
-Each member runs a small menu bar (macOS) or system tray (Windows) app. It reads the Claude Code and
-Codex logs already on the computer, asks the official CLIs which account is signed in, and syncs
+Each member runs a small menu bar (macOS) or system tray (Windows) app, and a command-line agent on
+Linux machines such as ones used over SSH. It reads the Claude Code and Codex logs already on the
+computer, asks the official CLIs which account is signed in, and syncs
 token counts to a server you host yourself.
 
 Only coding-agent usage counts: Claude Code, and the Codex CLI, desktop app and IDE extension.
@@ -71,7 +72,8 @@ tell whether the week went to Opus or to a long run of Sonnet.
 
 ### Joining takes one link
 
-An admin creates a single-use join link in the web console. The member pastes it into the app, signs
+An admin creates a single-use join link in the web console; a member who has joined can create
+more for their other computers. The member pastes it into the app, signs
 in to the shared account in Claude Code or Codex as usual, and is added to that account
 automatically.
 
@@ -101,7 +103,9 @@ your server. No shell access to the container is needed.
 1. **Get a join link** from whoever runs your ShareCodex server.
 2. **Install the app** (see [Get the app](#get-the-app)) and open it from the menu bar or system
    tray.
-3. **Paste the join link.** Each of your computers needs its own link.
+3. **Paste the join link.** Each of your computers needs its own link, and all of them count as
+   you. Once one computer has joined, get a link for the next from **Settings › Add device** or
+   `sharecodex invite`. On Linux, see [Linux and SSH machines](#linux-and-ssh-machines).
 4. **Sign in to the shared account** in Claude Code or Codex as usual. The account appears once the
    app sees it.
 5. **Turn on statusLine capture** in the app's settings to get Claude's quota. Your existing
@@ -142,6 +146,7 @@ Admin sessions are kept in memory, so restarting the server signs the admin out.
 ## Compatibility
 
 - **Desktop:** macOS (Apple silicon and Intel) and Windows (x64 and ARM64)
+- **Command line:** Linux (x64 and ARM64), including machines used only over SSH
 - **Agents:** Claude Code with a Claude Pro/Max subscription; Codex CLI, desktop app and IDE extension
   with a ChatGPT subscription
 - **Server:** any Docker host, linux/amd64 or linux/arm64
@@ -189,6 +194,29 @@ scoop update sharecodex
 
 The first command refreshes the bucket; the second installs the new version. Your settings, join
 and statusLine capture carry over.
+
+### Linux and SSH machines
+
+Linux has no tray app. The `sharecodex` command runs the same agent in the background, so usage on a
+machine you reach over SSH adds up with your other computers under your name.
+
+```bash
+brew install koukeneko/tap/sharecodex-cli                # Homebrew on Linux
+sharecodex join 'https://sharecodex.example.com/join/…'  # from Settings › Add device on your Mac
+sharecodex statusline-capture on                         # Claude's quota
+sharecodex autostart on                                  # systemd user service
+loginctl enable-linger                                   # keep it running after you log out
+sharecodex status
+```
+
+Without Homebrew, download `sharecodex-linux-amd64.tar.gz` or `sharecodex-linux-arm64.tar.gz` from the
+[latest GitHub Release](https://github.com/KoukeNeko/ShareCodex/releases/latest) and put `sharecodex`
+on your `PATH`, for example in `~/.local/bin`. SSH sessions usually have no keyring, so the device
+token is kept in `~/.config/ShareCodex` with owner-only permissions. `autostart on` copies your
+current `PATH` into the service so it finds `claude` and `codex`; run it again if they move.
+
+To update, run `brew update && brew upgrade sharecodex-cli` (or replace the binary), then
+`sharecodex autostart on` to restart the service.
 
 ---
 
@@ -245,9 +273,9 @@ Design notes and verification records are in [docs/plan.md](docs/plan.md) and
 ### Releases
 
 Pushing a `v*` tag runs `.github/workflows/release.yml`. It builds a universal macOS `.app`,
-Windows `.exe` files for x64 and ARM64, Linux server binaries and the Docker Compose bundle, pushes the server image to
+Windows `.exe` files for x64 and ARM64, the Linux CLI and server binaries and the Docker Compose bundle, pushes the server image to
 `ghcr.io/koukeneko/sharecodex-server`, and creates a GitHub Release with `SHA256SUMS`. It then runs
-`.github/workflows/packages.yml`, which updates the cask in
+`.github/workflows/packages.yml`, which updates the cask and the Linux formula (`sharecodex-cli`) in
 [KoukeNeko/homebrew-tap](https://github.com/KoukeNeko/homebrew-tap) and the manifest in
 [KoukeNeko/scoop-bucket](https://github.com/KoukeNeko/scoop-bucket); run it by hand to backfill a
 release.

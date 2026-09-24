@@ -117,6 +117,9 @@ func (s *Store) Person(ctx context.Context, id string) (identity.Person, error) 
 	return p, err
 }
 
+// InviteTTL is how long a join link stays valid.
+const InviteTTL = 24 * time.Hour
+
 // CreateInvite returns a one-time code; only its hash is stored.
 func (s *Store) CreateInvite(ctx context.Context, personID string, ttl time.Duration) (string, time.Time, error) {
 	code := newSecret()

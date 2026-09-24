@@ -12,6 +12,7 @@ type Platform string
 const (
 	PlatformDarwin  Platform = "darwin"
 	PlatformWindows Platform = "windows"
+	PlatformLinux   Platform = "linux"
 )
 
 type Device struct {

@@ -34,7 +34,6 @@ const MinPasswordLength = 12
 const (
 	sessionCookie = "sharecodex_admin"
 	sessionTTL    = 12 * time.Hour
-	inviteTTL     = 24 * time.Hour
 	maxFormBytes  = 64 << 10
 )
 
@@ -348,7 +347,7 @@ func (c *Console) invite(w http.ResponseWriter, r *http.Request) {
 		c.fail(w, "find person", err)
 		return
 	}
-	code, expires, err := c.store.CreateInvite(r.Context(), p.ID, inviteTTL)
+	code, expires, err := c.store.CreateInvite(r.Context(), p.ID, storage.InviteTTL)
 	if err != nil {
 		c.fail(w, "create invite", err)
 		return

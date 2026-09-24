@@ -20,6 +20,7 @@ var (
 	ErrRevoked       = errors.New("this device was revoked by an admin")
 	ErrUpgrade       = errors.New("the server needs a newer ShareCodex")
 	ErrInvalidInvite = errors.New("join link is invalid, expired or already used")
+	ErrServerTooOld  = errors.New("the server needs a newer ShareCodex to create join links; ask an admin for one")
 )
 
 type Client struct {
@@ -76,7 +77,20 @@ func (c *Client) Overview(ctx context.Context) (syncapi.Overview, error) {
 	return o, err
 }
 
-var errForbidden = errors.New("forbidden")
+// Invite creates a join link code for another device of this person.
+func (c *Client) Invite(ctx context.Context) (syncapi.InviteResponse, error) {
+	var resp syncapi.InviteResponse
+	err := c.do(ctx, http.MethodPost, syncapi.PathInvite, nil, &resp)
+	if errors.Is(err, errNotFound) {
+		return syncapi.InviteResponse{}, ErrServerTooOld
+	}
+	return resp, err
+}
+
+var (
+	errForbidden = errors.New("forbidden")
+	errNotFound  = errors.New("server returned 404 Not Found")
+)
 
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
 	var buf bytes.Buffer
@@ -106,6 +120,8 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 		return ErrRevoked
 	case http.StatusForbidden:
 		return errForbidden
+	case http.StatusNotFound:
+		return errNotFound
 	case http.StatusUpgradeRequired:
 		return ErrUpgrade
 	}

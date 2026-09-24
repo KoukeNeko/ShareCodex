@@ -134,6 +134,27 @@ jobs:
           name: ${{ matrix.asset }}
           path: ${{ matrix.asset }}
 
+  # Linux has no tray app; the CLI runs the agent, e.g. on a machine used
+  # over SSH.
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build binaries
+        run: |
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath \
+              -ldflags="-s -w -X main.version=${GITHUB_REF_NAME#v}" -o sharecodex .
+            tar czf "sharecodex-linux-$arch.tar.gz" sharecodex
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cli
+          path: sharecodex-linux-*.tar.gz
+
   server:
     runs-on: ubuntu-latest
     steps:
@@ -200,7 +221,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   publish:
-    needs: [desktop, server, server-image]
+    needs: [desktop, cli, server, server-image]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8

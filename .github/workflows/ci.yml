@@ -23,12 +23,14 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      # The Wails shell (root package and internal/client/desktop) needs
-      # WebKitGTK on Linux; it is built in the desktop job instead.
+      # The Wails shell (internal/client/desktop, and the root package on
+      # macOS and Windows) is built in the desktop job. On Linux the root
+      # package is the CLI only.
       - name: Test
         shell: bash
         run: |
           pkgs=$(go list ./internal/... ./cmd/... | grep -v /internal/client/desktop)
+          if [ "$RUNNER_OS" = Linux ]; then pkgs="$pkgs ."; fi
           # shellcheck disable=SC2086 # one argument per package
           go vet $pkgs
           # shellcheck disable=SC2086

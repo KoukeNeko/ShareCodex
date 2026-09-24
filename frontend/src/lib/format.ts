@@ -39,6 +39,10 @@ export function tokens(n: number): string {
   return String(n)
 }
 
+export function dateTime(iso: string): string {
+  return new Date(iso).toLocaleString(locale(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
 export function clock(iso: string | null | undefined): string {
   if (!iso) return ''
   return new Date(iso).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', hour12: false })

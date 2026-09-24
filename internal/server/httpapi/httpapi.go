@@ -34,6 +34,7 @@ func New(store *storage.Store, log *slog.Logger) http.Handler {
 	mux.HandleFunc("POST "+syncapi.PathPair, s.pair)
 	mux.HandleFunc("POST "+syncapi.PathSync, s.authed(s.sync))
 	mux.HandleFunc("GET "+syncapi.PathOverview, s.authed(s.overview))
+	mux.HandleFunc("POST "+syncapi.PathInvite, s.authed(s.invite))
 	return mux
 }
 
@@ -66,8 +67,8 @@ func deviceFrom(r *http.Request) storage.Device {
 // join answers a join link opened in a browser; pairing happens in the app.
 func (s *Server) join(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	fmt.Fprintln(w, "請在 ShareCodex 桌面 app 貼上這個加入連結。")
-	fmt.Fprintln(w, "Paste this join link into the ShareCodex desktop app.")
+	fmt.Fprintln(w, "請在 ShareCodex app 貼上這個加入連結，或在 Linux 執行 sharecodex join。")
+	fmt.Fprintln(w, "Paste this join link into the ShareCodex app, or run sharecodex join on Linux.")
 }
 
 func (s *Server) pair(w http.ResponseWriter, r *http.Request) {
@@ -123,6 +124,19 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, o)
+}
+
+// invite lets a joined device add another device for the same person, so
+// members need not ask an admin for every machine they use.
+func (s *Server) invite(w http.ResponseWriter, r *http.Request) {
+	d := deviceFrom(r)
+	code, expires, err := s.store.CreateInvite(r.Context(), d.PersonID, storage.InviteTTL)
+	if err != nil {
+		s.internalError(w, "create invite", err)
+		return
+	}
+	s.log.Info("device created invite", "person", d.Person.DisplayName, "device", d.Name)
+	writeJSON(w, http.StatusOK, syncapi.InviteResponse{Code: code, ExpiresAt: expires})
 }
 
 func decode(w http.ResponseWriter, r *http.Request, limit int64, v any) bool {

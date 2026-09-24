@@ -51,22 +51,27 @@ func (c client) do(method, path string, body, out any) int {
 
 func pair(t *testing.T, store *storage.Store, base, person string) client {
 	t.Helper()
-	ctx := context.Background()
-	p, err := store.AddPerson(ctx, person)
+	p, err := store.AddPerson(context.Background(), person)
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, _, err := store.CreateInvite(ctx, p.ID, time.Hour)
+	return pairDevice(t, store, base, p, person+"-laptop", identity.PlatformDarwin)
+}
+
+// pairDevice joins another device for an existing person.
+func pairDevice(t *testing.T, store *storage.Store, base string, p identity.Person, name string, platform identity.Platform) client {
+	t.Helper()
+	code, _, err := store.CreateInvite(context.Background(), p.ID, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
 	c := client{t: t, base: base}
 	var resp syncapi.PairResponse
-	req := syncapi.PairRequest{Version: syncapi.Version, Code: code, DeviceName: person + "-laptop", Platform: "darwin"}
+	req := syncapi.PairRequest{Version: syncapi.Version, Code: code, DeviceName: name, Platform: string(platform)}
 	if st := c.do("POST", syncapi.PathPair, req, &resp); st != http.StatusOK {
 		t.Fatalf("pair status = %d", st)
 	}
-	if resp.PersonName != person || resp.Token == "" {
+	if resp.PersonID != p.ID || resp.PersonName != p.DisplayName || resp.Token == "" {
 		t.Fatalf("pair response = %+v", resp)
 	}
 	if st := c.do("POST", syncapi.PathPair, req, nil); st != http.StatusForbidden {
@@ -196,5 +201,88 @@ func TestShareWeightsAndRevocation(t *testing.T) {
 	}
 	if st := alice.do("GET", syncapi.PathOverview, nil, nil); st != http.StatusUnauthorized {
 		t.Errorf("revoked device returned %d, want 401", st)
+	}
+}
+
+// One person's devices, such as a Mac and a Linux machine reached over SSH,
+// add up to a single member.
+func TestOnePersonManyDevices(t *testing.T) {
+	ctx := context.Background()
+	store := storagetest.New(t)
+	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	defer srv.Close()
+
+	alice, err := store.AddPerson(ctx, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mac := pairDevice(t, store, srv.URL, alice, "mac", identity.PlatformDarwin)
+
+	// The Mac creates the join link for the machine used over SSH.
+	var inv syncapi.InviteResponse
+	if st := mac.do("POST", syncapi.PathInvite, nil, &inv); st != http.StatusOK || inv.Code == "" {
+		t.Fatalf("invite = %d, %+v", st, inv)
+	}
+	if time.Until(inv.ExpiresAt) > storage.InviteTTL || time.Until(inv.ExpiresAt) < storage.InviteTTL-time.Minute {
+		t.Errorf("invite expires at %v, want about %v from now", inv.ExpiresAt, storage.InviteTTL)
+	}
+	server := client{t: t, base: srv.URL}
+	var paired syncapi.PairResponse
+	req := syncapi.PairRequest{Version: syncapi.Version, Code: inv.Code, DeviceName: "build-box", Platform: string(identity.PlatformLinux)}
+	if st := server.do("POST", syncapi.PathPair, req, &paired); st != http.StatusOK || paired.PersonID != alice.ID {
+		t.Fatalf("pair with a device's invite = %d, %+v; want alice", st, paired)
+	}
+	server.token = paired.Token
+	if st := (client{t: t, base: srv.URL}).do("POST", syncapi.PathInvite, nil, nil); st != http.StatusUnauthorized {
+		t.Errorf("invite without a device token returned %d, want 401", st)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	resets := now.Add(2 * time.Hour)
+	obs := syncapi.Observation{Provider: "anthropic", AccountRefHash: "max", Hint: "ma***", PlanType: "max", ObservedAt: now.Add(-time.Hour)}
+	event := func(key string) syncapi.Event {
+		return syncapi.Event{DedupeKey: key, AccountRefHash: "max", Provider: "anthropic", Product: "claude-code",
+			Model: "claude-opus-4-7", OccurredAt: now.Add(-30 * time.Minute), Input: 1_000_000}
+	}
+	snap := syncapi.Snapshot{Provider: "anthropic", AccountRefHash: "max", Source: "claude-statusline", ObservedAt: now,
+		Buckets: []syncapi.Bucket{{Key: "five_hour", UsedPercent: ptr(30.0), ResetsAt: &resets, WindowMinutes: ptr(300)}}}
+
+	for _, batch := range []struct {
+		c   client
+		req syncapi.SyncRequest
+	}{
+		{mac, syncapi.SyncRequest{Version: syncapi.Version, Observations: []syncapi.Observation{obs}, Events: []syncapi.Event{event("claude:m1:r1")}}},
+		{server, syncapi.SyncRequest{Version: syncapi.Version, Observations: []syncapi.Observation{obs},
+			Events: []syncapi.Event{event("claude:m2:r2"), event("claude:m3:r3")}, Snapshots: []syncapi.Snapshot{snap}}},
+	} {
+		if st := batch.c.do("POST", syncapi.PathSync, batch.req, nil); st != http.StatusOK {
+			t.Fatalf("sync = %d", st)
+		}
+	}
+
+	var ov syncapi.Overview
+	if st := mac.do("GET", syncapi.PathOverview, nil, &ov); st != http.StatusOK {
+		t.Fatalf("overview status = %d", st)
+	}
+	if len(ov.Accounts) != 1 || len(ov.Accounts[0].Buckets) != 1 {
+		t.Fatalf("overview = %+v", ov)
+	}
+	b := ov.Accounts[0].Buckets[0]
+	if len(b.Members) != 1 {
+		t.Fatalf("members = %+v, want alice once", b.Members)
+	}
+	m := b.Members[0]
+	if !m.IsYou || m.Requests != 3 || math.Abs(m.UsedPercent-30) > 1e-9 || b.UnattributedPercent != 0 {
+		t.Errorf("member = %+v, unattributed %v; want both devices' 3 requests and the whole 30%%", m, b.UnattributedPercent)
+	}
+
+	devices, err := store.Devices(ctx)
+	if err != nil || len(devices) != 2 {
+		t.Fatalf("devices = %+v, %v", devices, err)
+	}
+	for _, d := range devices {
+		if d.PersonID != alice.ID {
+			t.Errorf("device %s belongs to %s, want alice", d.Name, d.PersonName)
+		}
 	}
 }

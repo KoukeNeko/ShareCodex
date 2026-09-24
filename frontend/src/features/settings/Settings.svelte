@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Desktop, errorMessage, type State } from '../../lib/api'
+  import { Desktop, errorMessage, type Invite, type State } from '../../lib/api'
+  import { dateTime } from '../../lib/format'
   import { locales, t } from '../../lib/i18n.svelte'
 
   let { app }: { app: State } = $props()
@@ -7,6 +8,7 @@
   let busy = $state(false)
   let error = $state('')
   let confirmingLeave = $state(false)
+  let invite = $state<Invite | null>(null)
 
   async function run(action: () => Promise<void>) {
     busy = true
@@ -32,6 +34,12 @@
         <dt>{t('device')}</dt><dd>{app.device_name}</dd>
         <dt>{t('address')}</dt><dd class="url">{app.server_url}</dd>
       </dl>
+      {#if invite}
+        <div class="invite">
+          <input type="text" readonly value={invite.link} onfocus={(e) => e.currentTarget.select()} />
+          <p class="muted">{t('inviteNote', { time: dateTime(invite.expires_at) })}</p>
+        </div>
+      {/if}
       {#if confirmingLeave}
         <div class="confirm">
           <p><strong>{t('leaveConfirm')}</strong><br /><span class="muted">{t('leaveBody')}</span></p>
@@ -41,7 +49,10 @@
           </div>
         </div>
       {:else}
-        <button class="danger" onclick={() => (confirmingLeave = true)}>{t('leaveServer')}</button>
+        <div class="buttons">
+          <button onclick={() => run(async () => { invite = await Desktop.CreateInvite() })} disabled={busy}>{t('addDevice')}</button>
+          <button class="danger" onclick={() => (confirmingLeave = true)}>{t('leaveServer')}</button>
+        </div>
       {/if}
     {:else}
       <p class="muted">{t('notJoined')}</p>
@@ -102,4 +113,6 @@
   .row { display: flex; justify-content: space-between; align-items: center; width: 100%; }
   .confirm { display: grid; gap: 8px; width: 100%; }
   .actions { display: flex; gap: 6px; justify-content: flex-end; }
+  .buttons { display: flex; gap: 6px; }
+  .invite { display: grid; gap: 4px; width: 100%; }
 </style>

@@ -1,7 +1,7 @@
 name: Publish packages
 
-# Updates the Homebrew cask in KoukeNeko/homebrew-tap and the Scoop manifest
-# in KoukeNeko/scoop-bucket. The release workflow calls this after every
+# Updates the Homebrew cask (macOS) and formula (Linux) in
+# KoukeNeko/homebrew-tap and the Scoop manifest in KoukeNeko/scoop-bucket. The release workflow calls this after every
 # stable tag; run it by hand to backfill or repair a published release.
 on:
   workflow_call:
@@ -30,16 +30,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Each entry is one commit, so files sharing a repository are
+          # rendered by one job instead of racing to push.
           - package: homebrew
             repo: KoukeNeko/homebrew-tap
             token: HOMEBREW_TAP_TOKEN
-            script: scripts/render-homebrew-cask.sh
-            path: Casks/sharecodex.rb
+            files: >-
+              scripts/render-homebrew-cask.sh:Casks/sharecodex.rb
+              scripts/render-homebrew-formula.sh:Formula/sharecodex-cli.rb
           - package: scoop
             repo: KoukeNeko/scoop-bucket
             token: SCOOP_BUCKET_TOKEN
-            script: scripts/render-scoop-manifest.sh
-            path: bucket/sharecodex.json
+            files: scripts/render-scoop-manifest.sh:bucket/sharecodex.json
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -80,23 +82,25 @@ jobs:
       - name: Render
         env:
           VERSION: ${{ inputs.version }}
-          SCRIPT: ${{ matrix.script }}
+          FILES: ${{ matrix.files }}
         run: |
-          "$SCRIPT" "$VERSION" "$RUNNER_TEMP/SHA256SUMS" > "$RUNNER_TEMP/rendered"
-          cat "$RUNNER_TEMP/rendered"
+          for entry in $FILES; do
+            script="${entry%%:*}" target="${entry#*:}"
+            mkdir -p "$RUNNER_TEMP/rendered/$(dirname "$target")"
+            "$script" "$VERSION" "$RUNNER_TEMP/SHA256SUMS" > "$RUNNER_TEMP/rendered/$target"
+            cat "$RUNNER_TEMP/rendered/$target"
+          done
       - name: Push
         env:
           TOKEN: ${{ secrets[matrix.token] }}
           REPO: ${{ matrix.repo }}
-          TARGET: ${{ matrix.path }}
           VERSION: ${{ inputs.version }}
         run: |
           checkout="$RUNNER_TEMP/package-repo"
           git clone --depth 1 "https://x-access-token:$TOKEN@github.com/$REPO.git" "$checkout" 2>/dev/null
-          mkdir -p "$checkout/$(dirname "$TARGET")"
-          cp "$RUNNER_TEMP/rendered" "$checkout/$TARGET"
+          cp -R "$RUNNER_TEMP/rendered/." "$checkout/"
           cd "$checkout"
-          git add "$TARGET"
+          git add -A
           if git diff --cached --quiet; then
             echo "$REPO already carries sharecodex $VERSION."
             exit 0

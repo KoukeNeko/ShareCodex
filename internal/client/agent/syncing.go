@@ -147,6 +147,31 @@ func (a *Agent) Join(ctx context.Context, link string) error {
 	return nil
 }
 
+// Invite is a single-use join link for another of this person's devices.
+type Invite struct {
+	Link      string    `json:"link"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// CreateInvite asks the server for a join link that adds another device
+// for the same person.
+func (a *Agent) CreateInvite(ctx context.Context) (Invite, error) {
+	a.mu.Lock()
+	client, revoked, base := a.client, a.revoked, a.settings.ServerURL
+	a.mu.Unlock()
+	if client == nil {
+		return Invite{}, errors.New("join a server first")
+	}
+	if revoked {
+		return Invite{}, sync.ErrRevoked
+	}
+	resp, err := client.Invite(ctx)
+	if err != nil {
+		return Invite{}, err
+	}
+	return Invite{Link: strings.TrimRight(base, "/") + syncapi.PathJoin + resp.Code, ExpiresAt: resp.ExpiresAt}, nil
+}
+
 // Leave forgets the server on this device. Usage already uploaded stays on
 // the server; an admin revokes the device there.
 func (a *Agent) Leave() error {

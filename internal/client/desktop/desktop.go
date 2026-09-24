@@ -184,6 +184,17 @@ func (s *Service) Join(ctx context.Context, link string) error {
 	return s.agent.Join(ctx, link)
 }
 
+// CreateInvite makes a join link for another device and copies it, since
+// the popup has no Edit menu for Cmd+C.
+func (s *Service) CreateInvite(ctx context.Context) (agent.Invite, error) {
+	inv, err := s.agent.CreateInvite(ctx)
+	if err != nil {
+		return agent.Invite{}, err
+	}
+	s.app.Clipboard.SetText(inv.Link)
+	return inv, nil
+}
+
 func (s *Service) Leave() error {
 	return s.agent.Leave()
 }

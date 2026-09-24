@@ -16,7 +16,7 @@
 <p align="center">
   <a href="https://github.com/KoukeNeko/ShareCodex/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/KoukeNeko/ShareCodex?style=for-the-badge&logo=github&label=RELEASE&color=225ED6"></a>
   <a href="https://github.com/KoukeNeko/ShareCodex/releases"><img alt="GitHub downloads" src="https://img.shields.io/github/downloads/KoukeNeko/ShareCodex/total?style=for-the-badge&logo=github&label=DOWNLOADS&color=4CAF50"></a>
-  <img alt="macOS | Windows" src="https://img.shields.io/badge/DESKTOP-macOS%20%7C%20Windows-414141?style=for-the-badge&logo=apple&logoColor=white">
+  <img alt="macOS | Windows | Linux" src="https://img.shields.io/badge/CLIENT-macOS%20%7C%20Windows%20%7C%20Linux-414141?style=for-the-badge&logo=apple&logoColor=white">
   <a href="https://github.com/KoukeNeko/ShareCodex/pkgs/container/sharecodex-server"><img alt="Server image" src="https://img.shields.io/badge/SERVER-ghcr.io-2496ED?style=for-the-badge&logo=docker&logoColor=white"></a>
   <a href="https://github.com/KoukeNeko/ShareCodex/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/KoukeNeko/ShareCodex?style=for-the-badge&logo=github&label=STARS&color=225ED6"></a>
 </p>
@@ -31,7 +31,8 @@
 ShareCodex 補上其餘的部分——**每個 5 小時與每週額度還剩多少、每個人分到多少、每個人大約用了多少，
 以及用在哪些模型上。**
 
-每位成員在自己電腦上執行一個常駐選單列（macOS）或系統匣（Windows）的小 app。它讀取電腦上原本就有的
+每位成員在自己電腦上執行一個常駐選單列（macOS）或系統匣（Windows）的小 app；Linux 機器（例如透過 SSH
+使用的主機）則執行命令列 agent。它讀取電腦上原本就有的
 Claude Code 與 Codex 紀錄，透過官方 CLI 確認目前登入的帳號，再把 token 用量同步到你自架的 server。
 
 只計算 coding agent 的用量：Claude Code，以及 Codex CLI、桌面 app 與 IDE 擴充功能。
@@ -67,7 +68,7 @@ popup 列出每個共用帳號的 5 小時與每週額度、已用多少、何�
 
 ### 一條連結就能加入
 
-admin 在網頁管理介面產生一次性加入連結。成員把連結貼進 app，照常在 Claude Code 或 Codex
+admin 在網頁管理介面產生一次性加入連結；已加入的成員也能替自己的其他電腦產生連結。成員把連結貼進 app，照常在 Claude Code 或 Codex
 登入共用帳號，就會自動加入該帳號。
 
 ### 在背景安靜運作
@@ -90,7 +91,9 @@ server 連不上時照常記錄，恢復連線後再上傳。可以設定登入�
 
 1. **向架設 ShareCodex server 的人取得加入連結。**
 2. **安裝 app**（見[取得 app](#取得-app)），從選單列或系統匣開啟。
-3. **貼上加入連結。** 每台電腦各需要一條連結。
+3. **貼上加入連結。** 每台電腦各需要一條連結，所有裝置的用量都算在同一個人名下。第一台加入後，
+   下一台的連結可以從 **設定 › 新增裝置** 或 `sharecodex invite` 取得。Linux 請見
+   [Linux 與 SSH 主機](#linux-與-ssh-主機)。
 4. **照常在 Claude Code 或 Codex 登入共用帳號。** app 看到該帳號後就會出現。
 5. **在 app 設定頁啟用 statusLine 擷取**，才能取得 Claude 的額度。原本的 statusLine 照常顯示，
    停用時會還原原本的設定。
@@ -128,6 +131,7 @@ docker compose up -d
 ## 相容性
 
 - **桌面：** macOS（Apple silicon 與 Intel）與 Windows（x64 與 ARM64）
+- **命令列：** Linux（x64 與 ARM64），包含只能透過 SSH 使用的主機
 - **Agent：** 使用 Claude Pro／Max 訂閱的 Claude Code；使用 ChatGPT 訂閱的 Codex CLI、桌面 app 與 IDE 擴充功能
 - **Server：** 任何 Docker 主機，linux/amd64 或 linux/arm64
 - **介面語言：** 繁體中文
@@ -171,6 +175,29 @@ scoop update sharecodex
 ```
 
 第一行更新 bucket，第二行安裝新版本。設定、加入狀態與 statusLine 擷取都會保留。
+
+### Linux 與 SSH 主機
+
+Linux 沒有系統匣 app，改由 `sharecodex` 指令在背景執行相同的 agent。透過 SSH 使用的主機上的用量，
+會和你其他電腦的用量一起算在你名下。
+
+```bash
+brew install koukeneko/tap/sharecodex-cli                # Linux 上的 Homebrew
+sharecodex join 'https://sharecodex.example.com/join/…'  # 在 Mac 的「設定 › 新增裝置」取得
+sharecodex statusline-capture on                         # Claude 額度
+sharecodex autostart on                                  # systemd 使用者服務
+loginctl enable-linger                                   # 登出後繼續執行
+sharecodex status
+```
+
+沒有 Homebrew 時，從[最新 GitHub Release](https://github.com/KoukeNeko/ShareCodex/releases/latest) 下載
+`sharecodex-linux-amd64.tar.gz` 或 `sharecodex-linux-arm64.tar.gz`，把 `sharecodex` 放到 `PATH` 中，例如
+`~/.local/bin`。SSH 工作階段通常沒有 keyring，因此 device token 存在
+`~/.config/ShareCodex`，權限僅限本人讀寫。`autostart on` 會把目前的 `PATH` 寫進服務，讓它找得到
+`claude` 與 `codex`；兩者位置改變時請再執行一次。
+
+更新時執行 `brew update && brew upgrade sharecodex-cli`（或替換執行檔），再執行 `sharecodex autostart on`
+重新啟動服務。
 
 ---
 
@@ -222,9 +249,9 @@ provider 程式碼，由 `internal/architecture_test.go` 檢查。設計與驗�
 ### 發佈
 
 推送 `v*` tag 會觸發 `.github/workflows/release.yml`，產生 macOS universal `.app`、x64 與 ARM64 的 Windows `.exe`、
-Linux server binary 與 Docker Compose bundle，把 server 映像檔推送到 `ghcr.io/koukeneko/sharecodex-server`，
+Linux CLI 與 server binary、Docker Compose bundle，把 server 映像檔推送到 `ghcr.io/koukeneko/sharecodex-server`，
 並建立附 `SHA256SUMS` 的 GitHub Release。接著執行 `.github/workflows/packages.yml`，更新
-[KoukeNeko/homebrew-tap](https://github.com/KoukeNeko/homebrew-tap) 的 cask 與
+[KoukeNeko/homebrew-tap](https://github.com/KoukeNeko/homebrew-tap) 的 cask、Linux formula（`sharecodex-cli`），以及
 [KoukeNeko/scoop-bucket](https://github.com/KoukeNeko/scoop-bucket) 的 manifest；也可以手動執行來補發某個 release。
 
 簽署在設定對應的 repository secrets 後才會執行；沒有設定時，macOS 版只有 ad-hoc 簽署，

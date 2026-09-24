@@ -45,6 +45,8 @@ const en = {
   cancel: 'Cancel',
   leave: 'Leave',
   leaveServer: 'Leave server',
+  addDevice: 'Add device',
+  inviteNote: 'Copied. Single use, valid until {time}.',
   notJoined: 'Not joined',
   claudeQuota: 'Claude Code quota',
   claudeQuotaBody:
@@ -106,6 +108,8 @@ const zhTW: Record<MessageKey, string> = {
   cancel: '取消',
   leave: '離開',
   leaveServer: '離開伺服器',
+  addDevice: '新增裝置',
+  inviteNote: '已複製。只能使用一次，{time} 前有效。',
   notJoined: '未加入',
   claudeQuota: 'Claude Code 額度',
   claudeQuotaBody: 'Claude 的 5 小時與每週額度只能從 statusLine 取得。啟用後，原本的 statusLine 仍照常顯示。',

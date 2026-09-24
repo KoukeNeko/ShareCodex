@@ -184,10 +184,11 @@ ShareCodex/
 |---|---|---|
 | `POST /pair` | 用一次性邀請碼換取 device token | 邀請碼 |
 | `POST /sync` | 批次上傳事件、快照、帳號觀測 | Device token |
+| `POST /invite` | 替同一個人的另一台裝置產生一次性邀請碼，client 加上自己的 server URL 組成加入連結 | Device token |
 | `GET /overview` | 所有帳號的額度 bucket，以及每人的分配%、估計用量%、各模型用量、unattributed、更新時間 | Device token |
 | `GET /join/{code}` | 瀏覽器開啟加入連結時，顯示「請在 ShareCodex 桌面 app 貼上此連結」的純文字頁 | 無 |
 
-- Device token 是 32 bytes 隨機值。Server 只存雜湊，client 存在 OS keychain。
+- Device token 是 32 bytes 隨機值。Server 只存雜湊，client 存在 OS keychain；Linux 通常在沒有 keyring 的 SSH 環境執行，改存成僅限本人讀寫的檔案。
 - 管理動作在 `/admin/` 網頁介面完成（Go `html/template` 伺服器端渲染，不另建 SPA）：
   - 以 `ADMIN_PASSWORD`（至少 12 字元）登入，session 存在記憶體（12 小時，重啟即失效）。登入失敗會延遲 1 秒並序列化，減慢暴力猜測。
   - Cookie 為 `HttpOnly`、`SameSite=Strict`，`PUBLIC_URL` 為 https 時加上 `Secure`；表單另以 Go 標準庫 `http.CrossOriginProtection` 擋跨站請求。
