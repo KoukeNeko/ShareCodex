@@ -19,6 +19,12 @@ import (
 // StateEvent carries a fresh agent.State to the frontend.
 const StateEvent = "state"
 
+const (
+	popupWidth         = 380
+	defaultPopupHeight = 560
+	minPopupHeight     = 360
+)
+
 //go:embed tray-template.png
 var trayTemplateIcon []byte
 
@@ -40,14 +46,21 @@ func Run(ag *agent.Agent, assets fs.FS, executable string) error {
 	})
 	svc.app = app
 
+	height := ag.PopupHeight()
+	if height < minPopupHeight {
+		height = defaultPopupHeight
+	}
+	// Only the height is adjustable; the layout is designed for one width.
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:            "popup",
-		Width:           380,
-		Height:          560,
+		Width:           popupWidth,
+		Height:          height,
+		MinWidth:        popupWidth,
+		MaxWidth:        popupWidth,
+		MinHeight:       minPopupHeight,
 		Frameless:       true,
 		AlwaysOnTop:     true,
 		Hidden:          true,
-		DisableResize:   true,
 		HideOnEscape:    true,
 		HideOnFocusLost: true,
 		Windows:         application.WindowsWindow{HiddenOnTaskbar: true},
@@ -64,6 +77,10 @@ func Run(ag *agent.Agent, assets fs.FS, executable string) error {
 	window.OnWindowEvent(events.Common.WindowShow, func(*application.WindowEvent) {
 		ag.Refresh()
 	})
+	window.OnWindowEvent(events.Common.WindowHide, func(*application.WindowEvent) {
+		_, h := window.Size()
+		ag.SetPopupHeight(h)
+	})
 
 	tray := app.SystemTray.New()
 	tray.SetTooltip("ShareCodex")
@@ -77,7 +94,14 @@ func Run(ag *agent.Agent, assets fs.FS, executable string) error {
 	menu.AddSeparator()
 	menu.Add("結束 ShareCodex").OnClick(func(*application.Context) { app.Quit() })
 	tray.SetMenu(menu)
-	tray.AttachWindow(window).WindowOffset(6)
+	// Wails multiplies the offset by the display scale on macOS, whose window
+	// coordinates are already in points, so a Retina screen doubles it. Keep
+	// the popup snug under the menu bar there.
+	offset := 6
+	if runtime.GOOS == "darwin" {
+		offset = 1
+	}
+	tray.AttachWindow(window).WindowOffset(offset)
 
 	var pending = make(chan struct{}, 1)
 	ag.OnChange = func() {

@@ -23,6 +23,8 @@ type Settings struct {
 	// installed its shim; the shim chains to it and Restore puts it back.
 	StatusLine    *SavedStatusLine `json:"status_line,omitempty"`
 	LaunchAtLogin bool             `json:"launch_at_login,omitempty"`
+	// PopupHeight is the popup height the user last resized to, in points.
+	PopupHeight int `json:"popup_height,omitempty"`
 }
 
 type SavedStatusLine struct {
