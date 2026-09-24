@@ -23,6 +23,7 @@ const (
 	popupWidth         = 380
 	defaultPopupHeight = 560
 	minPopupHeight     = 360
+	popupCornerRadius  = 12
 )
 
 //go:embed tray-template.png
@@ -64,8 +65,19 @@ func Run(ag *agent.Agent, assets fs.FS, executable string) error {
 		HideOnEscape:    true,
 		HideOnFocusLost: true,
 		Windows:         application.WindowsWindow{HiddenOnTaskbar: true},
+		// The popup draws on AppKit's Liquid Glass (NSGlassEffectView on
+		// macOS 26+, a visual effect view before that); the page itself is
+		// transparent on macOS so the material shows through.
+		BackgroundType:   application.BackgroundTypeTransparent,
+		BackgroundColour: application.NewRGBA(0, 0, 0, 0),
 		Mac: application.MacWindow{
-			Backdrop: application.MacBackdropTranslucent,
+			Backdrop:     application.MacBackdropLiquidGlass,
+			CornerRadius: popupCornerRadius,
+			LiquidGlass: application.MacLiquidGlass{
+				Style:        application.LiquidGlassStyleAutomatic,
+				Material:     application.NSVisualEffectMaterialAuto,
+				CornerRadius: popupCornerRadius,
+			},
 		},
 		URL: "/",
 	})
