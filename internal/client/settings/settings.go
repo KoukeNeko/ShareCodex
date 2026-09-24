@@ -25,6 +25,8 @@ type Settings struct {
 	LaunchAtLogin bool             `json:"launch_at_login,omitempty"`
 	// PopupHeight is the popup height the user last resized to, in points.
 	PopupHeight int `json:"popup_height,omitempty"`
+	// Language is the UI language ("en" or "zh-TW"); empty means English.
+	Language string `json:"language,omitempty"`
 }
 
 type SavedStatusLine struct {

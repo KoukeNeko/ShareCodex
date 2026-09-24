@@ -26,6 +26,8 @@ func (a *Agent) State(ctx context.Context) State {
 		SyncError:     a.syncErr,
 		Overview:      a.overview,
 		LaunchAtLogin: a.settings.LaunchAtLogin,
+		Language:      a.language(),
+		Update:        a.update,
 	}
 	for _, p := range []account.Provider{account.ProviderAnthropic, account.ProviderOpenAI} {
 		st.Providers = append(st.Providers, *a.providers[p])

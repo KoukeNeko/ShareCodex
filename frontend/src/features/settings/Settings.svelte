@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Desktop, errorMessage, type State } from '../../lib/api'
+  import { locales, t } from '../../lib/i18n.svelte'
 
   let { app }: { app: State } = $props()
 
@@ -24,52 +25,59 @@
   {#if error}<p class="error">{error}</p>{/if}
 
   <section>
-    <h2>伺服器</h2>
+    <h2>{t('server')}</h2>
     {#if app.paired}
       <dl>
-        <dt>成員</dt><dd>{app.person_name}</dd>
-        <dt>裝置</dt><dd>{app.device_name}</dd>
-        <dt>位址</dt><dd class="url">{app.server_url}</dd>
+        <dt>{t('member')}</dt><dd>{app.person_name}</dd>
+        <dt>{t('device')}</dt><dd>{app.device_name}</dd>
+        <dt>{t('address')}</dt><dd class="url">{app.server_url}</dd>
       </dl>
       {#if confirmingLeave}
         <div class="confirm">
-          <p><strong>離開伺服器？</strong><br /><span class="muted">已上傳的用量會保留在伺服器。</span></p>
+          <p><strong>{t('leaveConfirm')}</strong><br /><span class="muted">{t('leaveBody')}</span></p>
           <div class="actions">
-            <button onclick={() => (confirmingLeave = false)} disabled={busy}>取消</button>
-            <button class="danger" onclick={() => run(async () => { await Desktop.Leave(); confirmingLeave = false })} disabled={busy}>離開</button>
+            <button onclick={() => (confirmingLeave = false)} disabled={busy}>{t('cancel')}</button>
+            <button class="danger" onclick={() => run(async () => { await Desktop.Leave(); confirmingLeave = false })} disabled={busy}>{t('leave')}</button>
           </div>
         </div>
       {:else}
-        <button class="danger" onclick={() => (confirmingLeave = true)}>離開伺服器</button>
+        <button class="danger" onclick={() => (confirmingLeave = true)}>{t('leaveServer')}</button>
       {/if}
     {:else}
-      <p class="muted">未加入</p>
+      <p class="muted">{t('notJoined')}</p>
     {/if}
   </section>
 
   <section>
-    <h2>Claude Code 額度</h2>
-    <p class="muted">Claude 的 5 小時與每週額度只能從 statusLine 取得。啟用後，原本的 statusLine 仍照常顯示。</p>
+    <h2>{t('claudeQuota')}</h2>
+    <p class="muted">{t('claudeQuotaBody')}</p>
     <div class="row">
-      <span>statusLine 擷取</span>
+      <span>{t('statusLineCapture')}</span>
       {#if app.status_line_installed}
-        <button onclick={() => run(() => Desktop.RestoreStatusLine())} disabled={busy}>停用</button>
+        <button onclick={() => run(() => Desktop.RestoreStatusLine())} disabled={busy}>{t('turnOff')}</button>
       {:else}
-        <button class="primary" onclick={() => run(() => Desktop.InstallStatusLine())} disabled={busy}>啟用</button>
+        <button class="primary" onclick={() => run(() => Desktop.InstallStatusLine())} disabled={busy}>{t('turnOn')}</button>
       {/if}
     </div>
   </section>
 
   <section>
-    <h2>一般</h2>
+    <h2>{t('general')}</h2>
     <label class="row">
-      <span>登入時啟動</span>
+      <span>{t('language')}</span>
+      <select value={app.language || 'en'} disabled={busy}
+        onchange={(e) => run(() => Desktop.SetLanguage(e.currentTarget.value))}>
+        {#each locales as l (l.id)}<option value={l.id}>{l.label}</option>{/each}
+      </select>
+    </label>
+    <label class="row">
+      <span>{t('launchAtLogin')}</span>
       <input type="checkbox" checked={app.launch_at_login} disabled={busy}
         onchange={(e) => run(() => Desktop.SetLaunchAtLogin(e.currentTarget.checked))} />
     </label>
     <div class="row">
-      <span class="muted">版本 {app.version}</span>
-      <button onclick={() => Desktop.Quit()}>結束 ShareCodex</button>
+      <span class="muted">{t('version', { version: app.version })}</span>
+      <button onclick={() => Desktop.Quit()}>{t('quit')}</button>
     </div>
   </section>
 </div>

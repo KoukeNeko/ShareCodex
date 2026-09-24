@@ -90,9 +90,11 @@ func Run(ag *agent.Agent, assets fs.FS, executable string) error {
 		tray.SetIcon(trayIcon)
 	}
 	menu := app.NewMenu()
-	menu.Add("重新整理").OnClick(func(*application.Context) { ag.Refresh() })
+	svc.menu = menu
+	svc.refreshItem = menu.Add("").OnClick(func(*application.Context) { ag.Refresh() })
 	menu.AddSeparator()
-	menu.Add("結束 ShareCodex").OnClick(func(*application.Context) { app.Quit() })
+	svc.quitItem = menu.Add("").OnClick(func(*application.Context) { app.Quit() })
+	svc.labelMenu(ag.Language())
 	tray.SetMenu(menu)
 	// Wails multiplies the offset by the display scale on macOS, whose window
 	// coordinates are already in points, so a Retina screen doubles it. Keep
@@ -116,12 +118,22 @@ func Run(ag *agent.Agent, assets fs.FS, executable string) error {
 
 // Service is bound to the frontend; its exported methods become the
 // generated TypeScript bindings.
+// trayLabels are the tray menu's strings; the popup's live in the frontend.
+var trayLabels = map[string]struct{ refresh, quit string }{
+	"en":    {"Refresh", "Quit ShareCodex"},
+	"zh-TW": {"重新整理", "結束 ShareCodex"},
+}
+
 type Service struct {
 	agent      *agent.Agent
 	app        *application.App
 	executable string
 	pending    chan struct{}
-	cancel     context.CancelFunc
+
+	menu        *application.Menu
+	refreshItem *application.MenuItem
+	quitItem    *application.MenuItem
+	cancel      context.CancelFunc
 }
 
 func (s *Service) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
@@ -188,6 +200,25 @@ func (s *Service) OpenReleasePage(ctx context.Context) error {
 		return nil
 	}
 	return s.app.Browser.OpenURL(rel.URL)
+}
+
+// SetLanguage switches the UI language, including the tray menu.
+func (s *Service) SetLanguage(lang string) error {
+	if err := s.agent.SetLanguage(lang); err != nil {
+		return err
+	}
+	s.labelMenu(lang)
+	return nil
+}
+
+func (s *Service) labelMenu(lang string) {
+	labels, ok := trayLabels[lang]
+	if !ok {
+		labels = trayLabels["en"]
+	}
+	s.refreshItem.SetLabel(labels.refresh)
+	s.quitItem.SetLabel(labels.quit)
+	s.menu.Update()
 }
 
 func (s *Service) Quit() {

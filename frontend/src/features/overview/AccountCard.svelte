@@ -2,6 +2,7 @@
   import QuotaBar, { type Segment } from '../../components/QuotaBar.svelte'
   import type { BucketOverview } from '../../lib/api'
   import { bucketName, percent, providerName, resetsIn, tokens } from '../../lib/format'
+  import { t } from '../../lib/i18n.svelte'
 
   let { provider, label, planType, buckets, now, local = false }: {
     provider: string
@@ -47,7 +48,7 @@
   </header>
 
   {#if buckets.length === 0}
-    <p class="muted empty">尚無額度資料</p>
+    <p class="muted empty">{t('noQuota')}</p>
   {:else}
     {#if buckets.length > 1}
       <div class="tabs" role="tablist">
@@ -62,11 +63,11 @@
 
     <div class="total">
       <div class="row">
-        <span>{buckets.length === 1 ? bucketName(bucket.key, bucket.window_minutes) : '帳號'}</span>
+        <span>{buckets.length === 1 ? bucketName(bucket.key, bucket.window_minutes) : t('account')}</span>
         <span class="num strong">{percent(bucket.used_percent)}</span>
       </div>
       <QuotaBar value={bucket.used_percent} tone={tone(bucket.used_percent)} />
-      <div class="muted small">{bucket.reset ? '已重置' : resetsIn(bucket.resets_at, now)}</div>
+      <div class="muted small">{bucket.reset ? t('reset') : resetsIn(bucket.resets_at, now)}</div>
     </div>
 
     {#if !local}
@@ -75,10 +76,10 @@
           {@const over = m.used_percent > m.allotted_percent + 0.5}
           <li>
             <div class="row">
-              <span class="name">{m.name}{#if m.is_you}<span class="you">你</span>{/if}</span>
+              <span class="name">{m.name}{#if m.is_you}<span class="you">{t('you')}</span>{/if}</span>
               <span class="num">
-                {#if over}<span class="tag">超出分配</span>{/if}
-                估計 {percent(m.used_percent)}<span class="muted allot">分配 {percent(m.allotted_percent)}</span>
+                {#if over}<span class="tag">{t('overAllotment')}</span>{/if}
+                {t('estimated', { percent: percent(m.used_percent) })}<span class="muted allot">{t('allotted', { percent: percent(m.allotted_percent) })}</span>
               </span>
             </div>
             <QuotaBar value={m.used_percent} marker={m.allotted_percent} segments={segmentsFor(m.models)} thin />
@@ -87,7 +88,7 @@
         {#if bucket.unattributed_percent > 0}
           <li>
             <div class="row">
-              <span class="name muted">未歸屬</span>
+              <span class="name muted">{t('unattributed')}</span>
               <span class="num muted">{percent(bucket.unattributed_percent)}</span>
             </div>
             <QuotaBar value={bucket.unattributed_percent} tone="muted" thin />
@@ -97,11 +98,11 @@
 
       {#if (bucket.models ?? []).length > 0}
         <ul class="models">
-          <li class="muted small">模型</li>
+          <li class="muted small">{t('models')}</li>
           {#each bucket.models ?? [] as model (model.model)}
             <li class="row">
               <span class="model"><i class="swatch" style:background={modelColor.get(model.model)}></i>{model.model}</span>
-              <span class="num"><span class="muted">{tokens(model.tokens)} tokens</span>估計 {percent(model.used_percent)}</span>
+              <span class="num"><span class="muted">{t('tokens', { count: tokens(model.tokens) })}</span>{t('estimated', { percent: percent(model.used_percent) })}</span>
             </li>
           {/each}
         </ul>

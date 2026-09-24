@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Desktop, errorMessage } from '../../lib/api'
+  import { t } from '../../lib/i18n.svelte'
 
   let link = $state('')
   let busy = $state(false)
@@ -21,10 +22,10 @@
 </script>
 
 <form class="card" onsubmit={join}>
-  <h2>加入伺服器</h2>
+  <h2>{t('joinServer')}</h2>
   <div class="field">
-    <input type="text" bind:value={link} placeholder="貼上加入連結" spellcheck="false" autocomplete="off" />
-    <button class="primary" type="submit" disabled={busy || link.trim() === ''}>加入</button>
+    <input type="text" bind:value={link} placeholder={t('pasteLink')} spellcheck="false" autocomplete="off" />
+    <button class="primary" type="submit" disabled={busy || link.trim() === ''}>{t('join')}</button>
   </div>
   {#if error}<p class="error">{error}</p>{/if}
 </form>

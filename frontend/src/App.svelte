@@ -6,27 +6,26 @@
   import Settings from './features/settings/Settings.svelte'
   import { Desktop, errorMessage, type ProviderState, type State } from './lib/api'
   import { clock, providerName } from './lib/format'
+  import { setLocale, t } from './lib/i18n.svelte'
 
   let app = $state<State | null>(null)
   let view = $state<'overview' | 'settings'>('overview')
   let loadError = $state('')
   let now = $state(new Date())
 
-  const providerNotes: Record<string, string> = {
-    not_installed: '未安裝',
-    not_pooled: '未使用訂閱帳號登入',
-  }
-
   function providerIssue(p: ProviderState): string {
-    if (p.status === 'ok') return ''
-    if (p.status === 'error') return p.error ?? '錯誤'
-    return providerNotes[p.status] ?? ''
+    if (p.status === 'error') return p.error ?? t('error')
+    if (p.status === 'not_installed') return t('notInstalled')
+    if (p.status === 'not_pooled') return t('notPooled')
+    return ''
   }
 
   const issues = $derived(
     (app?.providers ?? []).filter((p) => p.status === 'error' || p.status === 'not_pooled'),
   )
   const accounts = $derived(app?.overview?.accounts ?? [])
+
+  $effect(() => setLocale(app?.language ?? 'en'))
 
   onMount(() => {
     Desktop.State()
@@ -43,17 +42,17 @@
 
 <main>
   <header>
-    <h1>{view === 'settings' ? '設定' : 'ShareCodex'}</h1>
+    <h1>{view === 'settings' ? t('settings') : 'ShareCodex'}</h1>
     <div class="tools">
       {#if view === 'overview'}
-        <button class="icon" title="重新整理" aria-label="重新整理" onclick={() => Desktop.Refresh()}>
+        <button class="icon" title={t('refresh')} aria-label={t('refresh')} onclick={() => Desktop.Refresh()}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" /></svg>
         </button>
-        <button class="icon" title="設定" aria-label="設定" onclick={() => (view = 'settings')}>
+        <button class="icon" title={t('settings')} aria-label={t('settings')} onclick={() => (view = 'settings')}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.2" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke-linecap="round" /></svg>
         </button>
       {:else}
-        <button class="icon" onclick={() => (view = 'overview')}>完成</button>
+        <button class="icon" onclick={() => (view = 'overview')}>{t('done')}</button>
       {/if}
     </div>
   </header>
@@ -62,18 +61,18 @@
     {#if loadError}
       <p class="error">{loadError}</p>
     {:else if !app}
-      <p class="muted">載入中…</p>
+      <p class="muted">{t('loading')}</p>
     {:else if view === 'settings'}
       <Settings {app} />
     {:else}
       {#if app.update}
         <p class="banner update">
-          <span>新版本 {app.update.version}</span>
-          <button onclick={() => Desktop.OpenReleasePage()}>下載</button>
+          <span>{t('newVersion', { version: app.update.version })}</span>
+          <button onclick={() => Desktop.OpenReleasePage()}>{t('download')}</button>
         </p>
       {/if}
       {#if app.revoked}
-        <p class="banner error">裝置已撤銷。請向管理員取得新的加入連結。</p>
+        <p class="banner error">{t('revoked')}</p>
       {/if}
       {#if !app.paired || app.revoked}
         <JoinForm />
@@ -92,7 +91,7 @@
           <AccountCard provider={a.provider} label={a.hint} planType={a.plan_type} buckets={a.buckets ?? []} {now} local />
         {/each}
         {#if (app.local ?? []).length === 0 && app.paired}
-          <p class="muted">尚無額度資料</p>
+          <p class="muted">{t('noQuota')}</p>
         {/if}
       {/if}
     {/if}
@@ -101,13 +100,13 @@
   {#if app && view === 'overview' && app.paired}
     <footer class="muted">
       {#if app.sync_error && !app.revoked}
-        <span class="error">同步失敗：{app.sync_error}</span>
+        <span class="error">{t('syncFailed', { error: app.sync_error })}</span>
       {:else if app.last_sync_at}
-        <span>已同步 {clock(app.last_sync_at)}</span>
+        <span>{t('synced', { time: clock(app.last_sync_at) })}</span>
       {:else}
-        <span>同步中</span>
+        <span>{t('syncing')}</span>
       {/if}
-      {#if app.pending_uploads > 0}<span class="num">待上傳 {app.pending_uploads} 筆</span>{/if}
+      {#if app.pending_uploads > 0}<span class="num">{t('pending', { count: app.pending_uploads })}</span>{/if}
     </footer>
   {/if}
 </main>

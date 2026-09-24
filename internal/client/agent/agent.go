@@ -67,6 +67,7 @@ type State struct {
 	Local               []LocalAccount    `json:"local"`
 	StatusLineInstalled bool              `json:"status_line_installed"`
 	LaunchAtLogin       bool              `json:"launch_at_login"`
+	Language            string            `json:"language"`
 	Update              *update.Release   `json:"update,omitempty"`
 }
 
