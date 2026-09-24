@@ -120,7 +120,8 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 12px 14px 6px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
     --wails-draggable: drag;
   }
   h1 { margin: 0; font-size: 14px; font-weight: 600; }
@@ -128,7 +129,7 @@
   .content {
     flex: 1;
     overflow-y: auto;
-    padding: 6px 14px 14px;
+    padding: 10px 14px 14px;
     display: grid;
     align-content: start;
     gap: 10px;
