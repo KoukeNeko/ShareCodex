@@ -29,7 +29,9 @@ jobs:
         shell: bash
         run: |
           pkgs=$(go list ./internal/... ./cmd/... | grep -v /internal/client/desktop)
+          # shellcheck disable=SC2086 # one argument per package
           go vet $pkgs
+          # shellcheck disable=SC2086
           go test $pkgs
 
   server-integration:
