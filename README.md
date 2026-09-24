@@ -169,8 +169,26 @@ Or download `ShareCodex-macos-universal.zip`, `ShareCodex-windows-amd64.zip` or
 `ShareCodex-windows-arm64.zip` from the
 [latest GitHub Release](https://github.com/KoukeNeko/ShareCodex/releases/latest). The macOS app is
 signed with a Developer ID and notarized by Apple. The app checks GitHub for new releases and tells
-you when one is out; it never installs anything by itself. Update with `brew upgrade --cask
-sharecodex` or `scoop update sharecodex`.
+you when one is out; it never installs anything by itself.
+
+### Updating
+
+macOS — refresh the tap first, or Homebrew may not see the new version yet:
+
+```bash
+brew update
+brew upgrade --cask sharecodex
+```
+
+Windows — quit ShareCodex from the tray icon first, since Windows won't replace a running app:
+
+```powershell
+scoop update
+scoop update sharecodex
+```
+
+The first command refreshes the bucket; the second installs the new version. Your settings, join
+and statusLine capture carry over.
 
 ---
 

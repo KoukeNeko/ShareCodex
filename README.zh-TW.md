@@ -152,8 +152,25 @@ scoop install koukeneko/sharecodex
 
 也可以從[最新 GitHub Release](https://github.com/KoukeNeko/ShareCodex/releases/latest) 下載
 `ShareCodex-macos-universal.zip`、`ShareCodex-windows-amd64.zip` 或 `ShareCodex-windows-arm64.zip`。macOS 版以 Developer ID 簽署並經
-Apple 公證。app 會檢查 GitHub 是否有新版本並提示，但不會自行下載或安裝任何東西。更新請執行
-`brew upgrade --cask sharecodex` 或 `scoop update sharecodex`。
+Apple 公證。app 會檢查 GitHub 是否有新版本並提示，但不會自行下載或安裝任何東西。
+
+### 更新
+
+macOS：先更新 tap，否則 Homebrew 可能還看不到新版本。
+
+```bash
+brew update
+brew upgrade --cask sharecodex
+```
+
+Windows：先從系統匣圖示結束 ShareCodex，Windows 無法替換執行中的 app。
+
+```powershell
+scoop update
+scoop update sharecodex
+```
+
+第一行更新 bucket，第二行安裝新版本。設定、加入狀態與 statusLine 擷取都會保留。
 
 ---
 
