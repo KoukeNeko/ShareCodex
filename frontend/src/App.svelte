@@ -99,14 +99,17 @@
 
   {#if app && view === 'overview' && app.paired}
     <footer class="muted">
-      {#if app.sync_error && !app.revoked}
-        <span class="error">{t('syncFailed', { error: app.sync_error })}</span>
-      {:else if app.last_sync_at}
-        <span>{t('synced', { time: clock(app.last_sync_at) })}</span>
-      {:else}
-        <span>{t('syncing')}</span>
-      {/if}
-      {#if app.pending_uploads > 0}<span class="num">{t('pending', { count: app.pending_uploads })}</span>{/if}
+      <div class="status">
+        {#if app.sync_error && !app.revoked}
+          <span class="error">{t('syncFailed', { error: app.sync_error })}</span>
+        {:else if app.last_sync_at}
+          <span>{t('synced', { time: clock(app.last_sync_at) })}</span>
+        {:else}
+          <span>{t('syncing')}</span>
+        {/if}
+        {#if app.pending_uploads > 0}<span class="num">{t('pending', { count: app.pending_uploads })}</span>{/if}
+      </div>
+      <span class="num">v{app.version}</span>
     </footer>
   {/if}
 </main>
@@ -148,6 +151,7 @@
     border-top: 1px solid var(--line);
     font-size: 11.5px;
   }
+  footer .status { display: flex; gap: 8px; min-width: 0; }
   footer .error { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   p { margin: 0; }
 </style>
