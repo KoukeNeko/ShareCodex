@@ -1,7 +1,7 @@
 {{define "content"}}
 <form class="card" method="post" action="/admin/login" style="max-width:360px;justify-self:center;width:100%">
-  <h1>管理登入</h1>
-  <input type="password" name="password" placeholder="管理密碼" autocomplete="current-password" required autofocus>
-  <button class="primary" type="submit">登入</button>
+  <h1>{{.T.loginTitle}}</h1>
+  <input type="password" name="password" placeholder="{{.T.password}}" autocomplete="current-password" required autofocus>
+  <button class="primary" type="submit">{{.T.login}}</button>
 </form>
 {{end}}

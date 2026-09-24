@@ -10,6 +10,7 @@ import (
 	"embed"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"math"
@@ -82,6 +83,7 @@ func New(store *storage.Store, log *slog.Logger, cfg Config) (http.Handler, erro
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /admin/lang/{lang}", c.setLang)
 	mux.HandleFunc("GET /admin/login", c.loginPage)
 	mux.HandleFunc("POST /admin/login", c.login)
 	mux.HandleFunc("POST /admin/logout", c.logout)
@@ -105,6 +107,7 @@ func parsePages() (map[string]*template.Template, error) {
 		"weight":   func(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) },
 		"provider": providerName,
 		"bucket":   bucketName,
+		"tf":       fmt.Sprintf,
 		"when":     formatTime,
 		"over":     func(m syncapi.MemberShare) bool { return m.UsedPercent > m.AllottedPercent+0.5 },
 		"tokens":   compactTokens,
@@ -120,15 +123,39 @@ func parsePages() (map[string]*template.Template, error) {
 	return pages, nil
 }
 
+// page is what every template receives. Title and Error hold dictionary
+// keys; render translates them.
 type page struct {
 	Title  string
 	Nav    string
 	Error  string
 	Data   any
 	Authed bool
+
+	Lang      string
+	T         map[string]string
+	Languages []struct{ ID, Label string }
+	// Here is the GET path of the current page, for the language switch.
+	Here string
 }
 
-func (c *Console) render(w http.ResponseWriter, name string, status int, p page) {
+var navPaths = map[string]string{
+	"overview": "/admin/", "people": "/admin/people", "accounts": "/admin/accounts", "devices": "/admin/devices",
+}
+
+func (c *Console) render(w http.ResponseWriter, r *http.Request, name string, status int, p page) {
+	p.Lang = requestLang(r)
+	p.T = dictionaries[p.Lang]
+	p.Languages = langNames
+	p.Title = p.T[p.Title]
+	if p.Error != "" {
+		p.Error = p.T[p.Error]
+	}
+	p.Here = "/admin/login"
+	if path, ok := navPaths[p.Nav]; ok {
+		p.Here = path
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Frame-Options", "DENY")
@@ -141,7 +168,7 @@ func (c *Console) render(w http.ResponseWriter, name string, status int, p page)
 
 func (c *Console) fail(w http.ResponseWriter, action string, err error) {
 	c.log.Error(action, "err", err)
-	http.Error(w, "伺服器錯誤", http.StatusInternalServerError)
+	http.Error(w, "Internal server error", http.StatusInternalServerError)
 }
 
 // Sessions live in memory; restarting the server signs everyone out.
@@ -172,7 +199,7 @@ func (c *Console) validSession(id string) bool {
 }
 
 func (c *Console) loginPage(w http.ResponseWriter, r *http.Request) {
-	c.render(w, "login", http.StatusOK, page{Title: "登入"})
+	c.render(w, r, "login", http.StatusOK, page{Title: "login"})
 }
 
 func (c *Console) login(w http.ResponseWriter, r *http.Request) {
@@ -183,7 +210,7 @@ func (c *Console) login(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(time.Second)
 		c.loginMu.Unlock()
 		c.log.Warn("admin login failed", "remote", r.RemoteAddr)
-		c.render(w, "login", http.StatusUnauthorized, page{Title: "登入", Error: "密碼錯誤"})
+		c.render(w, r, "login", http.StatusUnauthorized, page{Title: "login", Error: "wrongPassword"})
 		return
 	}
 
@@ -228,7 +255,7 @@ func (c *Console) overview(w http.ResponseWriter, r *http.Request) {
 		c.fail(w, "build overview", err)
 		return
 	}
-	c.render(w, "overview", http.StatusOK, page{Title: "總覽", Nav: "overview", Authed: true, Data: o})
+	c.render(w, r, "overview", http.StatusOK, page{Title: "navOverview", Nav: "overview", Authed: true, Data: o})
 }
 
 type personRow struct {
@@ -275,7 +302,7 @@ func (c *Console) people(w http.ResponseWriter, r *http.Request) {
 		c.fail(w, "list people", err)
 		return
 	}
-	c.render(w, "people", http.StatusOK, page{Title: "成員", Nav: "people", Authed: true, Data: data})
+	c.render(w, r, "people", http.StatusOK, page{Title: "navPeople", Nav: "people", Authed: true, Data: data})
 }
 
 func (c *Console) addPerson(w http.ResponseWriter, r *http.Request) {
@@ -284,14 +311,14 @@ func (c *Console) addPerson(w http.ResponseWriter, r *http.Request) {
 	var formErr string
 	switch {
 	case name == "":
-		formErr = "請輸入名稱"
+		formErr = "nameRequired"
 	case len([]rune(name)) > 50:
-		formErr = "名稱不可超過 50 字"
+		formErr = "nameTooLong"
 	}
 	if formErr == "" {
 		_, err := c.store.AddPerson(r.Context(), name)
 		if errors.Is(err, storage.ErrDuplicate) {
-			formErr = "已有同名成員"
+			formErr = "nameTaken"
 		} else if err != nil {
 			c.fail(w, "add person", err)
 			return
@@ -303,7 +330,7 @@ func (c *Console) addPerson(w http.ResponseWriter, r *http.Request) {
 			c.fail(w, "list people", err)
 			return
 		}
-		c.render(w, "people", http.StatusUnprocessableEntity, page{Title: "成員", Nav: "people", Authed: true, Error: formErr, Data: data})
+		c.render(w, r, "people", http.StatusUnprocessableEntity, page{Title: "navPeople", Nav: "people", Authed: true, Error: formErr, Data: data})
 		return
 	}
 	http.Redirect(w, r, "/admin/people", http.StatusSeeOther)
@@ -332,7 +359,7 @@ func (c *Console) invite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.Invite = &inviteView{Person: p.DisplayName, Link: c.publicURL + syncapi.PathJoin + code, Expires: expires}
-	c.render(w, "people", http.StatusOK, page{Title: "成員", Nav: "people", Authed: true, Data: data})
+	c.render(w, r, "people", http.StatusOK, page{Title: "navPeople", Nav: "people", Authed: true, Data: data})
 }
 
 type memberRow struct {
@@ -392,14 +419,14 @@ func (c *Console) renderAccounts(w http.ResponseWriter, r *http.Request, status 
 		}
 		rows = append(rows, row)
 	}
-	c.render(w, "accounts", status, page{Title: "帳號", Nav: "accounts", Authed: true, Error: formErr, Data: rows})
+	c.render(w, r, "accounts", status, page{Title: "navAccounts", Nav: "accounts", Authed: true, Error: formErr, Data: rows})
 }
 
 func (c *Console) setLabel(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
 	label := strings.TrimSpace(r.PostFormValue("label"))
 	if label == "" || len([]rune(label)) > 50 {
-		c.renderAccounts(w, r, http.StatusUnprocessableEntity, "名稱需為 1 到 50 字")
+		c.renderAccounts(w, r, http.StatusUnprocessableEntity, "labelLength")
 		return
 	}
 	a, err := c.store.Account(r.Context(), r.PathValue("id"))
@@ -423,7 +450,7 @@ func (c *Console) setLabel(w http.ResponseWriter, r *http.Request) {
 func (c *Console) setShares(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "表單格式錯誤", http.StatusBadRequest)
+		http.Error(w, "Malformed form", http.StatusBadRequest)
 		return
 	}
 	a, err := c.store.Account(r.Context(), r.PathValue("id"))
@@ -444,7 +471,7 @@ func (c *Console) setShares(w http.ResponseWriter, r *http.Request) {
 		}
 		v, ok := parseWeight(vals[0])
 		if !ok {
-			c.renderAccounts(w, r, http.StatusUnprocessableEntity, "權重需為 0 到 100 的數字")
+			c.renderAccounts(w, r, http.StatusUnprocessableEntity, "weightRange")
 			return
 		}
 		weights[personID] = v
@@ -452,11 +479,11 @@ func (c *Console) setShares(w http.ResponseWriter, r *http.Request) {
 	if add := r.PostFormValue("add_person"); add != "" {
 		v, ok := parseWeight(r.PostFormValue("add_weight"))
 		if !ok {
-			c.renderAccounts(w, r, http.StatusUnprocessableEntity, "權重需為 0 到 100 的數字")
+			c.renderAccounts(w, r, http.StatusUnprocessableEntity, "weightRange")
 			return
 		}
 		if _, err := c.store.Person(r.Context(), add); err != nil {
-			c.renderAccounts(w, r, http.StatusUnprocessableEntity, "找不到該成員")
+			c.renderAccounts(w, r, http.StatusUnprocessableEntity, "personNotFound")
 			return
 		}
 		weights[add] = v
@@ -490,7 +517,7 @@ func (c *Console) devices(w http.ResponseWriter, r *http.Request) {
 		c.fail(w, "list devices", err)
 		return
 	}
-	c.render(w, "devices", http.StatusOK, page{Title: "裝置", Nav: "devices", Authed: true, Data: devices})
+	c.render(w, r, "devices", http.StatusOK, page{Title: "navDevices", Nav: "devices", Authed: true, Data: devices})
 }
 
 func (c *Console) revoke(w http.ResponseWriter, r *http.Request) {
@@ -525,20 +552,20 @@ func providerName(p string) string {
 	return p
 }
 
-func bucketName(key string, windowMinutes int) string {
+func bucketName(key string, windowMinutes int, t map[string]string) string {
 	switch key {
 	case "five_hour":
-		return "5 小時"
+		return t["fiveHour"]
 	case "weekly":
-		return "每週"
+		return t["weekly"]
 	}
 	if windowMinutes%1440 == 0 && windowMinutes > 0 {
-		return strconv.Itoa(windowMinutes/1440) + " 天"
+		return fmt.Sprintf(t["days"], windowMinutes/1440)
 	}
 	if windowMinutes%60 == 0 && windowMinutes > 0 {
-		return strconv.Itoa(windowMinutes/60) + " 小時"
+		return fmt.Sprintf(t["hours"], windowMinutes/60)
 	}
-	return strconv.Itoa(windowMinutes) + " 分鐘"
+	return fmt.Sprintf(t["minutes"], windowMinutes)
 }
 
 func formatTime(t any) string {

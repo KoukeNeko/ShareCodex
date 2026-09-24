@@ -1,8 +1,8 @@
 {{define "content"}}
-<h1>裝置</h1>
+<h1>{{.T.navDevices}}</h1>
 <section class="card">
   <div class="table-wrap"><table>
-    <thead><tr><th>成員</th><th>裝置</th><th>系統</th><th>最後連線</th><th></th></tr></thead>
+    <thead><tr><th>{{.T.member}}</th><th>{{.T.device}}</th><th>{{.T.platform}}</th><th>{{.T.lastSeen}}</th><th></th></tr></thead>
     <tbody>
     {{range .Data}}
       <tr>
@@ -11,14 +11,14 @@
         <td class="muted">{{.Platform}}</td>
         <td class="num muted">{{when .LastSeenAt}}</td>
         <td style="text-align:right">
-          {{if .RevokedAt}}<span class="tag off">已撤銷</span>{{else}}
-          <form class="inline" method="post" action="/admin/devices/{{.ID}}/revoke" onsubmit="return confirm('撤銷這台裝置？該裝置將無法再同步，已上傳的紀錄會保留。')">
-            <button class="danger" type="submit">撤銷</button>
+          {{if .RevokedAt}}<span class="tag off">{{$.T.revoked}}</span>{{else}}
+          <form class="inline" method="post" action="/admin/devices/{{.ID}}/revoke" onsubmit="return confirm({{$.T.revokeConfirm}})">
+            <button class="danger" type="submit">{{$.T.revoke}}</button>
           </form>{{end}}
         </td>
       </tr>
     {{else}}
-      <tr><td colspan="5" class="muted">沒有裝置</td></tr>
+      <tr><td colspan="5" class="muted">{{.T.noDevices}}</td></tr>
     {{end}}
     </tbody>
   </table></div>

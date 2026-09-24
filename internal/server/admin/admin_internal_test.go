@@ -10,3 +10,19 @@ func TestCompactTokens(t *testing.T) {
 		}
 	}
 }
+
+func TestDictionariesHaveTheSameKeys(t *testing.T) {
+	en := dictionaries[defaultLang]
+	for lang, dict := range dictionaries {
+		for key := range en {
+			if dict[key] == "" {
+				t.Errorf("%s is missing %q", lang, key)
+			}
+		}
+		for key := range dict {
+			if _, ok := en[key]; !ok {
+				t.Errorf("%s has %q, which English lacks", lang, key)
+			}
+		}
+	}
+}

@@ -1,42 +1,42 @@
 {{define "content"}}
-<h1>帳號</h1>
+<h1>{{.T.navAccounts}}</h1>
 {{range .Data}}
 <section class="card">
   <div class="row spread">
     <div class="row"><h2>{{provider .Provider}}</h2>{{if .PlanType}}<span class="tag">{{.PlanType}}</span>{{end}}<span class="muted small">{{.Hint}}</span></div>
     <form class="row" method="post" action="/admin/accounts/{{.ID}}/label">
-      <input class="grow" type="text" name="label" value="{{.Label}}" maxlength="50" required aria-label="帳號名稱">
-      <button type="submit">重新命名</button>
+      <input class="grow" type="text" name="label" value="{{.Label}}" maxlength="50" required aria-label="{{$.T.accountName}}">
+      <button type="submit">{{$.T.rename}}</button>
     </form>
   </div>
   <form class="stack" method="post" action="/admin/accounts/{{.ID}}/shares">
     <div class="table-wrap"><table>
-      <thead><tr><th>成員</th><th>權重</th><th>分配</th></tr></thead>
+      <thead><tr><th>{{$.T.member}}</th><th>{{$.T.weight}}</th><th>{{$.T.allotted}}</th></tr></thead>
       <tbody>
       {{range .Members}}
         <tr>
           <td>{{.Name}}</td>
-          <td><input type="number" name="weight.{{.PersonID}}" value="{{weight .Weight}}" min="0" max="100" step="any" aria-label="{{.Name}} 的權重"></td>
-          <td class="num">{{if eq .Weight 0.0}}<span class="tag off">不分配</span>{{else}}{{pct .AllottedPercent}}{{end}}</td>
+          <td><input type="number" name="weight.{{.PersonID}}" value="{{weight .Weight}}" min="0" max="100" step="any" aria-label="{{tf $.T.weightFor .Name}}"></td>
+          <td class="num">{{if eq .Weight 0.0}}<span class="tag off">{{$.T.notAllotted}}</span>{{else}}{{pct .AllottedPercent}}{{end}}</td>
         </tr>
       {{else}}
-        <tr><td colspan="3" class="muted">沒有成員</td></tr>
+        <tr><td colspan="3" class="muted">{{$.T.noPeople}}</td></tr>
       {{end}}
       {{if .Others}}
         <tr>
-          <td><select name="add_person" aria-label="加入成員"><option value="">加入成員…</option>{{range .Others}}<option value="{{.ID}}">{{.DisplayName}}</option>{{end}}</select></td>
-          <td><input type="number" name="add_weight" value="1" min="0" max="100" step="any" aria-label="新成員的權重"></td>
+          <td><select name="add_person" aria-label="{{$.T.addMember}}"><option value="">{{$.T.addMember}}</option>{{range .Others}}<option value="{{.ID}}">{{.DisplayName}}</option>{{end}}</select></td>
+          <td><input type="number" name="add_weight" value="1" min="0" max="100" step="any" aria-label="{{$.T.newMemberWeight}}"></td>
           <td></td>
         </tr>
       {{end}}
       </tbody>
     </table></div>
     <div class="row" style="justify-content:flex-end">
-      <button class="primary" type="submit">儲存分配</button>
+      <button class="primary" type="submit">{{$.T.saveShares}}</button>
     </div>
   </form>
 </section>
 {{else}}
-<div class="card"><p class="muted" style="margin:0">尚無帳號</p></div>
+<div class="card"><p class="muted" style="margin:0">{{.T.noAccounts}}</p></div>
 {{end}}
 {{end}}

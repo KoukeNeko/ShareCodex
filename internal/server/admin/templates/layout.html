@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-Hant-TW">
+<html lang="{{if eq .Lang "zh-TW"}}zh-Hant-TW{{else}}en{{end}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{.Title}} · ShareCodex 管理</title>
+<title>{{.Title}} · {{.T.appTitle}}</title>
 <style>
 :root {
   --bg: #f6f7f9; --surface: #fff; --text: #16181d; --muted: #69707d; --line: #e3e6eb;
@@ -26,6 +26,9 @@ header { background: var(--surface); border-bottom: 1px solid var(--line); }
 nav { display: flex; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; }
 nav a { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 6px; white-space: nowrap; }
 nav a.active { color: var(--text); background: var(--track); }
+nav.langs { flex: none; }
+nav.langs a { font-size: 12.5px; padding: 4px 8px; }
+.spacer { flex: 1; }
 main { max-width: 960px; margin: 0 auto; padding: 20px 16px 48px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 h1 { font-size: 20px; margin: 0; }
 h2 { font-size: 15px; margin: 0; }
@@ -72,12 +75,17 @@ form.inline { display: inline; margin: 0; }
     <span class="brand">ShareCodex</span>
     {{if .Authed}}
     <nav>
-      <a href="/admin/" class="{{if eq .Nav "overview"}}active{{end}}">總覽</a>
-      <a href="/admin/people" class="{{if eq .Nav "people"}}active{{end}}">成員</a>
-      <a href="/admin/accounts" class="{{if eq .Nav "accounts"}}active{{end}}">帳號</a>
-      <a href="/admin/devices" class="{{if eq .Nav "devices"}}active{{end}}">裝置</a>
+      <a href="/admin/" class="{{if eq .Nav "overview"}}active{{end}}">{{.T.navOverview}}</a>
+      <a href="/admin/people" class="{{if eq .Nav "people"}}active{{end}}">{{.T.navPeople}}</a>
+      <a href="/admin/accounts" class="{{if eq .Nav "accounts"}}active{{end}}">{{.T.navAccounts}}</a>
+      <a href="/admin/devices" class="{{if eq .Nav "devices"}}active{{end}}">{{.T.navDevices}}</a>
     </nav>
-    <form class="inline" method="post" action="/admin/logout"><button class="link">登出</button></form>
+    {{else}}<span class="spacer"></span>{{end}}
+    <nav class="langs" aria-label="{{.T.language}}">
+      {{range .Languages}}<a href="/admin/lang/{{.ID}}?next={{$.Here}}" class="{{if eq .ID $.Lang}}active{{end}}" lang="{{.ID}}">{{.Label}}</a>{{end}}
+    </nav>
+    {{if .Authed}}
+    <form class="inline" method="post" action="/admin/logout"><button class="link">{{.T.logout}}</button></form>
     {{end}}
   </div>
 </header>

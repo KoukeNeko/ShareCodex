@@ -81,7 +81,7 @@ func TestRequiresLogin(t *testing.T) {
 	if st, _ := b.get("/admin/people"); st != http.StatusSeeOther {
 		t.Fatalf("unauthenticated page returned %d, want redirect to login", st)
 	}
-	if st, body := b.post("/admin/login", url.Values{"password": {"wrong password!"}}); st != http.StatusUnauthorized || !strings.Contains(body, "密碼錯誤") {
+	if st, body := b.post("/admin/login", url.Values{"password": {"wrong password!"}}); st != http.StatusUnauthorized || !strings.Contains(body, "Wrong password") {
 		t.Fatalf("wrong password returned %d", st)
 	}
 	if st, _ := b.post("/admin/login", url.Values{"password": {password}}); st != http.StatusSeeOther {
@@ -127,7 +127,7 @@ func TestPeopleInviteSharesAndRevoke(t *testing.T) {
 	if st, _ := b.post("/admin/people", url.Values{"name": {"alice"}}); st != http.StatusSeeOther {
 		t.Fatalf("add person returned %d", st)
 	}
-	if st, body := b.post("/admin/people", url.Values{"name": {"alice"}}); st != http.StatusUnprocessableEntity || !strings.Contains(body, "已有同名成員") {
+	if st, body := b.post("/admin/people", url.Values{"name": {"alice"}}); st != http.StatusUnprocessableEntity || !strings.Contains(body, "A member with this name already exists") {
 		t.Fatalf("duplicate name returned %d", st)
 	}
 	persons, _ := store.Persons(ctx)
@@ -188,7 +188,7 @@ func TestPeopleInviteSharesAndRevoke(t *testing.T) {
 	if _, err := store.DeviceByToken(ctx, token); err != storage.ErrUnauthorized {
 		t.Fatalf("revoked device still authenticates: %v", err)
 	}
-	if _, page := b.get("/admin/devices"); !strings.Contains(page, "已撤銷") {
+	if _, page := b.get("/admin/devices"); !strings.Contains(page, "Revoked") {
 		t.Fatal("devices page does not show the revocation")
 	}
 	if st, _ := b.get("/admin/"); st != http.StatusOK {
@@ -199,5 +199,43 @@ func TestPeopleInviteSharesAndRevoke(t *testing.T) {
 func TestRejectsShortPassword(t *testing.T) {
 	if _, err := admin.New(nil, nil, admin.Config{Password: "short", PublicURL: "https://x"}); err == nil {
 		t.Fatal("a short admin password must be rejected at startup")
+	}
+}
+
+func TestLanguageSwitch(t *testing.T) {
+	_, b := newServer(t)
+	b.post("/admin/login", url.Values{"password": {password}})
+
+	if _, page := b.get("/admin/people"); !strings.Contains(page, "Add member") || !strings.Contains(page, `lang="en"`) {
+		t.Fatal("the console must default to English")
+	}
+
+	resp, err := b.c.Get(b.base + "/admin/lang/zh-TW?next=/admin/people")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/admin/people" {
+		t.Fatalf("switch returned %d to %q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	if _, page := b.get("/admin/people"); !strings.Contains(page, "新增成員") || !strings.Contains(page, `lang="zh-Hant-TW"`) {
+		t.Fatal("the chosen language did not stick")
+	}
+	if st, body := b.post("/admin/people", url.Values{"name": {""}}); st != http.StatusUnprocessableEntity || !strings.Contains(body, "請輸入名稱") {
+		t.Fatalf("validation errors must follow the language, got %d", st)
+	}
+
+	for _, next := range []string{"https://evil.example/", "//evil.example/admin/", "/elsewhere"} {
+		resp, err := b.c.Get(b.base + "/admin/lang/en?next=" + url.QueryEscape(next))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if loc := resp.Header.Get("Location"); loc != "/admin/" {
+			t.Errorf("next=%q redirected to %q, want /admin/", next, loc)
+		}
+	}
+	if st, _ := b.get("/admin/lang/fr"); st != http.StatusNotFound {
+		t.Errorf("unknown language returned %d, want 404", st)
 	}
 }
