@@ -221,3 +221,35 @@ jobs:
     secrets:
       HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
       SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+
+  # Rolls the server out on k3s: Argo CD follows homelab-gitops, so the new
+  # image tag has to land there.
+  deploy:
+    needs: server-image
+    runs-on: ubuntu-latest
+    env:
+      # Fine-grained PAT with Contents: read/write on KoukeNeko/homelab-gitops.
+      HAS_GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN != '' }}
+    steps:
+      - name: Skip when GITOPS_TOKEN is not configured
+        if: env.HAS_GITOPS_TOKEN != 'true'
+        run: echo "GITOPS_TOKEN secret not set; not bumping homelab-gitops."
+      - uses: actions/checkout@v7
+        if: env.HAS_GITOPS_TOKEN == 'true'
+        with:
+          repository: KoukeNeko/homelab-gitops
+          token: ${{ secrets.GITOPS_TOKEN }}
+      - name: Bump image tag in apps/sharecodex
+        if: env.HAS_GITOPS_TOKEN == 'true'
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          case "$version" in
+            *-*) echo "$GITHUB_REF_NAME is a pre-release; not deploying."; exit 0 ;;
+          esac
+          file=apps/sharecodex/kustomization.yaml
+          sed -i -E "s|^([[:space:]]*newTag:).*|\1 ${version}|" "$file"
+          git diff --quiet && { echo "already at ${version}"; exit 0; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "deploy(sharecodex): roll out ${version}"
+          git push
