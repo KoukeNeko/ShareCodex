@@ -183,6 +183,10 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
       - uses: docker/build-push-action@v7
+        env:
+          # Otherwise the build record becomes an artifact and the publish
+          # job attaches it to the release.
+          DOCKER_BUILD_RECORD_UPLOAD: false
         with:
           context: .
           file: deploy/Dockerfile
