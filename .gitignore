@@ -1,0 +1,11 @@
+/bin/
+/build/bin/
+frontend/node_modules/
+frontend/dist/*
+!frontend/dist/.gitkeep
+frontend/bindings/
+.env
+!deploy/.env.example
+*.db
+.DS_Store
+.task/
