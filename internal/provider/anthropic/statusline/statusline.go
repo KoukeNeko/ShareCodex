@@ -21,6 +21,7 @@ import (
 
 	"github.com/KoukeNeko/ShareCodex/internal/account"
 	"github.com/KoukeNeko/ShareCodex/internal/atomicfile"
+	"github.com/KoukeNeko/ShareCodex/internal/provider"
 	"github.com/KoukeNeko/ShareCodex/internal/quota"
 )
 
@@ -98,9 +99,9 @@ func chain(raw []byte, stdout, stderr io.Writer, command string) {
 	defer cancel()
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "cmd", "/C", command)
+		cmd = provider.Command(ctx, "cmd", "/C", command)
 	} else {
-		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", command)
+		cmd = provider.Command(ctx, "/bin/sh", "-c", command)
 	}
 	cmd.Stdin = bytes.NewReader(raw)
 	cmd.Stdout = stdout

@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
 	"time"
 
 	"github.com/KoukeNeko/ShareCodex/internal/account"
@@ -67,7 +66,7 @@ func Read(ctx context.Context, clientVersion string) (Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, bin, "app-server")
+	cmd := provider.Command(ctx, bin, "app-server")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return Result{}, err

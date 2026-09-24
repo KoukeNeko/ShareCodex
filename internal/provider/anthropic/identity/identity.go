@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"time"
 
 	"github.com/KoukeNeko/ShareCodex/internal/account"
@@ -32,7 +31,7 @@ func Observe(ctx context.Context) (account.Observation, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, bin, "auth", "status", "--json").Output()
+	out, err := provider.Command(ctx, bin, "auth", "status", "--json").Output()
 	if err != nil {
 		return account.Observation{}, fmt.Errorf("claude auth status: %w", err)
 	}
