@@ -186,7 +186,7 @@ scoop update
 scoop update sharecodex
 ```
 
-第一行更新 bucket，第二行安裝新版本。設定、加入狀態與 statusLine 擷取都會保留。
+第一行更新 bucket，第二行安裝新版本。用安裝指令稿安裝的，改為再執行一次指令稿。設定、加入狀態與 statusLine 擷取都會保留。
 
 ### Linux 與 SSH 主機
 
@@ -265,6 +265,8 @@ Linux CLI 與 server binary、Docker Compose bundle，把 server 映像檔推送
 並建立附 `SHA256SUMS` 的 GitHub Release。接著執行 `.github/workflows/packages.yml`，更新
 [KoukeNeko/homebrew-tap](https://github.com/KoukeNeko/homebrew-tap) 的 cask、Linux formula（`sharecodex-cli`），以及
 [KoukeNeko/scoop-bucket](https://github.com/KoukeNeko/scoop-bucket) 的 manifest；也可以手動執行來補發某個 release。
+
+`install.sh` 與 `install.ps1` 依檔名下載 release 檔案，並以 `SHA256SUMS` 驗證，因此更改檔名會讓它們失效。
 
 簽署在設定對應的 repository secrets 後才會執行；沒有設定時，macOS 版只有 ad-hoc 簽署，
 第一次開啟需在「系統設定 › 隱私權與安全性」允許。

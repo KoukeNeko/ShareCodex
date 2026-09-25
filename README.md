@@ -204,8 +204,8 @@ scoop update
 scoop update sharecodex
 ```
 
-The first command refreshes the bucket; the second installs the new version. Your settings, join
-and statusLine capture carry over.
+The first command refreshes the bucket; the second installs the new version. If you installed with
+the install script, run it again instead. Your settings, join and statusLine capture carry over.
 
 ### Linux and SSH machines
 
@@ -291,6 +291,9 @@ Windows `.exe` files for x64 and ARM64, the Linux CLI and server binaries and th
 [KoukeNeko/homebrew-tap](https://github.com/KoukeNeko/homebrew-tap) and the manifest in
 [KoukeNeko/scoop-bucket](https://github.com/KoukeNeko/scoop-bucket); run it by hand to backfill a
 release.
+
+`install.sh` and `install.ps1` download release assets by name and check them against `SHA256SUMS`,
+so renaming an asset breaks them.
 
 Code signing runs only when its repository secrets are set. Without them, the macOS app is only
 ad-hoc signed and users must allow it the first time in System Settings › Privacy & Security.
