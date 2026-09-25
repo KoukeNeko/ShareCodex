@@ -14,6 +14,9 @@
     local?: boolean
   } = $props()
 
+  // The viewer's own computer is signed into this account.
+  const current = $derived(activeUsers.some((u) => u.is_you))
+
   let selected = $state(0)
   const bucket = $derived(buckets[Math.min(selected, buckets.length - 1)])
 
@@ -41,7 +44,7 @@
   }
 </script>
 
-<section class="card">
+<section class="card" class:current>
   <header>
     <span class="provider">{providerName(provider)}</span>
     <span class="label">{label}</span>
@@ -134,6 +137,7 @@
     display: grid;
     gap: 10px;
   }
+  .card.current { border-color: var(--accent); }
   header { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
   .provider { font-weight: 600; }
   .label { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
