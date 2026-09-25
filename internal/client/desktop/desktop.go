@@ -51,6 +51,12 @@ func Run(ag *agent.Agent, assets fs.FS, executable string) error {
 	if height < minPopupHeight {
 		height = defaultPopupHeight
 	}
+	// Windows 11 draws the popup on Acrylic, like the system's own tray
+	// flyouts; the query tells the page to go translucent over it.
+	background, url := application.BackgroundTypeTransparent, "/"
+	if acrylicSupported() {
+		background, url = application.BackgroundTypeTranslucent, "/?backdrop=acrylic"
+	}
 	// Only the height is adjustable; the layout is designed for one width.
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:            "popup",
@@ -64,11 +70,19 @@ func Run(ag *agent.Agent, assets fs.FS, executable string) error {
 		Hidden:          true,
 		HideOnEscape:    true,
 		HideOnFocusLost: true,
-		Windows:         application.WindowsWindow{HiddenOnTaskbar: true},
+		// DWM draws caption buttons behind a translucent page unless the
+		// system menu is gone; the popup closes via Escape or focus loss.
+		MinimiseButtonState: application.ButtonHidden,
+		MaximiseButtonState: application.ButtonHidden,
+		CloseButtonState:    application.ButtonHidden,
+		Windows: application.WindowsWindow{
+			HiddenOnTaskbar: true,
+			BackdropType:    application.Acrylic,
+		},
 		// The popup draws on AppKit's Liquid Glass (NSGlassEffectView on
 		// macOS 26+, a visual effect view before that); the page itself is
 		// transparent on macOS so the material shows through.
-		BackgroundType:   application.BackgroundTypeTransparent,
+		BackgroundType:   background,
 		BackgroundColour: application.NewRGBA(0, 0, 0, 0),
 		Mac: application.MacWindow{
 			Backdrop:     application.MacBackdropLiquidGlass,
@@ -79,7 +93,7 @@ func Run(ag *agent.Agent, assets fs.FS, executable string) error {
 				CornerRadius: popupCornerRadius,
 			},
 		},
-		URL: "/",
+		URL: url,
 	})
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
 		window.Hide()
