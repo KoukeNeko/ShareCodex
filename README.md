@@ -170,6 +170,18 @@ scoop bucket add koukeneko https://github.com/KoukeNeko/scoop-bucket
 scoop install koukeneko/sharecodex
 ```
 
+Without Homebrew or Scoop, use the install script. It downloads the latest release, checks its
+SHA-256 and installs the app in `/Applications` on macOS, `sharecodex` in `~/.local/bin` on Linux, or
+the app in `%LOCALAPPDATA%\Programs\ShareCodex` on Windows. Run it again to update.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KoukeNeko/ShareCodex/main/install.sh | sh   # macOS, Linux
+```
+
+```powershell
+irm https://raw.githubusercontent.com/KoukeNeko/ShareCodex/main/install.ps1 | iex       # Windows
+```
+
 Or download `ShareCodex-macos-universal.zip`, `ShareCodex-windows-amd64.zip` or
 `ShareCodex-windows-arm64.zip` from the
 [latest GitHub Release](https://github.com/KoukeNeko/ShareCodex/releases/latest). The macOS app is
@@ -209,13 +221,13 @@ loginctl enable-linger                                   # keep it running after
 sharecodex status
 ```
 
-Without Homebrew, download `sharecodex-linux-amd64.tar.gz` or `sharecodex-linux-arm64.tar.gz` from the
+Without Homebrew, use the install script above, or download `sharecodex-linux-amd64.tar.gz` or `sharecodex-linux-arm64.tar.gz` from the
 [latest GitHub Release](https://github.com/KoukeNeko/ShareCodex/releases/latest) and put `sharecodex`
 on your `PATH`, for example in `~/.local/bin`. SSH sessions usually have no keyring, so the device
 token is kept in `~/.config/ShareCodex` with owner-only permissions. `autostart on` copies your
 current `PATH` into the service so it finds `claude` and `codex`; run it again if they move.
 
-To update, run `brew update && brew upgrade sharecodex-cli` (or replace the binary), then
+To update, run `brew update && brew upgrade sharecodex-cli` (or rerun the install script, or replace the binary), then
 `sharecodex autostart on` to restart the service.
 
 ---

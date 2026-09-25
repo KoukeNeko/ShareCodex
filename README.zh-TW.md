@@ -154,6 +154,18 @@ scoop bucket add koukeneko https://github.com/KoukeNeko/scoop-bucket
 scoop install koukeneko/sharecodex
 ```
 
+沒有 Homebrew 或 Scoop 時，可使用安裝指令稿。它會下載最新版本、檢查 SHA-256，再把 app 安裝到 macOS 的
+`/Applications`、把 `sharecodex` 安裝到 Linux 的 `~/.local/bin`，或把 app 安裝到 Windows 的
+`%LOCALAPPDATA%\Programs\ShareCodex`。再執行一次即可更新。
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KoukeNeko/ShareCodex/main/install.sh | sh   # macOS、Linux
+```
+
+```powershell
+irm https://raw.githubusercontent.com/KoukeNeko/ShareCodex/main/install.ps1 | iex       # Windows
+```
+
 也可以從[最新 GitHub Release](https://github.com/KoukeNeko/ShareCodex/releases/latest) 下載
 `ShareCodex-macos-universal.zip`、`ShareCodex-windows-amd64.zip` 或 `ShareCodex-windows-arm64.zip`。macOS 版以 Developer ID 簽署並經
 Apple 公證。app 會檢查 GitHub 是否有新版本並提示，但不會自行下載或安裝任何東西。
@@ -190,13 +202,13 @@ loginctl enable-linger                                   # 登出後繼續執行
 sharecodex status
 ```
 
-沒有 Homebrew 時，從[最新 GitHub Release](https://github.com/KoukeNeko/ShareCodex/releases/latest) 下載
+沒有 Homebrew 時，使用上面的安裝指令稿，或從[最新 GitHub Release](https://github.com/KoukeNeko/ShareCodex/releases/latest) 下載
 `sharecodex-linux-amd64.tar.gz` 或 `sharecodex-linux-arm64.tar.gz`，把 `sharecodex` 放到 `PATH` 中，例如
 `~/.local/bin`。SSH 工作階段通常沒有 keyring，因此 device token 存在
 `~/.config/ShareCodex`，權限僅限本人讀寫。`autostart on` 會把目前的 `PATH` 寫進服務，讓它找得到
 `claude` 與 `codex`；兩者位置改變時請再執行一次。
 
-更新時執行 `brew update && brew upgrade sharecodex-cli`（或替換執行檔），再執行 `sharecodex autostart on`
+更新時執行 `brew update && brew upgrade sharecodex-cli`（或再執行一次安裝指令稿，或替換執行檔），再執行 `sharecodex autostart on`
 重新啟動服務。
 
 ---
