@@ -11,6 +11,7 @@ import (
 
 	"github.com/KoukeNeko/ShareCodex/internal/account"
 	"github.com/KoukeNeko/ShareCodex/internal/client/storage"
+	"github.com/KoukeNeko/ShareCodex/internal/provider/anthropic/desktop"
 	"github.com/KoukeNeko/ShareCodex/internal/scan"
 	"github.com/KoukeNeko/ShareCodex/internal/usage"
 )
@@ -44,7 +45,8 @@ func TestIngestFileAttributesByAccountTimeline(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	n, err := a.ingestFile(ctx, src, path, scan.FileState{Size: 0, ModTime: t0}, obs)
+	ac := accounts{provider: account.ProviderAnthropic, cli: obs, since: t0}
+	n, err := a.ingestFile(ctx, src, path, scan.FileState{Size: 0, ModTime: t0}, ac)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,5 +63,50 @@ func TestIngestFileAttributesByAccountTimeline(t *testing.T) {
 	}
 	if len(req.Events) != 1 || req.Events[0].DedupeKey != "pooled" || req.Events[0].AccountRefHash != "max" {
 		t.Fatalf("queued events = %+v", req.Events)
+	}
+}
+
+// Claude Desktop signs in separately from the CLI, so its sessions follow
+// the organization Desktop ran them under, whatever the CLI is signed into.
+func TestResolveSplitsClaudeDesktopFromTheCLI(t *testing.T) {
+	t0 := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
+	ac := accounts{
+		provider:    account.ProviderAnthropic,
+		cli:         []account.Observation{{Provider: account.ProviderAnthropic, ExternalRefHash: "cli-max", ObservedAt: t0}},
+		desktopSeen: true,
+		desktop:     map[string]desktop.Session{"desk": {OrgID: "org-b", LastActivity: t0}},
+		since:       t0,
+	}
+	desk := account.HashExternalRef(account.ProviderAnthropic, "org-b")
+	later := t0.Add(time.Hour)
+
+	for _, tc := range []struct {
+		name, session, entrypoint string
+		at                        time.Time
+		want                      string
+	}{
+		{"CLI session", "cli-session", "cli", later, "cli-max"},
+		{"Desktop session", "desk", "claude-desktop", later, desk},
+		// Desktop's metadata wins over what the transcript says.
+		{"Desktop session logged as cli", "desk", "cli", later, desk},
+		{"Desktop session before joining", "desk", "claude-desktop", t0.Add(-time.Minute), ""},
+		{"Desktop session without metadata", "gone", "claude-desktop", later, ""},
+		{"Desktop with third-party inference", "3p", "claude-desktop-3p", later, ""},
+		{"statusLine snapshot of a Desktop session", "desk", "", later, desk},
+		{"statusLine snapshot of a CLI session", "cli-session", "", later, "cli-max"},
+	} {
+		ref, ok := ac.resolve(tc.session, tc.entrypoint, tc.at)
+		if (tc.want != "") != ok || ref != tc.want {
+			t.Errorf("%s: resolve = %q, %v; want %q", tc.name, ref, ok, tc.want)
+		}
+	}
+
+	// Without the CLI, Desktop usage is still pooled.
+	desktopOnly := accounts{provider: account.ProviderAnthropic, desktopSeen: true, desktop: ac.desktop, since: t0}
+	if !desktopOnly.pooled() {
+		t.Error("a device using only Claude Desktop must be pooled")
+	}
+	if ref, ok := desktopOnly.resolve("desk", "claude-desktop", later); !ok || ref != desk {
+		t.Errorf("Desktop-only resolve = %q, %v; want %q", ref, ok, desk)
 	}
 }

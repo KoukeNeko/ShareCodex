@@ -69,20 +69,38 @@ func (a *Agent) localAccounts(ctx context.Context, now time.Time) []LocalAccount
 	}
 
 	hints := map[string]account.Observation{}
-	for _, p := range []account.Provider{account.ProviderAnthropic, account.ProviderOpenAI} {
-		obs, err := a.store.Observations(ctx, p)
+	// current holds each app's latest account; a signed-out CLI's latest
+	// observation has no account, so nothing is current for it.
+	current := map[string]bool{}
+	timelines := []struct {
+		provider account.Provider
+		source   account.Source
+	}{
+		{account.ProviderAnthropic, account.SourceCLI},
+		{account.ProviderOpenAI, account.SourceCLI},
+		{account.ProviderAnthropic, account.SourceClaudeDesktop},
+	}
+	for _, tl := range timelines {
+		obs, err := a.store.Observations(ctx, tl.provider, tl.source)
 		if err != nil {
 			continue
 		}
 		for _, o := range obs {
-			hints[string(p)+":"+o.ExternalRefHash] = o
+			// Desktop reports no email or plan; keep the CLI's.
+			key := string(tl.provider) + ":" + o.ExternalRefHash
+			if _, known := hints[key]; !known || o.Hint != "" {
+				hints[key] = o
+			}
+		}
+		if n := len(obs); n > 0 && obs[n-1].ExternalRefHash != "" {
+			current[string(tl.provider)+":"+obs[n-1].ExternalRefHash] = true
 		}
 	}
 
 	var out []LocalAccount
 	for key, group := range byAccount {
 		o := hints[key]
-		la := LocalAccount{Provider: group[0].Provider, Hint: o.Hint, PlanType: o.PlanType}
+		la := LocalAccount{Provider: group[0].Provider, Hint: o.Hint, PlanType: o.PlanType, Current: current[key]}
 		for _, b := range quota.Latest(group) {
 			bo := syncapi.BucketOverview{Key: string(b.Key), ResetsAt: b.ResetsAt, ObservedAt: b.ObservedAt}
 			if b.UsedPercent != nil {

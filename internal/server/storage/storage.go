@@ -252,8 +252,8 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 				return err
 			}
 			res, err := tx.ExecContext(ctx,
-				`INSERT INTO observations (device_id, account_id, observed_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-				d.ID, id, o.ObservedAt)
+				`INSERT INTO observations (device_id, account_id, source, observed_at) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+				d.ID, id, o.Source, o.ObservedAt)
 			if err != nil {
 				return fmt.Errorf("save observation: %w", err)
 			}
@@ -418,6 +418,46 @@ func (s *Store) Snapshots(ctx context.Context, accountID string, since time.Time
 			return nil, fmt.Errorf("decode stored buckets: %w", err)
 		}
 		out = append(out, dto.ToDomain())
+	}
+	return out, rows.Err()
+}
+
+// ActiveDevice is the account a device's CLI was last signed into for one
+// provider.
+type ActiveDevice struct {
+	AccountID  string
+	PersonID   string
+	PersonName string
+	DeviceName string
+}
+
+// ActiveDevices returns, for each device that is not revoked, the account of
+// its latest observation per provider and app (the CLI or Claude Desktop),
+// if that observation is after since. A CLI that signs out stops sending
+// observations, and Claude Desktop's are dated by its last activity, so
+// either drops out once its last observation is older than since.
+func (s *Store) ActiveDevices(ctx context.Context, since time.Time) ([]ActiveDevice, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT account_id, person_id, display_name, name FROM (
+			SELECT DISTINCT ON (o.device_id, a.provider, o.source) o.account_id, d.person_id, p.display_name, d.name, o.observed_at
+			FROM observations o
+			JOIN devices d ON d.id = o.device_id
+			JOIN persons p ON p.id = d.person_id
+			JOIN accounts a ON a.id = o.account_id
+			WHERE d.revoked_at IS NULL AND o.observed_at >= $1
+			ORDER BY o.device_id, a.provider, o.source, o.observed_at DESC
+		) latest`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ActiveDevice
+	for rows.Next() {
+		var d ActiveDevice
+		if err := rows.Scan(&d.AccountID, &d.PersonID, &d.PersonName, &d.DeviceName); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
 	}
 	return out, rows.Err()
 }

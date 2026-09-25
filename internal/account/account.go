@@ -57,11 +57,24 @@ func MaskRef(ref string) string {
 	return masked
 }
 
+// Source is the app an observation came from. Claude Desktop signs in
+// separately from the claude CLI, so each keeps its own timeline. The CLI's
+// source is empty so observations recorded before Desktop was tracked keep
+// their meaning.
+type Source string
+
+const (
+	SourceCLI           Source = ""
+	SourceClaudeDesktop Source = "claude-desktop"
+)
+
 // Observation records which upstream account a device was logged into at a
-// point in time, as reported by the provider's official CLI.
+// point in time, as reported by the provider's official CLI or, for Claude
+// Desktop, by the session it last used.
 type Observation struct {
 	DeviceID        string
 	Provider        Provider
+	Source          Source
 	ExternalRefHash string
 	Hint            string
 	PlanType        string

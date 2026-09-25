@@ -4,7 +4,7 @@
   import AccountCard from './features/overview/AccountCard.svelte'
   import JoinForm from './features/overview/JoinForm.svelte'
   import Settings from './features/settings/Settings.svelte'
-  import { Desktop, errorMessage, type ProviderState, type State } from './lib/api'
+  import { Desktop, errorMessage, type ActiveUser, type ProviderState, type State } from './lib/api'
   import { clock, providerName } from './lib/format'
   import { setLocale, t } from './lib/i18n.svelte'
 
@@ -24,6 +24,8 @@
     (app?.providers ?? []).filter((p) => p.status === 'error' || p.status === 'not_pooled'),
   )
   const accounts = $derived(app?.overview?.accounts ?? [])
+  // Before joining, only this device's own sign-in is known.
+  const youHere: ActiveUser = { person_id: '', name: '', is_you: true, devices: [] }
 
   $effect(() => setLocale(app?.language ?? 'en'))
 
@@ -84,11 +86,11 @@
 
       {#if app.paired && accounts.length > 0}
         {#each accounts as a (a.id)}
-          <AccountCard provider={a.provider} label={a.label} planType={a.plan_type} buckets={a.buckets ?? []} {now} />
+          <AccountCard provider={a.provider} label={a.label} planType={a.plan_type} buckets={a.buckets ?? []} activeUsers={a.active_users ?? []} {now} />
         {/each}
       {:else}
         {#each app.local ?? [] as a (a.provider + a.hint)}
-          <AccountCard provider={a.provider} label={a.hint} planType={a.plan_type} buckets={a.buckets ?? []} {now} local />
+          <AccountCard provider={a.provider} label={a.hint} planType={a.plan_type} buckets={a.buckets ?? []} activeUsers={a.current ? [youHere] : []} {now} local />
         {/each}
         {#if (app.local ?? []).length === 0 && app.paired}
           <p class="muted">{t('noQuota')}</p>

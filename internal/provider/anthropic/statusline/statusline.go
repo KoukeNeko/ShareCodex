@@ -111,9 +111,15 @@ func chain(raw []byte, stdout, stderr io.Writer, command string) {
 	}
 }
 
+// Spooled is the latest rate limits of one Claude Code session.
+type Spooled struct {
+	SessionID string
+	Snapshot  quota.Snapshot
+}
+
 // ReadSpool returns one snapshot per spooled session. Account resolution is
-// left to the caller, which knows the device's account timeline.
-func ReadSpool(dir string) ([]quota.Snapshot, error) {
+// left to the caller, which knows which account each session ran under.
+func ReadSpool(dir string) ([]Spooled, error) {
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
@@ -121,7 +127,7 @@ func ReadSpool(dir string) ([]quota.Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	var out []quota.Snapshot
+	var out []Spooled
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
@@ -135,7 +141,7 @@ func ReadSpool(dir string) ([]quota.Snapshot, error) {
 			continue
 		}
 		if s, ok := toSnapshot(entry); ok {
-			out = append(out, s)
+			out = append(out, Spooled{SessionID: entry.SessionID, Snapshot: s})
 		}
 	}
 	return out, nil

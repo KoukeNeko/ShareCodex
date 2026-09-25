@@ -86,8 +86,8 @@ func (s *Store) KnownFiles(ctx context.Context) (map[string]scan.FileState, erro
 func (s *Store) AddObservation(ctx context.Context, o account.Observation) error {
 	return s.inTx(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx,
-			`INSERT OR IGNORE INTO observations (provider, ref_hash, hint, plan_type, observed_at) VALUES (?, ?, ?, ?, ?)`,
-			o.Provider, o.ExternalRefHash, o.Hint, o.PlanType, o.ObservedAt.UnixMilli())
+			`INSERT OR IGNORE INTO observations (provider, source, ref_hash, hint, plan_type, observed_at) VALUES (?, ?, ?, ?, ?, ?)`,
+			o.Provider, o.Source, o.ExternalRefHash, o.Hint, o.PlanType, o.ObservedAt.UnixMilli())
 		if err != nil {
 			return err
 		}
@@ -98,16 +98,19 @@ func (s *Store) AddObservation(ctx context.Context, o account.Observation) error
 	})
 }
 
-func (s *Store) Observations(ctx context.Context, provider account.Provider) ([]account.Observation, error) {
+// Observations returns one app's account timeline for a provider, oldest
+// first.
+func (s *Store) Observations(ctx context.Context, provider account.Provider, source account.Source) ([]account.Observation, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT ref_hash, hint, plan_type, observed_at FROM observations WHERE provider = ? ORDER BY observed_at`, provider)
+		`SELECT ref_hash, hint, plan_type, observed_at FROM observations WHERE provider = ? AND source = ? ORDER BY observed_at`,
+		provider, source)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []account.Observation
 	for rows.Next() {
-		o := account.Observation{Provider: provider}
+		o := account.Observation{Provider: provider, Source: source}
 		var at int64
 		if err := rows.Scan(&o.ExternalRefHash, &o.Hint, &o.PlanType, &at); err != nil {
 			return nil, err

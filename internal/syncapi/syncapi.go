@@ -55,7 +55,9 @@ type Snapshot struct {
 }
 
 type Observation struct {
-	Provider       string    `json:"provider"`
+	Provider string `json:"provider"`
+	// Source is the app that reported the account; empty for the CLI.
+	Source         string    `json:"source,omitempty"`
 	AccountRefHash string    `json:"account_ref_hash"`
 	Hint           string    `json:"hint"`
 	PlanType       string    `json:"plan_type"`
@@ -111,6 +113,18 @@ type AccountOverview struct {
 	Label    string           `json:"label"`
 	PlanType string           `json:"plan_type"`
 	Buckets  []BucketOverview `json:"buckets"`
+	// ActiveUsers are the people whose CLI is signed into this account right
+	// now, the viewer first.
+	ActiveUsers []ActiveUser `json:"active_users"`
+}
+
+// ActiveUser is one person signed into an account, with the devices they
+// use it on.
+type ActiveUser struct {
+	PersonID string   `json:"person_id"`
+	Name     string   `json:"name"`
+	IsYou    bool     `json:"is_you"`
+	Devices  []string `json:"devices"`
 }
 
 type BucketOverview struct {
@@ -236,6 +250,7 @@ func (s Snapshot) ToDomain() quota.Snapshot {
 func FromObservation(o account.Observation) Observation {
 	return Observation{
 		Provider:       string(o.Provider),
+		Source:         string(o.Source),
 		AccountRefHash: o.ExternalRefHash,
 		Hint:           o.Hint,
 		PlanType:       o.PlanType,

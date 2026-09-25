@@ -2,6 +2,7 @@ package query
 
 import (
 	"math"
+	"slices"
 	"testing"
 	"time"
 
@@ -78,5 +79,30 @@ func TestBucketOverviewAfterResetHasNoModels(t *testing.T) {
 	bo := bucketOverview(b, now, nil, rows, "a")
 	if !bo.Reset || len(bo.Models) != 0 {
 		t.Errorf("reset bucket = %+v, want no models", bo)
+	}
+}
+
+func TestGroupActiveUsers(t *testing.T) {
+	devices := []storage.ActiveDevice{
+		{AccountID: "max", PersonID: "c", PersonName: "carol", DeviceName: "pc"},
+		{AccountID: "max", PersonID: "b", PersonName: "bob", DeviceName: "laptop"},
+		{AccountID: "max", PersonID: "a", PersonName: "alice", DeviceName: "mac"},
+		{AccountID: "max", PersonID: "b", PersonName: "bob", DeviceName: "desktop"},
+		// bob's desktop is on max in both the CLI and Claude Desktop.
+		{AccountID: "max", PersonID: "b", PersonName: "bob", DeviceName: "desktop"},
+		{AccountID: "plus", PersonID: "a", PersonName: "alice", DeviceName: "mac"},
+	}
+
+	got := groupActiveUsers(devices, "b")
+
+	max := got["max"]
+	if len(max) != 3 || max[0].Name != "bob" || !max[0].IsYou || max[1].Name != "alice" || max[2].Name != "carol" {
+		t.Fatalf("max = %+v, want bob (you) first, then alice, carol", max)
+	}
+	if !slices.Equal(max[0].Devices, []string{"desktop", "laptop"}) {
+		t.Errorf("bob's devices = %v, want both once each, sorted", max[0].Devices)
+	}
+	if plus := got["plus"]; len(plus) != 1 || plus[0].IsYou {
+		t.Errorf("plus = %+v, want alice only", plus)
 	}
 }

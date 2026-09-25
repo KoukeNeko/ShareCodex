@@ -2,12 +2,14 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/KoukeNeko/ShareCodex/internal/account"
 	"github.com/KoukeNeko/ShareCodex/internal/scan"
+	"github.com/KoukeNeko/ShareCodex/internal/syncapi"
 	"github.com/KoukeNeko/ShareCodex/internal/usage"
 )
 
@@ -81,11 +83,45 @@ func TestObservationsWithoutPooledAccountStayLocal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	obs, err := s.Observations(ctx, account.ProviderOpenAI)
+	obs, err := s.Observations(ctx, account.ProviderOpenAI, account.SourceCLI)
 	if err != nil || len(obs) != 2 {
 		t.Fatalf("observations = %v, %v; want 2", obs, err)
 	}
 	if n, _ := s.OutboxLen(ctx); n != 1 {
 		t.Fatalf("outbox len = %d, want 1 (API-key period is not synced)", n)
+	}
+}
+
+func TestObservationTimelinesAreKeptPerApp(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	at := time.UnixMilli(1_000)
+
+	for _, o := range []account.Observation{
+		{Provider: account.ProviderAnthropic, ExternalRefHash: "cli", ObservedAt: at},
+		// Claude Desktop on another account at the same moment.
+		{Provider: account.ProviderAnthropic, Source: account.SourceClaudeDesktop, ExternalRefHash: "desktop", ObservedAt: at},
+	} {
+		if err := s.AddObservation(ctx, o); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cli, err := s.Observations(ctx, account.ProviderAnthropic, account.SourceCLI)
+	if err != nil || len(cli) != 1 || cli[0].ExternalRefHash != "cli" {
+		t.Fatalf("CLI timeline = %+v, %v; want only the CLI's account", cli, err)
+	}
+	dsk, err := s.Observations(ctx, account.ProviderAnthropic, account.SourceClaudeDesktop)
+	if err != nil || len(dsk) != 1 || dsk[0].ExternalRefHash != "desktop" {
+		t.Fatalf("Desktop timeline = %+v, %v; want only Desktop's account", dsk, err)
+	}
+
+	items, err := s.PendingOutbox(ctx, 10)
+	if err != nil || len(items) != 2 {
+		t.Fatalf("outbox = %d items, %v; want both observations", len(items), err)
+	}
+	var o syncapi.Observation
+	if err := json.Unmarshal(items[1].Payload, &o); err != nil || o.Source != string(account.SourceClaudeDesktop) {
+		t.Errorf("queued Desktop observation = %+v, %v; want its source sent", o, err)
 	}
 }

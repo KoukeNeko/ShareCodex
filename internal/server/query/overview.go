@@ -3,6 +3,7 @@ package query
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"time"
 
@@ -16,6 +17,11 @@ import (
 // latest value of every bucket is found.
 const snapshotLookback = 8 * 24 * time.Hour
 
+// activeWindow is how recent a device's last observation must be for its
+// account to count as in use. Devices report every 5 minutes, so this
+// tolerates two missed reports.
+const activeWindow = 15 * time.Minute
+
 // Overview returns every account with its quota windows and, per window,
 // each member's allotment and estimated usage. All members see all accounts.
 func Overview(ctx context.Context, st *storage.Store, viewerPersonID string, now time.Time) (syncapi.Overview, error) {
@@ -23,6 +29,11 @@ func Overview(ctx context.Context, st *storage.Store, viewerPersonID string, now
 	if err != nil {
 		return syncapi.Overview{}, err
 	}
+	active, err := st.ActiveDevices(ctx, now.Add(-activeWindow))
+	if err != nil {
+		return syncapi.Overview{}, err
+	}
+	activeUsers := groupActiveUsers(active, viewerPersonID)
 	out := syncapi.Overview{GeneratedAt: now.UTC(), Accounts: []syncapi.AccountOverview{}}
 	for _, a := range accounts {
 		snaps, err := st.Snapshots(ctx, a.ID, now.Add(-snapshotLookback))
@@ -36,7 +47,10 @@ func Overview(ctx context.Context, st *storage.Store, viewerPersonID string, now
 
 		ao := syncapi.AccountOverview{
 			ID: a.ID, Provider: string(a.Provider), Label: a.Label, PlanType: a.PlanType,
-			Buckets: []syncapi.BucketOverview{},
+			Buckets: []syncapi.BucketOverview{}, ActiveUsers: activeUsers[a.ID],
+		}
+		if ao.ActiveUsers == nil {
+			ao.ActiveUsers = []syncapi.ActiveUser{}
 		}
 		for _, b := range sortedBuckets(quota.Latest(snaps)) {
 			start, end := b.Window(now)
@@ -140,6 +154,38 @@ func bucketOverview(b quota.Observed, now time.Time, members []storage.Member, r
 		return bo.Members[i].Name < bo.Members[j].Name
 	})
 	return bo
+}
+
+// groupActiveUsers turns active devices into each account's people, one
+// entry per person with their device names, the viewer first and then by
+// name.
+func groupActiveUsers(devices []storage.ActiveDevice, viewer string) map[string][]syncapi.ActiveUser {
+	byAccount := map[string][]syncapi.ActiveUser{}
+	for _, d := range devices {
+		users := byAccount[d.AccountID]
+		i := slices.IndexFunc(users, func(u syncapi.ActiveUser) bool { return u.PersonID == d.PersonID })
+		if i < 0 {
+			users = append(users, syncapi.ActiveUser{PersonID: d.PersonID, Name: d.PersonName, IsYou: d.PersonID == viewer})
+			i = len(users) - 1
+		}
+		users[i].Devices = append(users[i].Devices, d.DeviceName)
+		byAccount[d.AccountID] = users
+	}
+	for _, users := range byAccount {
+		// A device on one account in both the CLI and Claude Desktop is
+		// listed once.
+		for i := range users {
+			sort.Strings(users[i].Devices)
+			users[i].Devices = slices.Compact(users[i].Devices)
+		}
+		sort.Slice(users, func(i, j int) bool {
+			if users[i].IsYou != users[j].IsYou {
+				return users[i].IsYou
+			}
+			return users[i].Name < users[j].Name
+		})
+	}
+	return byAccount
 }
 
 var bucketOrder = map[quota.BucketKey]int{quota.BucketFiveHour: 0, quota.BucketWeekly: 1}

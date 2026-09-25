@@ -9,9 +9,11 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
+	"github.com/KoukeNeko/ShareCodex/internal/account"
 	"github.com/KoukeNeko/ShareCodex/internal/identity"
 	"github.com/KoukeNeko/ShareCodex/internal/server/httpapi"
 	"github.com/KoukeNeko/ShareCodex/internal/server/storage"
@@ -283,6 +285,92 @@ func TestOnePersonManyDevices(t *testing.T) {
 	for _, d := range devices {
 		if d.PersonID != alice.ID {
 			t.Errorf("device %s belongs to %s, want alice", d.Name, d.PersonName)
+		}
+	}
+}
+
+// The overview shows who is signed into each account right now: each
+// device's latest account per provider, while its last report is recent.
+func TestActiveUsers(t *testing.T) {
+	ctx := context.Background()
+	store := storagetest.New(t)
+	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	defer srv.Close()
+
+	alice, err := store.AddPerson(ctx, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mac := pairDevice(t, store, srv.URL, alice, "mac", identity.PlatformDarwin)
+	box := pairDevice(t, store, srv.URL, alice, "build-box", identity.PlatformLinux)
+	bob := pair(t, store, srv.URL, "bob")
+	carol := pair(t, store, srv.URL, "carol")
+	dave := pair(t, store, srv.URL, "dave")
+
+	now := time.Now().UTC().Truncate(time.Second)
+	obs := func(ref string, age time.Duration) syncapi.Observation {
+		return syncapi.Observation{Provider: "anthropic", AccountRefHash: ref, Hint: ref, ObservedAt: now.Add(-age)}
+	}
+	codex := syncapi.Observation{Provider: "openai", AccountRefHash: "plus", Hint: "plus", ObservedAt: now}
+	desktop := func(ref string) syncapi.Observation {
+		o := obs(ref, 3*time.Minute)
+		o.Source, o.Hint = string(account.SourceClaudeDesktop), ""
+		return o
+	}
+	for _, batch := range []struct {
+		c   client
+		obs []syncapi.Observation
+	}{
+		// Alice's Mac runs the CLI on max-a and Claude Desktop on max-b.
+		{mac, []syncapi.Observation{obs("max-a", time.Minute), codex, desktop("max-b")}},
+		// Her build box runs both on max-a; it is listed once.
+		{box, []syncapi.Observation{obs("max-a", 2*time.Minute), desktop("max-a")}},
+		// Bob switched from max-a to max-b.
+		{bob, []syncapi.Observation{obs("max-a", 10*time.Minute), obs("max-b", time.Minute)}},
+		// Carol's last report is too old to count as signed in now.
+		{carol, []syncapi.Observation{obs("max-a", time.Hour)}},
+		{dave, []syncapi.Observation{obs("max-b", time.Minute)}},
+	} {
+		req := syncapi.SyncRequest{Version: syncapi.Version, Observations: batch.obs}
+		if st := batch.c.do("POST", syncapi.PathSync, req, nil); st != http.StatusOK {
+			t.Fatalf("sync = %d", st)
+		}
+	}
+	devices, err := store.Devices(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range devices {
+		if d.PersonName == "dave" {
+			if err := store.RevokeDevice(ctx, d.ID); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	var ov syncapi.Overview
+	if st := bob.do("GET", syncapi.PathOverview, nil, &ov); st != http.StatusOK {
+		t.Fatalf("overview status = %d", st)
+	}
+	got := map[string][]syncapi.ActiveUser{}
+	for _, a := range ov.Accounts {
+		got[a.Label] = a.ActiveUsers
+	}
+	want := map[string][]syncapi.ActiveUser{
+		"max-a": {{PersonID: alice.ID, Name: "alice", Devices: []string{"build-box", "mac"}}},
+		"max-b": {{Name: "bob", IsYou: true, Devices: []string{"bob-laptop"}}, {PersonID: alice.ID, Name: "alice", Devices: []string{"mac"}}},
+		"plus":  {{PersonID: alice.ID, Name: "alice", Devices: []string{"mac"}}},
+	}
+	for label, users := range want {
+		if len(got[label]) != len(users) {
+			t.Errorf("%s: active users = %+v, want %+v", label, got[label], users)
+			continue
+		}
+		for i, u := range users {
+			g := got[label][i]
+			if g.Name != u.Name || g.IsYou != u.IsYou || !slices.Equal(g.Devices, u.Devices) || (u.PersonID != "" && g.PersonID != u.PersonID) {
+				t.Errorf("%s: active user %d = %+v, want %+v", label, i, g, u)
+			}
 		}
 	}
 }

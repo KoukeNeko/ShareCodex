@@ -4,10 +4,15 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/KoukeNeko/ShareCodex/internal/account"
 	"github.com/KoukeNeko/ShareCodex/internal/client/settings"
+	"github.com/KoukeNeko/ShareCodex/internal/client/storage"
 	"github.com/KoukeNeko/ShareCodex/internal/client/update"
+	"github.com/KoukeNeko/ShareCodex/internal/quota"
 )
 
 func TestStateCarriesLanguageAndUpdate(t *testing.T) {
@@ -39,5 +44,48 @@ func TestStateCarriesLanguageAndUpdate(t *testing.T) {
 
 	if err := a.SetLanguage("fr"); err == nil {
 		t.Fatal("an unsupported language must be rejected")
+	}
+}
+
+func TestLocalAccountsMarkTheSignedInAccount(t *testing.T) {
+	ctx := context.Background()
+	store, err := storage.Open(ctx, filepath.Join(t.TempDir(), "local.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	a := &Agent{store: store, log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+
+	now := time.Now()
+	used := 10.0
+	for i, ref := range []string{"max-a", "max-b"} {
+		at := now.Add(time.Duration(i-3) * time.Minute)
+		if err := store.AddObservation(ctx, account.Observation{Provider: account.ProviderAnthropic, ExternalRefHash: ref, Hint: ref, ObservedAt: at}); err != nil {
+			t.Fatal(err)
+		}
+		snap := quota.Snapshot{Provider: account.ProviderAnthropic, AccountRefHash: ref, Source: quota.SourceClaudeStatusLine, ObservedAt: at,
+			Buckets: []quota.Bucket{{Key: quota.BucketFiveHour, UsedPercent: &used}}}
+		if err := store.AddSnapshot(ctx, snap); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	current := func() map[string]bool {
+		out := map[string]bool{}
+		for _, la := range a.localAccounts(ctx, now) {
+			out[la.Hint] = la.Current
+		}
+		return out
+	}
+	if got := current(); len(got) != 2 || got["max-a"] || !got["max-b"] {
+		t.Fatalf("current = %v, want only max-b, the latest sign-in", got)
+	}
+
+	// Signing out leaves no account current.
+	if err := store.AddObservation(ctx, account.Observation{Provider: account.ProviderAnthropic, ObservedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if got := current(); got["max-a"] || got["max-b"] {
+		t.Fatalf("current after sign-out = %v, want none", got)
 	}
 }

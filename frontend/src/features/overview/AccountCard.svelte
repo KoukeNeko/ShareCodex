@@ -1,14 +1,15 @@
 <script lang="ts">
   import QuotaBar, { type Segment } from '../../components/QuotaBar.svelte'
-  import type { BucketOverview } from '../../lib/api'
+  import type { ActiveUser, BucketOverview } from '../../lib/api'
   import { bucketName, percent, providerName, resetsIn, tokens } from '../../lib/format'
   import { t } from '../../lib/i18n.svelte'
 
-  let { provider, label, planType, buckets, now, local = false }: {
+  let { provider, label, planType, buckets, activeUsers, now, local = false }: {
     provider: string
     label: string
     planType: string
     buckets: BucketOverview[]
+    activeUsers: ActiveUser[]
     now: Date
     local?: boolean
   } = $props()
@@ -46,6 +47,19 @@
     <span class="label">{label}</span>
     {#if planType}<span class="plan">{planType}</span>{/if}
   </header>
+
+  {#if activeUsers.length > 0}
+    <div class="active">
+      <span class="muted">{t('inUse')}</span>
+      {#each activeUsers as u (u.person_id)}
+        {#if u.is_you}
+          <span class="you" title={(u.devices ?? []).join(', ')}>{t('you')}</span>
+        {:else}
+          <span class="user" title={(u.devices ?? []).join(', ')}>{u.name}</span>
+        {/if}
+      {/each}
+    </div>
+  {/if}
 
   {#if buckets.length === 0}
     <p class="muted empty">{t('noQuota')}</p>
@@ -132,6 +146,9 @@
     border-radius: 4px;
     padding: 1px 6px;
   }
+  .active { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 11.5px; }
+  .active .muted { margin-right: 2px; }
+  .user { background: var(--track); border-radius: 4px; padding: 0 5px; }
   .tabs { display: flex; gap: 4px; background: var(--track); border-radius: 8px; padding: 2px; }
   .tabs button {
     flex: 1;

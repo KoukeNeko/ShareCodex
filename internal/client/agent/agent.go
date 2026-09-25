@@ -78,6 +78,8 @@ type LocalAccount struct {
 	Hint     string                   `json:"hint"`
 	PlanType string                   `json:"plan_type"`
 	Buckets  []syncapi.BucketOverview `json:"buckets"`
+	// Current is true when this device's CLI is signed into the account now.
+	Current bool `json:"current"`
 }
 
 type Agent struct {

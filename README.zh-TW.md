@@ -35,8 +35,8 @@ ShareCodex 補上其餘的部分——**每個 5 小時與每週額度還剩多�
 使用的主機）則執行命令列 agent。它讀取電腦上原本就有的
 Claude Code 與 Codex 紀錄，透過官方 CLI 確認目前登入的帳號，再把 token 用量同步到你自架的 server。
 
-只計算 coding agent 的用量：Claude Code，以及 Codex CLI、桌面 app 與 IDE 擴充功能。
-不計算 ChatGPT 網頁聊天。
+只計算 coding agent 的用量：Claude Code（包含 Claude Desktop 的 Code 分頁與 Cowork），以及 Codex CLI、
+桌面 app 與 IDE 擴充功能。不計算 Claude Desktop 或網頁版的聊天，也不計算 ChatGPT 網頁聊天。
 
 ## 實際畫面
 
@@ -61,6 +61,12 @@ popup 列出每個共用帳號的 5 小時與每週額度、已用多少、何�
 每位成員有一條估計用量的進度列，並在分配的位置標上刻度。超過分配的人會標示**超出分配**。
 有額度消耗、卻對不到任何人紀錄的部分列為**未歸屬**，不會硬算到某個人頭上。
 
+### 誰正在用哪個帳號
+
+每個帳號都會列出目前在 Claude Code 或 Codex 登入它的人，你自己電腦正在用的帳號會標上**你**。
+登出或電腦離線約 15 分鐘後，就會從名單中消失。Claude Desktop 的登入與 CLI 分開，因此另外計算：
+最近一次 Claude Code session 在 15 分鐘內有活動時，會列在那個 session 所用的帳號下。
+
 ### 用在哪些模型
 
 每個額度視窗也會依模型拆分——請求數、tokens 與估計占比——一眼看出這週是花在 Opus，
@@ -84,7 +90,8 @@ server 連不上時照常記錄，恢復連線後再上傳。可以設定登入�
 - 離開電腦的只有 token 數、模型名稱、時間與額度百分比。
 - prompt、回應內容、工作目錄與專案路徑從不寫入帳本，也不會上傳。
 - 帳號以單向雜湊識別；server 只保留遮罩過的 email（例如 `al***@example.com`），讓 admin 分辨是哪個帳號。
-- 不讀取任何憑證檔。帳號身分來自 `claude auth status` 與 Codex 自己的 app server。
+- 不讀取任何憑證檔。帳號身分來自 `claude auth status`、Codex 自己的 app server，以及 Claude Desktop
+  存放 Claude Code session 的資料夾名稱。
 - server 由你自己架設，沒有第三方服務、分析或追蹤。
 
 ## 開始使用
@@ -224,7 +231,11 @@ sharecodex status
   舊格式改用累計值的差額。
 - **額度**：Codex 的額度視窗來自 rollout 與 `codex app-server`；Claude 的來自 statusLine 輸入，
   由 app 透過一個小 shim 擷取。
-- **帳號**：每筆事件對應到該裝置當下登入的帳號。
+- **Claude Desktop**：Code 分頁寫入同一份 transcript；Cowork 則存在 Desktop 的
+  `local-agent-mode-sessions` 下。Desktop 的登入與 `claude` CLI 分開，因此每個 session 依存放其
+  metadata 的資料夾（`claude-code-sessions/<帳號>/<組織>`）對應到組織。metadata 已刪除的 session，
+  以及設定為第三方推論的 Desktop，都不計入。
+- **帳號**：其他事件對應到該裝置當下登入的帳號。
 
 ### 占比如何估算
 

@@ -37,8 +37,9 @@ Linux machines such as ones used over SSH. It reads the Claude Code and Codex lo
 computer, asks the official CLIs which account is signed in, and syncs
 token counts to a server you host yourself.
 
-Only coding-agent usage counts: Claude Code, and the Codex CLI, desktop app and IDE extension.
-ChatGPT web chat is not tracked.
+Only coding-agent usage counts: Claude Code (including Claude Desktop's Code tab and Cowork), and
+the Codex CLI, desktop app and IDE extension. Chat in Claude Desktop or on the web, and ChatGPT web
+chat, is not tracked.
 
 ## See it in action
 
@@ -64,6 +65,14 @@ and when it resets. The numbers come straight from Claude Code and Codex.
 Each member has a bar for their estimated usage and a tick mark at their allotment. Anyone past their
 share is marked **over allotment**. Quota used with no matching record from anyone is shown as
 **unattributed** instead of being pinned on someone.
+
+### Who is signed in where
+
+Each account shows who is signed into it in Claude Code or Codex right now, with **You** on the
+account your own computer uses. Someone drops off the list about 15 minutes after they sign out or
+their computer goes offline. Claude Desktop signs in on its own, so it counts separately: it shows
+up on the account of its last Claude Code session while that session was active in the last 15
+minutes.
 
 ### Which models used it
 
@@ -94,8 +103,8 @@ your server. No shell access to the container is needed.
   uploaded.
 - Accounts are identified by a one-way hash; the server keeps only a masked email such as
   `al***@example.com` so admins can tell accounts apart.
-- No credential files are read. Account identity comes from `claude auth status` and Codex's own
-  app server.
+- No credential files are read. Account identity comes from `claude auth status`, Codex's own app
+  server, and the folder names of Claude Desktop's Claude Code sessions.
 - The server is yours. There is no third-party service, analytics or tracking.
 
 ## Getting started
@@ -243,7 +252,13 @@ To update, run `brew update && brew upgrade sharecodex-cli` (or rerun the instal
   present; older files fall back to the difference between cumulative totals.
 - **Quota** — Codex reports its windows in the rollouts and through `codex app-server`; Claude's come
   from the statusLine input, which the app captures through a small shim.
-- **Account** — each event is matched to the account the device was signed into at that moment.
+- **Claude Desktop** — its Code tab writes to the same transcripts, and Cowork keeps its own under
+  Desktop's `local-agent-mode-sessions`. Desktop signs in separately from the `claude` CLI, so each
+  of its sessions is matched to the organization in the folder holding the session's metadata
+  (`claude-code-sessions/<account>/<organization>`). Sessions whose metadata was deleted, and
+  Desktop set up for third-party inference, are skipped.
+- **Account** — each other event is matched to the account the device was signed into at that
+  moment.
 
 ### How shares are estimated
 

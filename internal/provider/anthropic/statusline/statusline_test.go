@@ -30,11 +30,14 @@ func TestRunSpoolsAndChains(t *testing.T) {
 	if errOut.Len() != 0 {
 		t.Errorf("unexpected stderr: %s", errOut.String())
 	}
-	snaps, err := ReadSpool(dir)
-	if err != nil || len(snaps) != 1 {
-		t.Fatalf("ReadSpool = %v, %v; want 1 snapshot", snaps, err)
+	spooled, err := ReadSpool(dir)
+	if err != nil || len(spooled) != 1 {
+		t.Fatalf("ReadSpool = %v, %v; want 1 snapshot", spooled, err)
 	}
-	latest := quota.Latest(snaps)
+	if spooled[0].SessionID != "s1" {
+		t.Errorf("session = %q, want s1 so the caller can tell which account it ran under", spooled[0].SessionID)
+	}
+	latest := quota.Latest([]quota.Snapshot{spooled[0].Snapshot})
 	if p := *latest[quota.BucketWeekly].UsedPercent; p != 41.2 {
 		t.Errorf("weekly = %v, want 41.2", p)
 	}
@@ -49,9 +52,9 @@ func TestSpoolSkipsUnchangedLimits(t *testing.T) {
 	if err := spool([]byte(sample), dir, t0.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	snaps, _ := ReadSpool(dir)
-	if !snaps[0].ObservedAt.Equal(t0) {
-		t.Errorf("unchanged limits rewrote the spool: observed %v, want %v", snaps[0].ObservedAt, t0)
+	spooled, _ := ReadSpool(dir)
+	if !spooled[0].Snapshot.ObservedAt.Equal(t0) {
+		t.Errorf("unchanged limits rewrote the spool: observed %v, want %v", spooled[0].Snapshot.ObservedAt, t0)
 	}
 }
 
