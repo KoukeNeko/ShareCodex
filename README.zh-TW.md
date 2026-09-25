@@ -65,7 +65,7 @@ popup 列出每個共用帳號的 5 小時與每週額度、已用多少、何�
 
 每個帳號都會列出目前在 Claude Code 或 Codex 登入它的人，你自己電腦正在用的帳號會標上**你**。
 登出或電腦離線約 15 分鐘後，就會從名單中消失。Claude Desktop 的登入與 CLI 分開，因此另外計算：
-最近一次 Claude Code session 在 15 分鐘內有活動時，會列在那個 session 所用的帳號下。
+Desktop 最近一次使用 Claude Code 後的 15 分鐘內，會列在那次使用的帳號下。
 
 ### 用在哪些模型
 
@@ -232,9 +232,9 @@ sharecodex status
 - **額度**：Codex 的額度視窗來自 rollout 與 `codex app-server`；Claude 的來自 statusLine 輸入，
   由 app 透過一個小 shim 擷取。
 - **Claude Desktop**：Code 分頁寫入同一份 transcript；Cowork 則存在 Desktop 的
-  `local-agent-mode-sessions` 下。Desktop 的登入與 `claude` CLI 分開，因此每個 session 依存放其
-  metadata 的資料夾（`claude-code-sessions/<帳號>/<組織>`）對應到組織。metadata 已刪除的 session，
-  以及設定為第三方推論的 Desktop，都不計入。
+  `local-agent-mode-sessions` 下。Desktop 的登入與 `claude` CLI 分開，因此它的用量依存放 session
+  metadata 的資料夾（`claude-code-sessions/<帳號>/<組織>`）對應到組織。Desktop 也會列出在終端機啟動的
+  session，這些仍算在 CLI 的帳號。metadata 已刪除的 session，以及設定為第三方推論的 Desktop，都不計入。
 - **帳號**：其他事件對應到該裝置當下登入的帳號。
 
 ### 占比如何估算

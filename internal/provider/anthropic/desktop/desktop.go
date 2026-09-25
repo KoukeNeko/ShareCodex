@@ -5,24 +5,21 @@
 // the organization UUID is the value the CLI reports as orgId, so both map to
 // the same pooled account. Only this session metadata is read, never
 // Desktop's settings or credentials.
+//
+// Desktop also lists sessions started from the terminal, filed under
+// whichever organization it was using then, so a session's folder is only
+// meaningful for usage whose transcript entrypoint is Desktop's.
 package desktop
 
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
-	"time"
 )
-
-// Session is one Claude Code session run from Claude Desktop.
-type Session struct {
-	OrgID        string
-	LastActivity time.Time
-}
 
 // Dir is Claude Desktop's data folder.
 func Dir() (string, error) {
@@ -33,26 +30,34 @@ func Dir() (string, error) {
 	return filepath.Join(base, "Claude"), nil
 }
 
-// FromDesktop reports whether a transcript entrypoint is Claude Desktop's,
-// including Cowork and Desktop set up for third-party inference, whose usage
-// never draws on a Claude subscription.
+// Entrypoints are the transcript entrypoints of Claude Code run by Claude
+// Desktop signed into a Claude account: its Code tab and Cowork.
+var Entrypoints = []string{"claude-desktop", "local-agent"}
+
+// FromDesktop reports whether a transcript entrypoint is Claude Desktop
+// signed into a Claude account.
 func FromDesktop(entrypoint string) bool {
-	return strings.HasPrefix(entrypoint, "claude-desktop") || entrypoint == "local-agent"
+	return slices.Contains(Entrypoints, entrypoint)
+}
+
+// ThirdParty reports whether a transcript entrypoint is Claude Desktop set up
+// for third-party inference, whose usage never draws on a Claude
+// subscription.
+func ThirdParty(entrypoint string) bool {
+	return entrypoint == "claude-desktop-3p"
 }
 
 type metadata struct {
-	CLISessionID   string `json:"cliSessionId"`
-	CreatedAt      int64  `json:"createdAt"`
-	LastActivityAt int64  `json:"lastActivityAt"`
+	CLISessionID string `json:"cliSessionId"`
 }
 
-// Sessions maps Claude Code session IDs to the organization Desktop ran them
-// under: Code sessions from claude-code-sessions/<account>/<org>/local_*.json,
-// and Cowork sessions from the transcripts Cowork keeps under
-// local-agent-mode-sessions/<account>/<org>. A missing folder means Desktop
-// is not installed and yields no sessions.
-func Sessions(dir string) (map[string]Session, error) {
-	out := map[string]Session{}
+// Sessions maps Claude Code session IDs to the organization Desktop filed
+// them under: Code sessions from
+// claude-code-sessions/<account>/<org>/local_*.json, and Cowork sessions from
+// the transcripts Cowork keeps under local-agent-mode-sessions/<account>/<org>.
+// A missing folder means Desktop is not installed and yields no sessions.
+func Sessions(dir string) (map[string]string, error) {
+	out := map[string]string{}
 
 	code, err := filepath.Glob(filepath.Join(dir, "claude-code-sessions", "*", "*", "local_*.json"))
 	if err != nil {
@@ -72,10 +77,7 @@ func Sessions(dir string) (map[string]Session, error) {
 		if json.Unmarshal(b, &m) != nil || m.CLISessionID == "" {
 			continue
 		}
-		out[m.CLISessionID] = Session{
-			OrgID:        filepath.Base(filepath.Dir(p)),
-			LastActivity: epoch(max(m.LastActivityAt, m.CreatedAt)),
-		}
+		out[m.CLISessionID] = filepath.Base(filepath.Dir(p))
 	}
 
 	for _, root := range CoworkRoots(dir) {
@@ -85,14 +87,7 @@ func Sessions(dir string) (map[string]Session, error) {
 			return nil, err
 		}
 		for _, p := range transcripts {
-			info, err := os.Stat(p)
-			if errors.Is(err, fs.ErrNotExist) {
-				continue
-			}
-			if err != nil {
-				return nil, fmt.Errorf("stat %s: %w", p, err)
-			}
-			out[strings.TrimSuffix(filepath.Base(p), ".jsonl")] = Session{OrgID: org, LastActivity: info.ModTime()}
+			out[strings.TrimSuffix(filepath.Base(p), ".jsonl")] = org
 		}
 	}
 	return out, nil
@@ -103,24 +98,4 @@ func Sessions(dir string) (map[string]Session, error) {
 func CoworkRoots(dir string) []string {
 	roots, _ := filepath.Glob(filepath.Join(dir, "local-agent-mode-sessions", "*", "*", "local_*", ".claude", "projects"))
 	return roots
-}
-
-// Latest returns the most recently active session, which tells the account
-// Desktop is using now.
-func Latest(sessions map[string]Session) (Session, bool) {
-	var latest Session
-	for _, s := range sessions {
-		if s.LastActivity.After(latest.LastActivity) {
-			latest = s
-		}
-	}
-	return latest, !latest.LastActivity.IsZero()
-}
-
-// epoch converts Desktop's JavaScript timestamps, in milliseconds.
-func epoch(ms int64) time.Time {
-	if ms <= 0 {
-		return time.Time{}
-	}
-	return time.UnixMilli(ms)
 }

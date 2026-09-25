@@ -11,7 +11,6 @@ import (
 
 	"github.com/KoukeNeko/ShareCodex/internal/account"
 	"github.com/KoukeNeko/ShareCodex/internal/client/storage"
-	"github.com/KoukeNeko/ShareCodex/internal/provider/anthropic/desktop"
 	"github.com/KoukeNeko/ShareCodex/internal/scan"
 	"github.com/KoukeNeko/ShareCodex/internal/usage"
 )
@@ -74,7 +73,7 @@ func TestResolveSplitsClaudeDesktopFromTheCLI(t *testing.T) {
 		provider:    account.ProviderAnthropic,
 		cli:         []account.Observation{{Provider: account.ProviderAnthropic, ExternalRefHash: "cli-max", ObservedAt: t0}},
 		desktopSeen: true,
-		desktop:     map[string]desktop.Session{"desk": {OrgID: "org-b", LastActivity: t0}},
+		desktop:     map[string]string{"desk": "org-b", "listed": "org-c"},
 		since:       t0,
 	}
 	desk := account.HashExternalRef(account.ProviderAnthropic, "org-b")
@@ -87,13 +86,15 @@ func TestResolveSplitsClaudeDesktopFromTheCLI(t *testing.T) {
 	}{
 		{"CLI session", "cli-session", "cli", later, "cli-max"},
 		{"Desktop session", "desk", "claude-desktop", later, desk},
-		// Desktop's metadata wins over what the transcript says.
-		{"Desktop session logged as cli", "desk", "cli", later, desk},
+		{"Cowork session", "desk", "local-agent", later, desk},
+		// Desktop lists terminal sessions too, under whatever organization it
+		// was on; they still ran under the CLI's sign-in.
+		{"terminal session Desktop lists", "listed", "cli", later, "cli-max"},
+		{"Desktop session resumed in the terminal", "desk", "cli", later, "cli-max"},
 		{"Desktop session before joining", "desk", "claude-desktop", t0.Add(-time.Minute), ""},
 		{"Desktop session without metadata", "gone", "claude-desktop", later, ""},
-		{"Desktop with third-party inference", "3p", "claude-desktop-3p", later, ""},
-		{"statusLine snapshot of a Desktop session", "desk", "", later, desk},
-		{"statusLine snapshot of a CLI session", "cli-session", "", later, "cli-max"},
+		{"Desktop with third-party inference", "desk", "claude-desktop-3p", later, ""},
+		{"session with no recorded usage", "desk", "", later, "cli-max"},
 	} {
 		ref, ok := ac.resolve(tc.session, tc.entrypoint, tc.at)
 		if (tc.want != "") != ok || ref != tc.want {

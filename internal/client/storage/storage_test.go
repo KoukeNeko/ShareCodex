@@ -125,3 +125,37 @@ func TestObservationTimelinesAreKeptPerApp(t *testing.T) {
 		t.Errorf("queued Desktop observation = %+v, %v; want its source sent", o, err)
 	}
 }
+
+func TestSessionOriginatorAndLastUse(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	event := func(key, ref, session, originator string, at int64) usage.Event {
+		return usage.Event{DedupeKey: key, AccountRefHash: ref, Provider: account.ProviderAnthropic,
+			Product: usage.ProductClaudeCode, Originator: originator, SessionID: session, Model: "claude-opus-5-5",
+			OccurredAt: time.Unix(at, 0)}
+	}
+	events := []usage.Event{
+		event("e1", "org-a", "desk", "claude-desktop", 100),
+		event("e2", "cli-max", "term", "cli", 300),
+		// The Desktop session was resumed in the terminal later.
+		event("e3", "cli-max", "desk", "cli", 400),
+		event("e4", "org-b", "cowork", "local-agent", 200),
+	}
+	if _, err := s.IngestFile(ctx, "f.jsonl", scan.FileState{}, events, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	for session, want := range map[string]string{"desk": "cli", "term": "cli", "cowork": "local-agent", "none": ""} {
+		if got, err := s.SessionOriginator(ctx, session); err != nil || got != want {
+			t.Errorf("SessionOriginator(%s) = %q, %v; want %q", session, got, err, want)
+		}
+	}
+
+	ref, at, err := s.LastUse(ctx, account.ProviderAnthropic, []string{"claude-desktop", "local-agent"})
+	if err != nil || ref != "org-b" || !at.Equal(time.Unix(200, 0)) {
+		t.Errorf("LastUse = %q at %v, %v; want org-b at 200s", ref, at, err)
+	}
+	if ref, at, err := s.LastUse(ctx, account.ProviderOpenAI, []string{"claude-desktop"}); err != nil || ref != "" || !at.IsZero() {
+		t.Errorf("LastUse without events = %q at %v, %v; want none", ref, at, err)
+	}
+}

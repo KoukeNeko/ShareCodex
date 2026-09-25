@@ -8,8 +8,10 @@ import (
 	"database/sql"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
+	"strings"
 	"time"
 
 	"github.com/pressly/goose/v3"
@@ -190,6 +192,43 @@ func insertSnapshot(ctx context.Context, tx *sql.Tx, snap quota.Snapshot) (int, 
 		return 0, nil
 	}
 	return 1, enqueue(ctx, tx, KindSnapshot, dto)
+}
+
+// SessionOriginator returns the entrypoint of a session's latest recorded
+// event, or "" when none is recorded.
+func (s *Store) SessionOriginator(ctx context.Context, sessionID string) (string, error) {
+	var originator string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT originator FROM events WHERE session_id = ? ORDER BY occurred_at DESC LIMIT 1`, sessionID).Scan(&originator)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return originator, err
+}
+
+// LastUse returns the account and time of a provider's latest recorded event
+// from any of the given entrypoints, or a zero time when there is none.
+func (s *Store) LastUse(ctx context.Context, provider account.Provider, originators []string) (string, time.Time, error) {
+	if len(originators) == 0 {
+		return "", time.Time{}, nil
+	}
+	args := []any{provider}
+	for _, o := range originators {
+		args = append(args, o)
+	}
+	var ref string
+	var at int64
+	err := s.db.QueryRowContext(ctx,
+		`SELECT account_ref_hash, occurred_at FROM events
+		 WHERE provider = ? AND originator IN (?`+strings.Repeat(", ?", len(originators)-1)+`)
+		 ORDER BY occurred_at DESC LIMIT 1`, args...).Scan(&ref, &at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", time.Time{}, nil
+	}
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return ref, time.UnixMilli(at), nil
 }
 
 // LatestSnapshots returns the snapshots of each account, newest first, for

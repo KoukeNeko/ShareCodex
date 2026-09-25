@@ -21,29 +21,40 @@ func (a *Agent) observeAll(ctx context.Context) {
 }
 
 // observeDesktop records the account Claude Desktop last used, at the time
-// it was last active. Desktop's sign-in cannot be asked for without reading
-// its credentials, so the most recent Claude Code session stands in for it.
-// Re-recording the same session is a no-op.
+// it used it. Desktop's sign-in cannot be asked for without reading its
+// credentials, so its latest recorded usage stands in for it. Until Desktop
+// has recorded usage, a first sighting without an account marks when its
+// usage starts counting; it is never sent to the server.
 func (a *Agent) observeDesktop(ctx context.Context) {
-	dir, err := desktop.Dir()
+	ref, at, err := a.store.LastUse(ctx, account.ProviderAnthropic, desktop.Entrypoints)
 	if err != nil {
-		a.log.Warn("locate Claude Desktop", "err", err)
+		a.log.Error("load Claude Desktop usage", "err", err)
 		return
 	}
-	sessions, err := desktop.Sessions(dir)
-	if err != nil {
-		a.log.Warn("read Claude Desktop sessions", "err", err)
-		return
-	}
-	latest, ok := desktop.Latest(sessions)
-	if !ok {
-		return
-	}
-	o := account.Observation{
-		Provider:        account.ProviderAnthropic,
-		Source:          account.SourceClaudeDesktop,
-		ExternalRefHash: account.HashExternalRef(account.ProviderAnthropic, latest.OrgID),
-		ObservedAt:      latest.LastActivity,
+	o := account.Observation{Provider: account.ProviderAnthropic, Source: account.SourceClaudeDesktop, ExternalRefHash: ref, ObservedAt: at}
+	if ref == "" {
+		seen, err := a.store.Observations(ctx, account.ProviderAnthropic, account.SourceClaudeDesktop)
+		if err != nil {
+			a.log.Error("load Claude Desktop observations", "err", err)
+			return
+		}
+		if len(seen) > 0 {
+			return
+		}
+		dir, err := desktop.Dir()
+		if err != nil {
+			a.log.Warn("locate Claude Desktop", "err", err)
+			return
+		}
+		sessions, err := desktop.Sessions(dir)
+		if err != nil {
+			a.log.Warn("read Claude Desktop sessions", "err", err)
+			return
+		}
+		if len(sessions) == 0 {
+			return
+		}
+		o.ObservedAt = time.Now()
 	}
 	if err := a.store.AddObservation(ctx, o); err != nil {
 		a.log.Error("save Claude Desktop account", "err", err)

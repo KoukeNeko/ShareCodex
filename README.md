@@ -71,8 +71,7 @@ share is marked **over allotment**. Quota used with no matching record from anyo
 Each account shows who is signed into it in Claude Code or Codex right now, with **You** on the
 account your own computer uses. Someone drops off the list about 15 minutes after they sign out or
 their computer goes offline. Claude Desktop signs in on its own, so it counts separately: it shows
-up on the account of its last Claude Code session while that session was active in the last 15
-minutes.
+up on the account it last used for Claude Code, for 15 minutes after that use.
 
 ### Which models used it
 
@@ -253,10 +252,11 @@ To update, run `brew update && brew upgrade sharecodex-cli` (or rerun the instal
 - **Quota** — Codex reports its windows in the rollouts and through `codex app-server`; Claude's come
   from the statusLine input, which the app captures through a small shim.
 - **Claude Desktop** — its Code tab writes to the same transcripts, and Cowork keeps its own under
-  Desktop's `local-agent-mode-sessions`. Desktop signs in separately from the `claude` CLI, so each
-  of its sessions is matched to the organization in the folder holding the session's metadata
-  (`claude-code-sessions/<account>/<organization>`). Sessions whose metadata was deleted, and
-  Desktop set up for third-party inference, are skipped.
+  Desktop's `local-agent-mode-sessions`. Desktop signs in separately from the `claude` CLI, so its
+  usage is matched to the organization in the folder holding the session's metadata
+  (`claude-code-sessions/<account>/<organization>`). Desktop also lists sessions started in the
+  terminal; those keep the CLI's account. Sessions whose metadata was deleted, and Desktop set up for
+  third-party inference, are skipped.
 - **Account** — each other event is matched to the account the device was signed into at that
   moment.
 

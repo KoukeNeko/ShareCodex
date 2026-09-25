@@ -81,9 +81,9 @@ type accounts struct {
 	cli []account.Observation
 	// desktopSeen is true once Claude Desktop has been observed.
 	desktopSeen bool
-	// desktop holds Claude Desktop's sessions by ID, which Desktop runs under
-	// its own sign-in; see loadDesktopSessions.
-	desktop map[string]desktop.Session
+	// desktop maps Claude Desktop's session IDs to the organization it filed
+	// them under; see loadDesktopSessions.
+	desktop map[string]string
 	// since is the device's first observation from any app. Usage from
 	// before it is not part of the shared ledger.
 	since time.Time
@@ -137,20 +137,23 @@ func (ac accounts) pooled() bool {
 	return anyPooled(ac.cli) || ac.desktopSeen
 }
 
-// resolve returns the account of usage at t in a session. A Desktop session
-// uses the organization Desktop ran it under; any other session uses the
-// CLI's account at t. Desktop sessions whose metadata is gone, and Desktop
-// set up for third-party inference, have no known pooled account.
+// resolve returns the account of usage at t from a session and transcript
+// entrypoint. Usage from Claude Desktop uses the organization Desktop filed
+// its session under; any other usage, including a terminal session Desktop
+// happens to list, uses the CLI's account at t. Desktop sessions whose
+// metadata is gone, and Desktop set up for third-party inference, have no
+// known pooled account.
 func (ac accounts) resolve(sessionID, entrypoint string, t time.Time) (string, bool) {
 	if ac.provider == account.ProviderAnthropic {
-		if s, ok := ac.desktop[sessionID]; ok {
-			if t.Before(ac.since) {
+		switch {
+		case desktop.ThirdParty(entrypoint):
+			return "", false
+		case desktop.FromDesktop(entrypoint):
+			org, ok := ac.desktop[sessionID]
+			if !ok || t.Before(ac.since) {
 				return "", false
 			}
-			return account.HashExternalRef(account.ProviderAnthropic, s.OrgID), true
-		}
-		if desktop.FromDesktop(entrypoint) {
-			return "", false
+			return account.HashExternalRef(account.ProviderAnthropic, org), true
 		}
 	}
 	ref, ok := account.ResolveAt(ac.cli, ac.provider, t)
@@ -254,8 +257,12 @@ func (a *Agent) ingestStatusLine(ctx context.Context) (int, error) {
 	n := 0
 	for _, sp := range spooled {
 		// Claude Desktop's sessions run the statusLine too, under Desktop's
-		// own account.
-		ref, ok := ac.resolve(sp.SessionID, "", sp.Snapshot.ObservedAt)
+		// own account; the session's recorded usage tells which app ran it.
+		entrypoint, err := a.store.SessionOriginator(ctx, sp.SessionID)
+		if err != nil {
+			return n, err
+		}
+		ref, ok := ac.resolve(sp.SessionID, entrypoint, sp.Snapshot.ObservedAt)
 		if !ok {
 			continue
 		}
