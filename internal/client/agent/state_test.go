@@ -80,6 +80,9 @@ func TestLocalAccountsMarkTheSignedInAccount(t *testing.T) {
 	if got := current(); len(got) != 2 || got["max-a"] || !got["max-b"] {
 		t.Fatalf("current = %v, want only max-b, the latest sign-in", got)
 	}
+	if first := a.localAccounts(ctx, now)[0]; first.Hint != "max-b" {
+		t.Errorf("first account = %s, want max-b, the one signed in", first.Hint)
+	}
 
 	// Signing out leaves no account current.
 	if err := store.AddObservation(ctx, account.Observation{Provider: account.ProviderAnthropic, ObservedAt: now}); err != nil {

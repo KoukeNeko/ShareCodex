@@ -117,6 +117,15 @@ func (a *Agent) localAccounts(ctx context.Context, now time.Time) []LocalAccount
 		sort.Slice(la.Buckets, func(i, j int) bool { return la.Buckets[i].WindowMinutes < la.Buckets[j].WindowMinutes })
 		out = append(out, la)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Provider < out[j].Provider })
+	// The accounts this device is signed into come first.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Current != out[j].Current {
+			return out[i].Current
+		}
+		if out[i].Provider != out[j].Provider {
+			return out[i].Provider < out[j].Provider
+		}
+		return out[i].Hint < out[j].Hint
+	})
 	return out
 }

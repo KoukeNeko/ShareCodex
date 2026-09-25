@@ -62,7 +62,15 @@ func Overview(ctx context.Context, st *storage.Store, viewerPersonID string, now
 		}
 		out.Accounts = append(out.Accounts, ao)
 	}
+	// The accounts the viewer is signed into come first.
+	sort.SliceStable(out.Accounts, func(i, j int) bool {
+		return usedByViewer(out.Accounts[i]) && !usedByViewer(out.Accounts[j])
+	})
 	return out, nil
+}
+
+func usedByViewer(a syncapi.AccountOverview) bool {
+	return slices.ContainsFunc(a.ActiveUsers, func(u syncapi.ActiveUser) bool { return u.IsYou })
 }
 
 func bucketOverview(b quota.Observed, now time.Time, members []storage.Member, rows []storage.UsageRow, viewer string) syncapi.BucketOverview {

@@ -353,8 +353,14 @@ func TestActiveUsers(t *testing.T) {
 		t.Fatalf("overview status = %d", st)
 	}
 	got := map[string][]syncapi.ActiveUser{}
+	var order []string
 	for _, a := range ov.Accounts {
 		got[a.Label] = a.ActiveUsers
+		order = append(order, a.Label)
+	}
+	// Bob's own account comes first, then the rest in their usual order.
+	if want := []string{"max-b", "max-a", "plus"}; !slices.Equal(order, want) {
+		t.Errorf("account order = %v, want %v", order, want)
 	}
 	want := map[string][]syncapi.ActiveUser{
 		"max-a": {{PersonID: alice.ID, Name: "alice", Devices: []string{"build-box", "mac"}}},
