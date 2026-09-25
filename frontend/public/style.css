@@ -68,6 +68,63 @@
   }
 }
 
+/* Windows: WinUI 3 (Fluent 2) controls, so the popup matches the system's own
+   tray flyouts. As on macOS, light mode takes the published WinUI colors and
+   dark mode keeps the app's own dark palette; the accent is the default
+   Windows blue since WebView2 has no AccentColor. */
+:root.windows {
+  --radius: 8px;
+  --control-radius: 4px;
+  --on-accent: #ffffff;
+}
+
+@media (prefers-color-scheme: light) {
+  :root.windows {
+    --bg: #f3f3f3;
+    --surface: rgb(255 255 255 / 0.7);
+    --text: rgb(0 0 0 / 0.894);
+    --muted: rgb(0 0 0 / 0.62);
+    --line: rgb(0 0 0 / 0.0803);
+    --track: rgb(0 0 0 / 0.1);
+    --accent: #005fb8;
+    --accent-soft: rgb(0 95 184 / 0.12);
+    --warn: #9d5d00;
+    --warn-soft: #fff4ce;
+    --danger: #c42b1c;
+    --control: rgb(255 255 255 / 0.7);
+    --control-hover: rgb(249 249 249 / 0.5);
+    --control-pressed: rgb(249 249 249 / 0.3);
+    --control-stroke: rgb(0 0 0 / 0.0578);
+    --control-stroke-bottom: rgb(0 0 0 / 0.1622);
+    --control-strong-stroke: rgb(0 0 0 / 0.4458);
+    --input-focus: #ffffff;
+    --subtle-hover: rgb(0 0 0 / 0.0373);
+    --subtle-pressed: rgb(0 0 0 / 0.0241);
+    --model-other: rgb(0 0 0 / 0.3);
+  }
+  /* Acrylic is drawn by DWM and already tinted for the theme. */
+  :root.windows.acrylic { --bg: transparent; }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root.windows {
+    --control: rgb(255 255 255 / 0.0605);
+    --control-hover: rgb(255 255 255 / 0.0837);
+    --control-pressed: rgb(255 255 255 / 0.0326);
+    --control-stroke: rgb(255 255 255 / 0.0698);
+    --control-stroke-bottom: rgb(255 255 255 / 0.0698);
+    --control-strong-stroke: rgb(255 255 255 / 0.5442);
+    --input-focus: rgb(30 30 30 / 0.7);
+    --subtle-hover: rgb(255 255 255 / 0.0605);
+    --subtle-pressed: rgb(255 255 255 / 0.0419);
+  }
+  /* The same see-through dark as the macOS glass popup. */
+  :root.windows.acrylic {
+    --bg: rgb(23 25 29 / 0.35);
+    --surface: rgb(32 35 40 / 0.45);
+  }
+}
+
 * { box-sizing: border-box; }
 
 html, body {
@@ -130,6 +187,53 @@ select {
   background: var(--surface);
 }
 select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+
+/* WinUI 3 controls: 4px corners, a darker bottom edge for elevation, fills
+   that lighten on hover, and an accent underline on focused inputs. */
+:root.windows body {
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft JhengHei UI", "Microsoft JhengHei", sans-serif;
+}
+:where(:root.windows) :is(button, select, input[type="text"]) {
+  border-radius: var(--control-radius);
+  border-color: var(--control-stroke);
+  border-bottom-color: var(--control-stroke-bottom);
+  background: var(--control);
+  outline: none;
+}
+:where(:root.windows) button:hover:not(:disabled),
+:where(:root.windows) select:hover { background: var(--control-hover); border-color: var(--control-stroke); border-bottom-color: var(--control-stroke-bottom); }
+:where(:root.windows) button:active:not(:disabled) { background: var(--control-pressed); color: var(--muted); }
+:where(:root.windows) button:focus-visible,
+:where(:root.windows) select:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+:where(:root.windows) button.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: rgb(255 255 255 / 0.08);
+  border-bottom-color: rgb(0 0 0 / 0.4);
+}
+:where(:root.windows) button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 90%, transparent); }
+:where(:root.windows) button.primary:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 80%, transparent); color: var(--on-accent); }
+:where(:root.windows) button.icon { border-color: transparent; background: none; }
+:where(:root.windows) button.icon:hover:not(:disabled) { background: var(--subtle-hover); border-color: transparent; }
+:where(:root.windows) button.icon:active:not(:disabled) { background: var(--subtle-pressed); }
+:where(:root.windows) input[type="text"] { border-bottom-color: var(--control-strong-stroke); }
+:where(:root.windows) input[type="text"]:hover { background: var(--control-hover); }
+:where(:root.windows) input[type="text"]:focus {
+  background: var(--input-focus);
+  border-color: var(--control-stroke);
+  border-bottom-color: var(--accent);
+  box-shadow: inset 0 -1px 0 var(--accent);
+  outline: none;
+}
+:where(:root.windows) ::-webkit-scrollbar { width: 12px; }
+:where(:root.windows) ::-webkit-scrollbar-track { background: transparent; }
+:where(:root.windows) ::-webkit-scrollbar-thumb {
+  background: var(--control-strong-stroke);
+  border: 4px solid transparent;
+  border-radius: 6px;
+  background-clip: padding-box;
+}
+:where(:root.windows) ::-webkit-scrollbar-thumb:hover { border-width: 3px; }
 
 .muted { color: var(--muted); }
 .error { color: var(--danger); }
