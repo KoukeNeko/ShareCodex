@@ -225,7 +225,8 @@ func (s *Store) RevokeDevice(ctx context.Context, id string) error {
 
 // Ingest stores one sync batch atomically. Accounts and memberships are
 // created on first sight, so a member joins an account simply by using it.
-// Re-sent events are ignored unless they carry a larger output count.
+// Re-sent events are ignored unless they carry a larger output count or an
+// explicit account correction from the device that first recorded them.
 func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (int, error) {
 	accepted := 0
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
@@ -273,10 +274,16 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 					model, occurred_at, input, cached_input, cache_write, output, reasoning_output)
 				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 				ON CONFLICT (dedupe_key) DO UPDATE SET
-					output = excluded.output, reasoning_output = excluded.reasoning_output
-				WHERE excluded.output > usage_events.output`,
+					account_id = excluded.account_id,
+					output = GREATEST(usage_events.output, excluded.output),
+					reasoning_output = GREATEST(usage_events.reasoning_output, excluded.reasoning_output)
+				WHERE (usage_events.account_id = excluded.account_id AND excluded.output > usage_events.output) OR
+					(usage_events.device_id = excluded.device_id AND
+					 usage_events.session_id = excluded.session_id AND usage_events.originator = excluded.originator AND
+					 usage_events.account_id != excluded.account_id AND $16 != '' AND
+					 usage_events.account_id = (SELECT id FROM accounts WHERE provider = $15 AND ref_hash = $16))`,
 				e.DedupeKey, id, d.PersonID, d.ID, e.Product, e.Originator, e.SessionID, e.Model, e.OccurredAt,
-				e.Input, e.CachedInput, e.CacheWrite, e.Output, e.ReasoningOutput)
+				e.Input, e.CachedInput, e.CacheWrite, e.Output, e.ReasoningOutput, e.Provider, e.PreviousAccountRefHash)
 			if err != nil {
 				return fmt.Errorf("save event %s: %w", e.DedupeKey, err)
 			}
@@ -294,6 +301,16 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 			buckets, err := json.Marshal(snap.Buckets)
 			if err != nil {
 				return err
+			}
+			if snap.PreviousAccountRefHash != "" && snap.PreviousAccountRefHash != snap.AccountRefHash {
+				res, err := tx.ExecContext(ctx, `DELETE FROM quota_snapshots
+					WHERE account_id = (SELECT id FROM accounts WHERE provider = $1 AND ref_hash = $2)
+					AND device_id = $3 AND source = $4 AND observed_at = $5 AND buckets = $6`,
+					snap.Provider, snap.PreviousAccountRefHash, d.ID, snap.Source, snap.ObservedAt, buckets)
+				if err != nil {
+					return fmt.Errorf("correct snapshot: %w", err)
+				}
+				accepted += rowsAffected(res)
 			}
 			res, err := tx.ExecContext(ctx, `
 				INSERT INTO quota_snapshots (account_id, device_id, source, observed_at, buckets)

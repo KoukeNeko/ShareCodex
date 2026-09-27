@@ -11,9 +11,9 @@ import (
 	"github.com/KoukeNeko/ShareCodex/internal/usage"
 )
 
-// Version is bumped on any incompatible change; the server rejects other
-// versions with 426 Upgrade Required.
-const Version = 1
+// Version identifies the wire contract. The server also accepts version 1
+// clients so existing devices can continue syncing during an upgrade.
+const Version = 2
 
 const (
 	PathPair     = "/internal/api/v1/pair"
@@ -24,19 +24,20 @@ const (
 )
 
 type Event struct {
-	DedupeKey       string    `json:"dedupe_key"`
-	AccountRefHash  string    `json:"account_ref_hash"`
-	Provider        string    `json:"provider"`
-	Product         string    `json:"product"`
-	Originator      string    `json:"originator"`
-	SessionID       string    `json:"session_id"`
-	Model           string    `json:"model"`
-	OccurredAt      time.Time `json:"occurred_at"`
-	Input           int64     `json:"input"`
-	CachedInput     int64     `json:"cached_input"`
-	CacheWrite      int64     `json:"cache_write"`
-	Output          int64     `json:"output"`
-	ReasoningOutput int64     `json:"reasoning_output"`
+	DedupeKey              string    `json:"dedupe_key"`
+	AccountRefHash         string    `json:"account_ref_hash"`
+	PreviousAccountRefHash string    `json:"previous_account_ref_hash,omitempty"`
+	Provider               string    `json:"provider"`
+	Product                string    `json:"product"`
+	Originator             string    `json:"originator"`
+	SessionID              string    `json:"session_id"`
+	Model                  string    `json:"model"`
+	OccurredAt             time.Time `json:"occurred_at"`
+	Input                  int64     `json:"input"`
+	CachedInput            int64     `json:"cached_input"`
+	CacheWrite             int64     `json:"cache_write"`
+	Output                 int64     `json:"output"`
+	ReasoningOutput        int64     `json:"reasoning_output"`
 }
 
 type Bucket struct {
@@ -47,11 +48,12 @@ type Bucket struct {
 }
 
 type Snapshot struct {
-	AccountRefHash string    `json:"account_ref_hash"`
-	Provider       string    `json:"provider"`
-	Source         string    `json:"source"`
-	ObservedAt     time.Time `json:"observed_at"`
-	Buckets        []Bucket  `json:"buckets"`
+	AccountRefHash         string    `json:"account_ref_hash"`
+	PreviousAccountRefHash string    `json:"previous_account_ref_hash,omitempty"`
+	Provider               string    `json:"provider"`
+	Source                 string    `json:"source"`
+	ObservedAt             time.Time `json:"observed_at"`
+	Buckets                []Bucket  `json:"buckets"`
 }
 
 type Observation struct {
@@ -133,8 +135,8 @@ type BucketOverview struct {
 	ResetsAt      *time.Time `json:"resets_at,omitempty"`
 	WindowMinutes int        `json:"window_minutes"`
 	ObservedAt    time.Time  `json:"observed_at"`
-	// Reset is true when the window closed after the last observation, so
-	// UsedPercent is 0 until someone reports again.
+	// Reset is true when the last reading expired; UsedPercent and estimated
+	// shares are unavailable until a new reading arrives.
 	Reset bool `json:"reset"`
 	// UnattributedPercent is quota consumed in the window with no matching
 	// events from any member's device.

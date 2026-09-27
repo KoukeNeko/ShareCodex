@@ -65,6 +65,17 @@ func Open(ctx context.Context, path string) (*Store, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
+func (s *Store) AttributionReviewed(ctx context.Context) (bool, error) {
+	var reviewed bool
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM attribution_review)`).Scan(&reviewed)
+	return reviewed, err
+}
+
+func (s *Store) MarkAttributionReviewed(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO attribution_review (id) VALUES (1)`)
+	return err
+}
+
 func (s *Store) KnownFiles(ctx context.Context) (map[string]scan.FileState, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT path, size, mod_time_ns FROM files`)
 	if err != nil {
@@ -131,13 +142,22 @@ func (s *Store) IngestFile(ctx context.Context, path string, st scan.FileState, 
 	changed := 0
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
 		for _, e := range events {
+			var previousRef, previousSession, previousOriginator string
+			err := tx.QueryRowContext(ctx, `SELECT account_ref_hash, session_id, originator FROM events WHERE dedupe_key = ?`, e.DedupeKey).
+				Scan(&previousRef, &previousSession, &previousOriginator)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
 			res, err := tx.ExecContext(ctx, `
 				INSERT INTO events (dedupe_key, account_ref_hash, provider, product, originator, session_id, model,
 					occurred_at, input, cached_input, cache_write, output, reasoning_output)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT (dedupe_key) DO UPDATE SET
-					output = excluded.output, reasoning_output = excluded.reasoning_output
-				WHERE excluded.output > events.output`,
+					account_ref_hash = excluded.account_ref_hash, output = max(events.output, excluded.output),
+					reasoning_output = max(events.reasoning_output, excluded.reasoning_output)
+				WHERE (excluded.account_ref_hash = events.account_ref_hash AND excluded.output > events.output) OR
+					(excluded.account_ref_hash != events.account_ref_hash AND
+					 excluded.session_id = events.session_id AND excluded.originator = events.originator)`,
 				e.DedupeKey, e.AccountRefHash, e.Provider, e.Product, e.Originator, e.SessionID, e.Model,
 				e.OccurredAt.UnixMilli(), e.Tokens.Input, e.Tokens.CachedInput, e.Tokens.CacheWrite,
 				e.Tokens.Output, e.Tokens.ReasoningOutput)
@@ -148,7 +168,11 @@ func (s *Store) IngestFile(ctx context.Context, path string, st scan.FileState, 
 				continue
 			}
 			changed++
-			if err := enqueue(ctx, tx, KindEvent, syncapi.FromEvent(e)); err != nil {
+			payload := syncapi.FromEvent(e)
+			if previousRef != "" && previousRef != e.AccountRefHash && previousSession == e.SessionID && previousOriginator == e.Originator {
+				payload.PreviousAccountRefHash = previousRef
+			}
+			if err := enqueue(ctx, tx, KindEvent, payload); err != nil {
 				return err
 			}
 		}
@@ -176,6 +200,61 @@ func (s *Store) AddSnapshot(ctx context.Context, snap quota.Snapshot) error {
 	})
 }
 
+// CorrectSnapshot reattributes a recorded statusLine reading. The old row
+// must have the same provider-reported buckets as the session's spool file.
+func (s *Store) CorrectSnapshot(ctx context.Context, snap quota.Snapshot) (bool, error) {
+	corrected := false
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		buckets, err := json.Marshal(syncapi.FromSnapshot(snap).Buckets)
+		if err != nil {
+			return err
+		}
+		rows, err := tx.QueryContext(ctx, `SELECT account_ref_hash FROM snapshots
+			WHERE provider = ? AND source = ? AND observed_at = ? AND buckets = ?`,
+			snap.Provider, snap.Source, snap.ObservedAt.UnixMilli(), string(buckets))
+		if err != nil {
+			return err
+		}
+		var previousRefs []string
+		for rows.Next() {
+			var ref string
+			if err := rows.Scan(&ref); err != nil {
+				rows.Close()
+				return err
+			}
+			previousRefs = append(previousRefs, ref)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+		if len(previousRefs) != 1 || previousRefs[0] == snap.AccountRefHash {
+			return nil
+		}
+		previousRef := previousRefs[0]
+		res, err := tx.ExecContext(ctx, `DELETE FROM snapshots WHERE provider = ? AND account_ref_hash = ? AND source = ? AND observed_at = ?`,
+			snap.Provider, previousRef, snap.Source, snap.ObservedAt.UnixMilli())
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return nil
+		}
+		payload := syncapi.FromSnapshot(snap)
+		payload.PreviousAccountRefHash = previousRef
+		if err := enqueue(ctx, tx, KindSnapshot, payload); err != nil {
+			return err
+		}
+		if _, err := insertSnapshot(ctx, tx, snap); err != nil {
+			return err
+		}
+		corrected = true
+		return nil
+	})
+	return corrected, err
+}
+
 func insertSnapshot(ctx context.Context, tx *sql.Tx, snap quota.Snapshot) (int, error) {
 	dto := syncapi.FromSnapshot(snap)
 	buckets, err := json.Marshal(dto.Buckets)
@@ -194,12 +273,13 @@ func insertSnapshot(ctx context.Context, tx *sql.Tx, snap quota.Snapshot) (int, 
 	return 1, enqueue(ctx, tx, KindSnapshot, dto)
 }
 
-// SessionOriginator returns the entrypoint of a session's latest recorded
-// event, or "" when none is recorded.
-func (s *Store) SessionOriginator(ctx context.Context, sessionID string) (string, error) {
+// SessionOriginatorAt returns the entrypoint of the latest recorded event in
+// a session at or before the snapshot, or "" when none is recorded.
+func (s *Store) SessionOriginatorAt(ctx context.Context, sessionID string, at time.Time) (string, error) {
 	var originator string
 	err := s.db.QueryRowContext(ctx,
-		`SELECT originator FROM events WHERE session_id = ? ORDER BY occurred_at DESC LIMIT 1`, sessionID).Scan(&originator)
+		`SELECT originator FROM events WHERE provider = ? AND session_id = ? AND occurred_at <= ?
+		 ORDER BY occurred_at DESC LIMIT 1`, account.ProviderAnthropic, sessionID, at.UnixMilli()).Scan(&originator)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}

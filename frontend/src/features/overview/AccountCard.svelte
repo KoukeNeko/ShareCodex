@@ -19,6 +19,7 @@
 
   let selected = $state(0)
   const bucket = $derived(buckets[Math.min(selected, buckets.length - 1)])
+  const expired = $derived(bucket?.reset || (bucket?.resets_at && new Date(bucket.resets_at) <= now))
 
   function tone(used: number): 'accent' | 'warn' | 'danger' {
     return used >= 90 ? 'danger' : used >= 70 ? 'warn' : 'accent'
@@ -72,7 +73,7 @@
         {#each buckets as b, i (b.key)}
           <button role="tab" aria-selected={i === selected} class:active={i === selected} onclick={() => (selected = i)}>
             {bucketName(b.key, b.window_minutes)}
-            <span class="num">{percent(b.used_percent)}</span>
+            <span class="num">{b.reset || (b.resets_at && new Date(b.resets_at) <= now) ? '—' : percent(b.used_percent)}</span>
           </button>
         {/each}
       </div>
@@ -81,13 +82,13 @@
     <div class="total">
       <div class="row">
         <span>{buckets.length === 1 ? bucketName(bucket.key, bucket.window_minutes) : t('account')}</span>
-        <span class="num strong">{percent(bucket.used_percent)}</span>
+        <span class="num strong">{expired ? '—' : percent(bucket.used_percent)}</span>
       </div>
-      <QuotaBar value={bucket.used_percent} tone={tone(bucket.used_percent)} />
-      <div class="muted small">{bucket.reset ? t('reset') : resetsIn(bucket.resets_at, now)}</div>
+      {#if !expired}<QuotaBar value={bucket.used_percent} tone={tone(bucket.used_percent)} />{/if}
+      <div class="muted small">{expired ? t('reset') : resetsIn(bucket.resets_at, now)}</div>
     </div>
 
-    {#if !local}
+    {#if !local && !expired}
       <ul class="members">
         {#each bucket.members ?? [] as m (m.person_id)}
           {@const over = m.used_percent > m.allotted_percent + 0.5}

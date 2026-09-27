@@ -15,9 +15,10 @@
       <div class="stack" style="gap:6px">
         <div class="row spread">
           <strong>{{bucket .Key .WindowMinutes $.T}}</strong>
-          <span class="num"><strong>{{pct .UsedPercent}}</strong>
+          <span class="num"><strong>{{if .Reset}}—{{else}}{{pct .UsedPercent}}{{end}}</strong>
             <span class="muted small">{{if .Reset}}{{$.T.reset}}{{else if .ResetsAt}}{{tf $.T.resetsAt (when .ResetsAt)}}{{end}}</span></span>
         </div>
+        {{if not .Reset}}
         <div class="meter"><i style="width:{{pct .UsedPercent}}"></i></div>
         <div class="table-wrap"><table class="small">
           <thead><tr><th>{{$.T.member}}</th><th>{{$.T.estimatedUsage}}</th><th>{{$.T.allotted}}</th><th></th></tr></thead>
@@ -44,6 +45,7 @@
           {{end}}
           </tbody>
         </table></div>
+        {{end}}
         {{end}}
       </div>
     {{end}}

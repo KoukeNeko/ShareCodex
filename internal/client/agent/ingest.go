@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/KoukeNeko/ShareCodex/internal/account"
@@ -176,7 +177,23 @@ func (a *Agent) scanSource(ctx context.Context, src source, known map[string]sca
 		return 0, fmt.Errorf("list session logs: %w", err)
 	}
 	paths := scan.Changed(known, current)
+	if src.provider == account.ProviderAnthropic {
+		reviewed, err := a.store.AttributionReviewed(ctx)
+		if err != nil {
+			return 0, err
+		}
+		if !reviewed {
+			for path := range current {
+				if _, seen := known[path]; seen && !slices.Contains(paths, path) {
+					paths = append(paths, path)
+				}
+			}
+		}
+	}
 	if len(paths) == 0 {
+		if src.provider == account.ProviderAnthropic {
+			return 0, a.store.MarkAttributionReviewed(ctx)
+		}
 		return 0, nil
 	}
 
@@ -202,6 +219,11 @@ func (a *Agent) scanSource(ctx context.Context, src source, known map[string]sca
 			return total, err
 		}
 		total += n
+	}
+	if src.provider == account.ProviderAnthropic {
+		if err := a.store.MarkAttributionReviewed(ctx); err != nil {
+			return total, err
+		}
 	}
 	return total, nil
 }
@@ -254,19 +276,38 @@ func (a *Agent) ingestStatusLine(ctx context.Context) (int, error) {
 	if err := ac.loadDesktopSessions(); err != nil {
 		return 0, err
 	}
+	// Snapshots have no session ID in the ledger. Do not move one when more
+	// than one spooled session could have produced a reading at that time.
+	readingsAt := make(map[int64]int, len(spooled))
+	for _, sp := range spooled {
+		readingsAt[sp.Snapshot.ObservedAt.UnixMilli()]++
+	}
 	n := 0
 	for _, sp := range spooled {
 		// Claude Desktop's sessions run the statusLine too, under Desktop's
 		// own account; the session's recorded usage tells which app ran it.
-		entrypoint, err := a.store.SessionOriginator(ctx, sp.SessionID)
+		entrypoint, err := a.store.SessionOriginatorAt(ctx, sp.SessionID, sp.Snapshot.ObservedAt)
 		if err != nil {
 			return n, err
+		}
+		if entrypoint == "" {
+			continue
 		}
 		ref, ok := ac.resolve(sp.SessionID, entrypoint, sp.Snapshot.ObservedAt)
 		if !ok {
 			continue
 		}
 		sp.Snapshot.AccountRefHash = ref
+		if readingsAt[sp.Snapshot.ObservedAt.UnixMilli()] == 1 {
+			corrected, err := a.store.CorrectSnapshot(ctx, sp.Snapshot)
+			if err != nil {
+				return n, err
+			}
+			if corrected {
+				n++
+				continue
+			}
+		}
 		if err := a.store.AddSnapshot(ctx, sp.Snapshot); err != nil {
 			return n, err
 		}

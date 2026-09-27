@@ -90,7 +90,7 @@ func bucketOverview(b quota.Observed, now time.Time, members []storage.Member, r
 	personModelCosts := map[string]map[string]float64{}
 	var totalCost float64
 	if b.HasReset(now) {
-		// The window closed after the last report; nothing is used yet.
+		// No new provider reading after reset: the current percentage is unknown.
 		bo.Reset = true
 		bo.UsedPercent = 0
 	} else {

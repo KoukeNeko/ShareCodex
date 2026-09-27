@@ -157,6 +157,74 @@ func TestPairSyncOverview(t *testing.T) {
 	}
 }
 
+func TestSyncCorrectsAccountAttributionWithoutChangingOwner(t *testing.T) {
+	ctx := context.Background()
+	store := storagetest.New(t)
+	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	defer srv.Close()
+	alice := pair(t, store, srv.URL, "alice")
+	bob := pair(t, store, srv.URL, "bob")
+	now := time.Now().UTC().Truncate(time.Second)
+	resets := now.Add(time.Hour)
+	event := syncapi.Event{DedupeKey: "claude:m1:r1", AccountRefHash: "wrong", Provider: "anthropic",
+		Product: "claude-code", Originator: "claude-desktop", SessionID: "desk", Model: "claude-opus-5-5", OccurredAt: now, Input: 100}
+	snap := syncapi.Snapshot{Provider: "anthropic", AccountRefHash: "wrong", Source: "claude-statusline", ObservedAt: now,
+		Buckets: []syncapi.Bucket{{Key: "five_hour", UsedPercent: ptr(30.0), ResetsAt: &resets, WindowMinutes: ptr(300)}}}
+	var res syncapi.SyncResponse
+	if st := alice.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event}, Snapshots: []syncapi.Snapshot{snap}}, &res); st != http.StatusOK {
+		t.Fatalf("initial sync = %d", st)
+	}
+	event.AccountRefHash, snap.AccountRefHash = "correct", "correct"
+	event.PreviousAccountRefHash, snap.PreviousAccountRefHash = "wrong", "wrong"
+	if st := alice.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event}, Snapshots: []syncapi.Snapshot{snap}}, &res); st != http.StatusOK || res.Accepted != 3 {
+		t.Fatalf("correction = %d, accepted %d; want 200, 3 (event, delete, insert)", st, res.Accepted)
+	}
+	if st := alice.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event}, Snapshots: []syncapi.Snapshot{snap}}, &res); st != http.StatusOK || res.Accepted != 0 {
+		t.Fatalf("replayed correction accepted %d, want 0", res.Accepted)
+	}
+	if st := bob.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event}}, &res); st != http.StatusOK || res.Accepted != 0 {
+		t.Fatalf("another device changed the record: %d, accepted %d", st, res.Accepted)
+	}
+	accounts, err := store.Accounts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range accounts {
+		rows, err := store.Usage(ctx, a.ID, now.Add(-time.Minute), now.Add(time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a.ExternalRefHash == "wrong" && len(rows) != 0 || a.ExternalRefHash == "correct" && (len(rows) != 1 || rows[0].Tokens.Input != 100) {
+			t.Errorf("account %s usage = %+v", a.ExternalRefHash, rows)
+		}
+		snaps, err := store.Snapshots(ctx, a.ID, now.Add(-time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a.ExternalRefHash == "wrong" && len(snaps) != 0 || a.ExternalRefHash == "correct" && len(snaps) != 1 {
+			t.Errorf("account %s snapshots = %+v", a.ExternalRefHash, snaps)
+		}
+	}
+}
+
+func TestSyncAcceptsExistingProtocolDuringUpgrade(t *testing.T) {
+	store := storagetest.New(t)
+	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	defer srv.Close()
+	alice := pair(t, store, srv.URL, "alice")
+	now := time.Now().UTC().Truncate(time.Second)
+	var res syncapi.SyncResponse
+	initial := syncapi.SyncRequest{Version: 1, Events: []syncapi.Event{{DedupeKey: "legacy-event", AccountRefHash: "wrong", Provider: "anthropic", SessionID: "desk", Originator: "cli", OccurredAt: now}}}
+	if st := alice.do("POST", syncapi.PathSync, initial, &res); st != http.StatusOK || res.Accepted != 1 {
+		t.Fatalf("version 1 sync = %d, accepted %d", st, res.Accepted)
+	}
+	initial.Events[0].AccountRefHash = "correct"
+	initial.Events[0].PreviousAccountRefHash = "wrong"
+	if st := alice.do("POST", syncapi.PathSync, initial, &res); st != http.StatusOK || res.Accepted != 0 {
+		t.Fatalf("version 1 forged correction = %d, accepted %d", st, res.Accepted)
+	}
+}
+
 func TestShareWeightsAndRevocation(t *testing.T) {
 	ctx := context.Background()
 	store := storagetest.New(t)

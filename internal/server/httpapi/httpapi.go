@@ -76,7 +76,7 @@ func (s *Server) pair(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, maxPairBody, &req) {
 		return
 	}
-	if req.Version != syncapi.Version {
+	if req.Version != 1 && req.Version != syncapi.Version {
 		writeError(w, http.StatusUpgradeRequired, "client protocol version is not supported; update ShareCodex")
 		return
 	}
@@ -105,9 +105,17 @@ func (s *Server) sync(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, maxSyncBody, &req) {
 		return
 	}
-	if req.Version != syncapi.Version {
+	if req.Version != 1 && req.Version != syncapi.Version {
 		writeError(w, http.StatusUpgradeRequired, "client protocol version is not supported; update ShareCodex")
 		return
+	}
+	if req.Version == 1 {
+		for i := range req.Events {
+			req.Events[i].PreviousAccountRefHash = ""
+		}
+		for i := range req.Snapshots {
+			req.Snapshots[i].PreviousAccountRefHash = ""
+		}
 	}
 	n, err := s.store.Ingest(r.Context(), deviceFrom(r), req)
 	if err != nil {

@@ -47,6 +47,28 @@ func TestStateCarriesLanguageAndUpdate(t *testing.T) {
 	}
 }
 
+func TestLocalAccountExpiredReadingIsUnknown(t *testing.T) {
+	ctx := context.Background()
+	store, err := storage.Open(ctx, filepath.Join(t.TempDir(), "local.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	a := &Agent{store: store, log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	now := time.Now()
+	resets := now.Add(-time.Minute)
+	used := 92.0
+	if err := store.AddSnapshot(ctx, quota.Snapshot{Provider: account.ProviderAnthropic, AccountRefHash: "max",
+		Source: quota.SourceClaudeStatusLine, ObservedAt: now.Add(-2 * time.Hour),
+		Buckets: []quota.Bucket{{Key: quota.BucketFiveHour, UsedPercent: &used, ResetsAt: &resets}}}); err != nil {
+		t.Fatal(err)
+	}
+	local := a.localAccounts(ctx, now)
+	if len(local) != 1 || len(local[0].Buckets) != 1 || !local[0].Buckets[0].Reset {
+		t.Fatalf("expired local quota = %+v", local)
+	}
+}
+
 func TestLocalAccountsMarkTheSignedInAccount(t *testing.T) {
 	ctx := context.Background()
 	store, err := storage.Open(ctx, filepath.Join(t.TempDir(), "local.db"))

@@ -196,6 +196,38 @@ func TestPeopleInviteSharesAndRevoke(t *testing.T) {
 	}
 }
 
+func TestOverviewHidesExpiredQuotaEstimates(t *testing.T) {
+	ctx := context.Background()
+	store, b := newServer(t)
+	if st, _ := b.post("/admin/login", url.Values{"password": {password}}); st != http.StatusSeeOther {
+		t.Fatalf("login returned %d", st)
+	}
+	person, err := store.AddPerson(ctx, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, err := store.CreateInvite(ctx, person.ID, storage.InviteTTL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, _, err := store.Pair(ctx, code, "alice-laptop", "darwin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	used, minutes := 80.0, 300
+	resets := time.Now().UTC().Add(-time.Minute)
+	_, err = store.Ingest(ctx, device, syncapi.SyncRequest{Version: syncapi.Version,
+		Snapshots: []syncapi.Snapshot{{Provider: "anthropic", AccountRefHash: "acct", Source: "claude-statusline", ObservedAt: resets.Add(-time.Hour),
+			Buckets: []syncapi.Bucket{{Key: "five_hour", UsedPercent: &used, ResetsAt: &resets, WindowMinutes: &minutes}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st, page := b.get("/admin/"); st != http.StatusOK || !strings.Contains(page, "—") || strings.Contains(page, "80%") || strings.Contains(page, `class="meter"`) || strings.Contains(page, "Estimated usage") {
+		t.Fatalf("expired quota page = %d, expected unknown without estimates: %s", st, page)
+	}
+}
+
 func TestRejectsShortPassword(t *testing.T) {
 	if _, err := admin.New(nil, nil, admin.Config{Password: "short", PublicURL: "https://x"}); err == nil {
 		t.Fatal("a short admin password must be rejected at startup")

@@ -77,8 +77,13 @@ func TestBucketOverviewAfterResetHasNoModels(t *testing.T) {
 	rows := []storage.UsageRow{{PersonID: "a", Model: "claude-opus-5-5", Tokens: usage.Tokens{Input: 10}, Requests: 1}}
 
 	bo := bucketOverview(b, now, nil, rows, "a")
-	if !bo.Reset || len(bo.Models) != 0 {
-		t.Errorf("reset bucket = %+v, want no models", bo)
+	if !bo.Reset || bo.UsedPercent != 0 || len(bo.Models) != 0 || bo.UnattributedPercent != 0 {
+		t.Errorf("reset bucket = %+v, want no estimated usage", bo)
+	}
+	for _, m := range bo.Members {
+		if m.UsedPercent != 0 || m.Requests != 0 {
+			t.Errorf("reset bucket attributed usage to %s: %+v", m.Name, m)
+		}
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/KoukeNeko/ShareCodex/internal/account"
+	"github.com/KoukeNeko/ShareCodex/internal/quota"
 	"github.com/KoukeNeko/ShareCodex/internal/scan"
 	"github.com/KoukeNeko/ShareCodex/internal/syncapi"
 	"github.com/KoukeNeko/ShareCodex/internal/usage"
@@ -126,6 +127,90 @@ func TestObservationTimelinesAreKeptPerApp(t *testing.T) {
 	}
 }
 
+func TestCorrectSnapshotMovesRecordedReadingOnce(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	at := time.Unix(100, 0)
+	used := 42.0
+	snap := quota.Snapshot{Provider: account.ProviderAnthropic, AccountRefHash: "wrong", Source: quota.SourceClaudeStatusLine,
+		ObservedAt: at, Buckets: []quota.Bucket{{Key: quota.BucketFiveHour, UsedPercent: &used}}}
+	if err := s.AddSnapshot(ctx, snap); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteOutboxThrough(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	snap.AccountRefHash = "correct"
+	corrected, err := s.CorrectSnapshot(ctx, snap)
+	if err != nil || !corrected {
+		t.Fatalf("correction = %v, %v", corrected, err)
+	}
+	corrected, err = s.CorrectSnapshot(ctx, snap)
+	if err != nil || corrected {
+		t.Fatalf("replayed correction = %v, %v; want no change", corrected, err)
+	}
+	stored, err := s.LatestSnapshots(ctx, time.Time{})
+	if err != nil || len(stored) != 1 || stored[0].AccountRefHash != "correct" {
+		t.Fatalf("snapshots = %+v, %v", stored, err)
+	}
+	items, err := s.PendingOutbox(ctx, 10)
+	if err != nil || len(items) != 2 {
+		t.Fatalf("correction outbox = %+v, %v", items, err)
+	}
+	var correctedSnapshot syncapi.Snapshot
+	if err := json.Unmarshal(items[0].Payload, &correctedSnapshot); err != nil || correctedSnapshot.PreviousAccountRefHash != "wrong" {
+		t.Errorf("correction payload = %+v, %v", correctedSnapshot, err)
+	}
+}
+
+func TestCorrectSnapshotKeepsAmbiguousReadings(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	used := 42.0
+	snap := quota.Snapshot{Provider: account.ProviderAnthropic, Source: quota.SourceClaudeStatusLine,
+		ObservedAt: time.Unix(100, 0), Buckets: []quota.Bucket{{Key: quota.BucketFiveHour, UsedPercent: &used}}}
+	for _, ref := range []string{"wrong", "correct"} {
+		snap.AccountRefHash = ref
+		if err := s.AddSnapshot(ctx, snap); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if corrected, err := s.CorrectSnapshot(ctx, snap); err != nil || corrected {
+		t.Fatalf("ambiguous correction = %v, %v; want no change", corrected, err)
+	}
+	stored, err := s.LatestSnapshots(ctx, time.Time{})
+	if err != nil || len(stored) != 2 {
+		t.Fatalf("snapshots = %+v, %v; want both readings", stored, err)
+	}
+}
+
+func TestReattributeRecordedUsage(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	st := scan.FileState{Size: 10, ModTime: time.Unix(100, 0)}
+	e := usage.Event{DedupeKey: "claude:m1:r1", AccountRefHash: "wrong", Provider: account.ProviderAnthropic,
+		Product: usage.ProductClaudeCode, Originator: "claude-desktop", SessionID: "desk", Model: "claude-opus-5-5",
+		OccurredAt: time.Unix(50, 0), Tokens: usage.Tokens{Input: 10, Output: 12}}
+	if _, err := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteOutboxThrough(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	e.AccountRefHash = "correct"
+	if n, err := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil); err != nil || n != 1 {
+		t.Fatalf("corrected event = %d, %v; want one update", n, err)
+	}
+	items, err := s.PendingOutbox(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var corrected syncapi.Event
+	if len(items) != 1 || json.Unmarshal(items[0].Payload, &corrected) != nil || corrected.AccountRefHash != "correct" || corrected.PreviousAccountRefHash != "wrong" {
+		t.Fatalf("correction outbox = %+v, decoded %+v", items, corrected)
+	}
+}
+
 func TestSessionOriginatorAndLastUse(t *testing.T) {
 	ctx := context.Background()
 	s := openTest(t)
@@ -145,9 +230,20 @@ func TestSessionOriginatorAndLastUse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for session, want := range map[string]string{"desk": "cli", "term": "cli", "cowork": "local-agent", "none": ""} {
-		if got, err := s.SessionOriginator(ctx, session); err != nil || got != want {
-			t.Errorf("SessionOriginator(%s) = %q, %v; want %q", session, got, err, want)
+	for _, tc := range []struct {
+		session string
+		at      int64
+		want    string
+	}{
+		{"desk", 150, "claude-desktop"},
+		{"desk", 450, "cli"},
+		{"term", 350, "cli"},
+		{"cowork", 250, "local-agent"},
+		{"desk", 50, ""},
+		{"none", 450, ""},
+	} {
+		if got, err := s.SessionOriginatorAt(ctx, tc.session, time.Unix(tc.at, 0)); err != nil || got != tc.want {
+			t.Errorf("SessionOriginatorAt(%s, %d) = %q, %v; want %q", tc.session, tc.at, got, err, tc.want)
 		}
 	}
 
