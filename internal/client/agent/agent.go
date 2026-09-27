@@ -53,16 +53,19 @@ type ProviderState struct {
 
 // State is everything the popup renders.
 type State struct {
-	Version             string            `json:"version"`
-	Paired              bool              `json:"paired"`
-	Revoked             bool              `json:"revoked"`
-	PersonName          string            `json:"person_name"`
-	DeviceName          string            `json:"device_name"`
-	ServerURL           string            `json:"server_url"`
-	Providers           []ProviderState   `json:"providers"`
-	PendingUploads      int               `json:"pending_uploads"`
-	LastSyncAt          *time.Time        `json:"last_sync_at,omitempty"`
-	SyncError           string            `json:"sync_error,omitempty"`
+	Version        string          `json:"version"`
+	Paired         bool            `json:"paired"`
+	Revoked        bool            `json:"revoked"`
+	PersonName     string          `json:"person_name"`
+	DeviceName     string          `json:"device_name"`
+	ServerURL      string          `json:"server_url"`
+	Providers      []ProviderState `json:"providers"`
+	PendingUploads int             `json:"pending_uploads"`
+	LastSyncAt     *time.Time      `json:"last_sync_at,omitempty"`
+	SyncError      string          `json:"sync_error,omitempty"`
+	// OverviewError is set when the last upload succeeded but the server's
+	// overview could not be fetched; the screen keeps the previous one.
+	OverviewError       string            `json:"overview_error,omitempty"`
 	Overview            *syncapi.Overview `json:"overview,omitempty"`
 	Local               []LocalAccount    `json:"local"`
 	StatusLineInstalled bool              `json:"status_line_installed"`
@@ -94,15 +97,16 @@ type Agent struct {
 	kickSync chan struct{}
 	kickScan chan struct{}
 
-	mu        gosync.Mutex
-	settings  settings.Settings
-	providers map[account.Provider]*ProviderState
-	client    *sync.Client
-	revoked   bool
-	lastSync  *time.Time
-	syncErr   string
-	overview  *syncapi.Overview
-	update    *update.Release
+	mu          gosync.Mutex
+	settings    settings.Settings
+	providers   map[account.Provider]*ProviderState
+	client      *sync.Client
+	revoked     bool
+	lastSync    *time.Time
+	syncErr     string
+	overviewErr string
+	overview    *syncapi.Overview
+	update      *update.Release
 }
 
 func New(ctx context.Context, version string, log *slog.Logger) (*Agent, error) {

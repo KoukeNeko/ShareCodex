@@ -19,7 +19,8 @@ import (
 
 // syncOnce uploads the whole outbox in batches, then refreshes the
 // overview. Items are deleted only after the server accepted them, so a
-// failure resends them; the server ignores duplicates.
+// failure resends them; the server ignores duplicates. Only a failed upload
+// fails the sync: a failed overview refresh leaves the last one on screen.
 func (a *Agent) syncOnce(ctx context.Context) error {
 	a.mu.Lock()
 	client, revoked := a.client, a.revoked
@@ -28,10 +29,11 @@ func (a *Agent) syncOnce(ctx context.Context) error {
 		return nil
 	}
 
-	err := a.upload(ctx, client)
-	if err == nil {
+	uploadErr := a.upload(ctx, client)
+	var overviewErr error
+	if uploadErr == nil {
 		var o syncapi.Overview
-		if o, err = client.Overview(ctx); err == nil {
+		if o, overviewErr = client.Overview(ctx); overviewErr == nil {
 			a.mu.Lock()
 			a.overview = &o
 			a.mu.Unlock()
@@ -41,21 +43,30 @@ func (a *Agent) syncOnce(ctx context.Context) error {
 	now := time.Now()
 	a.mu.Lock()
 	switch {
-	case errors.Is(err, sync.ErrRevoked):
+	case errors.Is(uploadErr, sync.ErrRevoked):
 		a.revoked = true
-		a.syncErr = err.Error()
-	case err != nil:
-		a.syncErr = err.Error()
+		a.syncErr = uploadErr.Error()
+	case uploadErr != nil:
+		a.syncErr = uploadErr.Error()
 	default:
 		a.syncErr = ""
 		a.lastSync = &now
 	}
+	switch {
+	case overviewErr != nil:
+		a.overviewErr = overviewErr.Error()
+	case uploadErr == nil:
+		a.overviewErr = ""
+	}
 	a.mu.Unlock()
-	if err != nil {
-		a.log.Warn("sync failed", "err", err)
+	if uploadErr != nil {
+		a.log.Warn("sync failed", "err", uploadErr)
+	}
+	if overviewErr != nil {
+		a.log.Warn("overview refresh failed", "err", overviewErr)
 	}
 	a.changed()
-	return err
+	return uploadErr
 }
 
 func (a *Agent) upload(ctx context.Context, client *sync.Client) error {
@@ -136,7 +147,7 @@ func (a *Agent) Join(ctx context.Context, link string) error {
 	a.settings.PersonName = resp.PersonName
 	st := a.settings
 	a.client = sync.NewClient(base, resp.Token)
-	a.revoked, a.syncErr, a.overview = false, "", nil
+	a.revoked, a.syncErr, a.overviewErr, a.overview = false, "", "", nil
 	a.mu.Unlock()
 
 	if err := settings.Save(st); err != nil {
@@ -183,7 +194,7 @@ func (a *Agent) Leave() error {
 	deviceID := a.settings.DeviceID
 	a.settings.ServerURL, a.settings.DeviceID, a.settings.PersonID, a.settings.PersonName = "", "", "", ""
 	st := a.settings
-	a.client, a.overview, a.revoked, a.syncErr, a.lastSync = nil, nil, false, "", nil
+	a.client, a.overview, a.revoked, a.syncErr, a.overviewErr, a.lastSync = nil, nil, false, "", "", nil
 	a.mu.Unlock()
 
 	if err := settings.Save(st); err != nil {

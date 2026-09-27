@@ -24,6 +24,7 @@ func (a *Agent) State(ctx context.Context) State {
 		ServerURL:     a.settings.ServerURL,
 		LastSyncAt:    a.lastSync,
 		SyncError:     a.syncErr,
+		OverviewError: a.overviewErr,
 		Overview:      a.overview,
 		LaunchAtLogin: a.settings.LaunchAtLogin,
 		Language:      a.language(),

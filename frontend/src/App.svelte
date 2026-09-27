@@ -104,6 +104,8 @@
       <div class="status">
         {#if app.sync_error && !app.revoked}
           <span class="error">{t('syncFailed', { error: app.sync_error })}</span>
+        {:else if app.overview_error}
+          <span class="error">{t('overviewFailed', { error: app.overview_error })}</span>
         {:else if app.last_sync_at}
           <span>{t('synced', { time: clock(app.last_sync_at) })}</span>
         {:else}
