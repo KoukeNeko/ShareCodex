@@ -33,6 +33,7 @@ const usageText = `usage:
   sharecodex autostart on|off          run the agent at login (a systemd user service on Linux)
   sharecodex statusline-capture on|off capture Claude's quota through Claude Code's statusLine
   sharecodex scan [--json]             print daily token totals from local logs
+  sharecodex resync                    re-read local logs and upload the result again
   sharecodex statusline                Claude Code statusLine shim (installed by the above)`
 
 func main() {
@@ -55,6 +56,8 @@ func main() {
 		err = runAgent()
 	case "status":
 		err = runStatus()
+	case "resync":
+		err = runResync()
 	case "invite":
 		err = runInvite()
 	case "autostart", "statusline-capture":
@@ -180,6 +183,28 @@ func runStatus() error {
 	fmt.Printf("Pending uploads:    %d\n", st.PendingUploads)
 	fmt.Printf("statusLine capture: %s\n", onOff(st.StatusLineInstalled))
 	fmt.Printf("Autostart:          %s\n", onOff(st.LaunchAtLogin))
+	return nil
+}
+
+// runResync throws away this device's ledger and reads its logs again, which
+// is how events uploaded under older attribution rules are replaced. The app
+// must not be running: both processes would open the same database.
+func runResync() error {
+	ctx := context.Background()
+	a, err := newAgent(ctx)
+	if err != nil {
+		return err
+	}
+	defer a.Close()
+	if st := a.State(ctx); st.Paired {
+		fmt.Printf("Re-reading logs for %s (%s). Quit ShareCodex first; two processes must not share its database.\n",
+			st.PersonName, st.DeviceName)
+	}
+	stats, err := a.Resync(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Events re-read: %d\nUploaded:       %d pending\n", stats.Events, stats.Pending)
 	return nil
 }
 

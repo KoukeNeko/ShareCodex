@@ -376,6 +376,26 @@ func (s *Store) DeleteOutboxThrough(ctx context.Context, id int64) error {
 	return err
 }
 
+// ResetLedger drops everything this device reported as usage and nothing
+// else: observations stay, because they date the join and hold the sign-in
+// timeline a rescan attributes events with.
+func (s *Store) ResetLedger(ctx context.Context) error {
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		for _, table := range []string{"events", "files", "outbox"} {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM `+table); err != nil {
+				return fmt.Errorf("clear %s: %w", table, err)
+			}
+		}
+		return nil
+	})
+}
+
+func (s *Store) EventCount(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM events`).Scan(&n)
+	return n, err
+}
+
 func enqueue(ctx context.Context, tx *sql.Tx, kind string, payload any) error {
 	b, err := json.Marshal(payload)
 	if err != nil {

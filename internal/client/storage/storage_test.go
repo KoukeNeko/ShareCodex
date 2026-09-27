@@ -211,6 +211,46 @@ func TestReattributeRecordedUsage(t *testing.T) {
 	}
 }
 
+func TestResetLedgerKeepsSignInTimeline(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	st := scan.FileState{Size: 10, ModTime: time.Unix(100, 0)}
+	at := time.Unix(50, 0)
+	e := usage.Event{DedupeKey: "claude:m1:r1", AccountRefHash: "acct", Provider: account.ProviderAnthropic,
+		Product: usage.ProductClaudeCode, Model: "claude-opus-5-5", OccurredAt: at, Tokens: usage.Tokens{Input: 10, Output: 12}}
+	if _, err := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddObservation(ctx, account.Observation{Provider: account.ProviderAnthropic, ExternalRefHash: "acct", ObservedAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	used, minutes := 42.0, 300
+	if err := s.AddSnapshot(ctx, quota.Snapshot{Provider: account.ProviderAnthropic, AccountRefHash: "acct", Source: quota.SourceClaudeStatusLine,
+		ObservedAt: at, Buckets: []quota.Bucket{{Key: quota.BucketFiveHour, UsedPercent: &used, WindowMinutes: &minutes}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.ResetLedger(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.EventCount(ctx); err != nil || n != 0 {
+		t.Errorf("events after reset = %d, %v; want none", n, err)
+	}
+	if files, err := s.KnownFiles(ctx); err != nil || len(files) != 0 {
+		t.Errorf("files after reset = %v, %v; want none, so every session is read again", files, err)
+	}
+	if n, err := s.OutboxLen(ctx); err != nil || n != 0 {
+		t.Errorf("outbox after reset = %d, %v; want none", n, err)
+	}
+	obs, err := s.Observations(ctx, account.ProviderAnthropic, account.SourceCLI)
+	if err != nil || len(obs) != 1 || !obs[0].ObservedAt.Equal(at) {
+		t.Errorf("observations after reset = %+v, %v; want the sign-in timeline kept", obs, err)
+	}
+	if snaps, err := s.LatestSnapshots(ctx, at.Add(-time.Minute)); err != nil || len(snaps) != 1 {
+		t.Errorf("snapshots after reset = %+v, %v; want them kept", snaps, err)
+	}
+}
+
 func TestSessionOriginatorAndLastUse(t *testing.T) {
 	ctx := context.Background()
 	s := openTest(t)
