@@ -84,6 +84,28 @@ func TestParseSubAgentIgnoresInheritedTotals(t *testing.T) {
 	}
 }
 
+func TestParseRecordsWithoutResponseID(t *testing.T) {
+	res := parseFixture(t, "rollout-2026-09-20T14-00-00-eeee.jsonl")
+
+	if len(res.Events) != 2 || res.BadLines != 0 {
+		t.Fatalf("got %d events and %d bad lines, want 2 and 0 (a routed request still counts)", len(res.Events), res.BadLines)
+	}
+	first, second := res.Events[0], res.Events[1]
+	if first.DedupeKey != "codex:eeee:tc:40199" || second.DedupeKey != "codex:eeee:tc:80796" {
+		t.Errorf("keys = %q, %q; want the session total at each record", first.DedupeKey, second.DedupeKey)
+	}
+	if first.Tokens != (usage.Tokens{Input: 39937, Output: 262}) {
+		t.Errorf("tokens = %+v, want the request's own usage", first.Tokens)
+	}
+
+	again := parseFixture(t, "rollout-2026-09-20T14-00-00-eeee.jsonl")
+	for i := range res.Events {
+		if res.Events[i].DedupeKey != again.Events[i].DedupeKey {
+			t.Fatalf("re-parsing produced different keys: %q vs %q", res.Events[i].DedupeKey, again.Events[i].DedupeKey)
+		}
+	}
+}
+
 func TestParseSkipsThirdPartyProvider(t *testing.T) {
 	res := parseFixture(t, "rollout-2026-09-20T13-00-00-dddd.jsonl")
 

@@ -81,6 +81,9 @@ type usageRecord struct {
 	ResponseID string     `json:"response_id"`
 	SessionID  string     `json:"session_id"`
 	Usage      tokenUsage `json:"usage"`
+	// Thread is the session's running total. Inference routed to another
+	// provider omits the response id, and this total still names the request.
+	Thread tokenUsage `json:"thread_token_usage"`
 }
 
 type eventMsg struct {
@@ -160,12 +163,23 @@ func Parse(r io.Reader) (Result, error) {
 
 		case "token_usage_record":
 			var rec usageRecord
-			if err := json.Unmarshal(l.Payload, &rec); err != nil || rec.ResponseID == "" {
+			if err := json.Unmarshal(l.Payload, &rec); err != nil {
 				res.BadLines++
 				continue
 			}
+			key := "codex:" + rec.ResponseID
+			if rec.ResponseID == "" {
+				// Counted on the session total, the same counter the
+				// token_count fallback keys use, so one request never enters
+				// the ledger twice under two keys.
+				if rec.Thread.TotalTokens <= 0 {
+					res.BadLines++
+					continue
+				}
+				key = fmt.Sprintf("codex:%s:tc:%d", cmp.Or(rec.SessionID, res.SessionID), rec.Thread.TotalTokens)
+			}
 			records = append(records, usage.Event{
-				DedupeKey:  "codex:" + rec.ResponseID,
+				DedupeKey:  key,
 				SessionID:  cmp.Or(rec.SessionID, res.SessionID),
 				Model:      model,
 				OccurredAt: l.Timestamp,
