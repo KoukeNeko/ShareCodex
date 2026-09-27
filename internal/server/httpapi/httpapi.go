@@ -117,12 +117,12 @@ func (s *Server) sync(w http.ResponseWriter, r *http.Request) {
 			req.Snapshots[i].PreviousAccountRefHash = ""
 		}
 	}
-	n, err := s.store.Ingest(r.Context(), deviceFrom(r), req)
+	res, err := s.store.Ingest(r.Context(), deviceFrom(r), req)
 	if err != nil {
 		s.internalError(w, "ingest batch", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, syncapi.SyncResponse{Accepted: n})
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {

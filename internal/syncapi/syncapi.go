@@ -75,6 +75,11 @@ type SyncRequest struct {
 
 type SyncResponse struct {
 	Accepted int `json:"accepted"`
+	// Diverged counts events the server still attributes to a different
+	// account than the one the client sent: another device recorded them
+	// first and the correction did not apply. The client reports it so a
+	// device does not assume its own view of the ledger won.
+	Diverged int `json:"diverged,omitempty"`
 }
 
 type PairRequest struct {

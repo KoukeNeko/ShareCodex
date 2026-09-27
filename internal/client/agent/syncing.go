@@ -71,8 +71,12 @@ func (a *Agent) upload(ctx context.Context, client *sync.Client) error {
 		if err != nil {
 			return err
 		}
-		if _, err := client.Sync(ctx, req); err != nil {
+		res, err := client.Sync(ctx, req)
+		if err != nil {
 			return err
+		}
+		if res.Diverged > 0 {
+			a.log.Warn("server kept another account for some events", "events", res.Diverged)
 		}
 		if err := a.store.DeleteOutboxThrough(ctx, items[len(items)-1].ID); err != nil {
 			return err

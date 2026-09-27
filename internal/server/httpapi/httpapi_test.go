@@ -157,34 +157,63 @@ func TestPairSyncOverview(t *testing.T) {
 	}
 }
 
+// The dedupe key is global, so whichever device uploads a request first fixes
+// its account. A device that parsed the same request differently must still be
+// able to correct the account without becoming the record's owner.
 func TestSyncCorrectsAccountAttributionWithoutChangingOwner(t *testing.T) {
 	ctx := context.Background()
 	store := storagetest.New(t)
 	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
 	defer srv.Close()
-	alice := pair(t, store, srv.URL, "alice")
+	alicePerson, err := store.AddPerson(ctx, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	alice := pairDevice(t, store, srv.URL, alicePerson, "alice-laptop", identity.PlatformDarwin)
 	bob := pair(t, store, srv.URL, "bob")
+	carol := pair(t, store, srv.URL, "carol")
 	now := time.Now().UTC().Truncate(time.Second)
 	resets := now.Add(time.Hour)
 	event := syncapi.Event{DedupeKey: "claude:m1:r1", AccountRefHash: "wrong", Provider: "anthropic",
 		Product: "claude-code", Originator: "claude-desktop", SessionID: "desk", Model: "claude-opus-5-5", OccurredAt: now, Input: 100}
 	snap := syncapi.Snapshot{Provider: "anthropic", AccountRefHash: "wrong", Source: "claude-statusline", ObservedAt: now,
 		Buckets: []syncapi.Bucket{{Key: "five_hour", UsedPercent: ptr(30.0), ResetsAt: &resets, WindowMinutes: ptr(300)}}}
-	var res syncapi.SyncResponse
-	if st := alice.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event}, Snapshots: []syncapi.Snapshot{snap}}, &res); st != http.StatusOK {
+	sync := func(c client, req syncapi.SyncRequest) (int, syncapi.SyncResponse) {
+		var res syncapi.SyncResponse
+		st := c.do("POST", syncapi.PathSync, req, &res)
+		return st, res
+	}
+	if st, _ := sync(alice, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event}, Snapshots: []syncapi.Snapshot{snap}}); st != http.StatusOK {
 		t.Fatalf("initial sync = %d", st)
 	}
 	event.AccountRefHash, snap.AccountRefHash = "correct", "correct"
 	event.PreviousAccountRefHash, snap.PreviousAccountRefHash = "wrong", "wrong"
-	if st := alice.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event}, Snapshots: []syncapi.Snapshot{snap}}, &res); st != http.StatusOK || res.Accepted != 3 {
-		t.Fatalf("correction = %d, accepted %d; want 200, 3 (event, delete, insert)", st, res.Accepted)
+
+	// Bob never stored this request, but his previous ref names the account
+	// the server actually holds, so the correction applies.
+	if st, res := sync(bob, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event}}); st != http.StatusOK || res.Accepted != 1 || res.Diverged != 0 {
+		t.Fatalf("cross-device correction = %d, accepted %d, diverged %d; want 200, 1, 0", st, res.Accepted, res.Diverged)
 	}
-	if st := alice.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event}, Snapshots: []syncapi.Snapshot{snap}}, &res); st != http.StatusOK || res.Accepted != 0 {
-		t.Fatalf("replayed correction accepted %d, want 0", res.Accepted)
+	if st, res := sync(bob, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event}}); st != http.StatusOK || res.Accepted != 0 || res.Diverged != 0 {
+		t.Fatalf("replayed correction = %d, accepted %d, diverged %d; want 200, 0, 0", st, res.Accepted, res.Diverged)
 	}
-	if st := bob.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event}}, &res); st != http.StatusOK || res.Accepted != 0 {
-		t.Fatalf("another device changed the record: %d, accepted %d", st, res.Accepted)
+
+	// Carol sends no previous ref, so nothing ties her view to the stored row;
+	// the server keeps the row and tells her the two views diverged.
+	third := event
+	third.AccountRefHash, third.PreviousAccountRefHash = "third", ""
+	if st, res := sync(carol, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{third}}); st != http.StatusOK || res.Accepted != 0 || res.Diverged != 1 {
+		t.Fatalf("unfounded correction = %d, accepted %d, diverged %d; want 200, 0, 1 (diverged)", st, res.Accepted, res.Diverged)
 	}
+
+	// Snapshot correction stays with the device that took the reading.
+	if st, res := sync(alice, syncapi.SyncRequest{Version: syncapi.Version, Snapshots: []syncapi.Snapshot{snap}}); st != http.StatusOK || res.Accepted != 2 {
+		t.Fatalf("snapshot correction = %d, accepted %d; want 200, 2 (delete, insert)", st, res.Accepted)
+	}
+	if st, res := sync(alice, syncapi.SyncRequest{Version: syncapi.Version, Snapshots: []syncapi.Snapshot{snap}}); st != http.StatusOK || res.Accepted != 0 {
+		t.Fatalf("replayed snapshot correction accepted %d, want 0", res.Accepted)
+	}
+
 	accounts, err := store.Accounts(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -196,6 +225,14 @@ func TestSyncCorrectsAccountAttributionWithoutChangingOwner(t *testing.T) {
 		}
 		if a.ExternalRefHash == "wrong" && len(rows) != 0 || a.ExternalRefHash == "correct" && (len(rows) != 1 || rows[0].Tokens.Input != 100) {
 			t.Errorf("account %s usage = %+v", a.ExternalRefHash, rows)
+		}
+		if a.ExternalRefHash == "correct" && rows[0].PersonID != alicePerson.ID {
+			t.Errorf("correction changed the owner: person %s, want %s", rows[0].PersonID, alicePerson.ID)
+		}
+		// "third" exists only in carol's view; the divergence count above is
+		// the whole record of it.
+		if a.ExternalRefHash == "third" && len(rows) != 0 {
+			t.Errorf("rejected account holds usage = %+v", rows)
 		}
 		snaps, err := store.Snapshots(ctx, a.ID, now.Add(-time.Minute))
 		if err != nil {

@@ -223,12 +223,22 @@ func (s *Store) RevokeDevice(ctx context.Context, id string) error {
 	return nil
 }
 
-// Ingest stores one sync batch atomically. Accounts and memberships are
-// created on first sight, so a member joins an account simply by using it.
+// Ingest stores one sync batch atomically and reports what the ledger holds
+// afterwards. Accounts and memberships are created on first sight, so a member
+// joins an account simply by using it.
+//
 // Re-sent events are ignored unless they carry a larger output count or an
-// explicit account correction from the device that first recorded them.
-func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (int, error) {
+// account correction. Any device may correct, as long as it names the account
+// the record was previously attributed to: one request can appear in more than
+// one device's logs (Claude Desktop mirrors a session it drives on another
+// host), and the device that uploaded it first may be the one that knows it
+// least. The person a record belongs to never changes, because a device only
+// reports events whose account it observed itself.
+func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (syncapi.SyncResponse, error) {
 	accepted := 0
+	diverged := 0
+	// Events this batch attributes, for the divergence count below.
+	var reported []syncapi.Event
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
 		accounts := map[[2]string]string{}
 		ensure := func(provider, refHash, hint, plan string) (string, error) {
@@ -269,6 +279,7 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 			if err != nil {
 				return err
 			}
+			reported = append(reported, e)
 			res, err := tx.ExecContext(ctx, `
 				INSERT INTO usage_events (dedupe_key, account_id, person_id, device_id, product, originator, session_id,
 					model, occurred_at, input, cached_input, cache_write, output, reasoning_output)
@@ -278,8 +289,7 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 					output = GREATEST(usage_events.output, excluded.output),
 					reasoning_output = GREATEST(usage_events.reasoning_output, excluded.reasoning_output)
 				WHERE (usage_events.account_id = excluded.account_id AND excluded.output > usage_events.output) OR
-					(usage_events.device_id = excluded.device_id AND
-					 usage_events.session_id = excluded.session_id AND usage_events.originator = excluded.originator AND
+					(usage_events.session_id = excluded.session_id AND usage_events.originator = excluded.originator AND
 					 usage_events.account_id != excluded.account_id AND $16 != '' AND
 					 usage_events.account_id = (SELECT id FROM accounts WHERE provider = $15 AND ref_hash = $16))`,
 				e.DedupeKey, id, d.PersonID, d.ID, e.Product, e.Originator, e.SessionID, e.Model, e.OccurredAt,
@@ -288,6 +298,23 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 				return fmt.Errorf("save event %s: %w", e.DedupeKey, err)
 			}
 			accepted += rowsAffected(res)
+		}
+
+		if len(reported) > 0 {
+			keys := make([]string, len(reported))
+			providers := make([]string, len(reported))
+			refs := make([]string, len(reported))
+			for i, e := range reported {
+				keys[i], providers[i], refs[i] = e.DedupeKey, e.Provider, e.AccountRefHash
+			}
+			if err := tx.QueryRowContext(ctx, `
+				SELECT count(*) FROM unnest($1::text[], $2::text[], $3::text[]) AS sent(dedupe_key, provider, ref_hash)
+				JOIN usage_events e ON e.dedupe_key = sent.dedupe_key
+				JOIN accounts a ON a.id = e.account_id
+				WHERE a.provider <> sent.provider OR a.ref_hash <> sent.ref_hash`,
+				keys, providers, refs).Scan(&diverged); err != nil {
+				return fmt.Errorf("count divergent events: %w", err)
+			}
 		}
 
 		for _, snap := range req.Snapshots {
@@ -323,7 +350,7 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 		}
 		return nil
 	})
-	return accepted, err
+	return syncapi.SyncResponse{Accepted: accepted, Diverged: diverged}, err
 }
 
 func ensureAccount(ctx context.Context, tx *sql.Tx, provider, refHash, hint, plan, personID string) (string, error) {
