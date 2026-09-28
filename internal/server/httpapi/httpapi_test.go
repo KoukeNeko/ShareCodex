@@ -157,6 +157,35 @@ func TestPairSyncOverview(t *testing.T) {
 	}
 }
 
+// An account read through a ShareCodex sign-in has no observation to name it.
+// Its snapshot names it instead, without marking anyone as signed into it.
+func TestSnapshotNamesAccountKnownOnlyFromSignIn(t *testing.T) {
+	store := storagetest.New(t)
+	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	defer srv.Close()
+	alice := pair(t, store, srv.URL, "alice")
+
+	now := time.Now().UTC().Truncate(time.Second)
+	snap := syncapi.Snapshot{Provider: "anthropic", AccountRefHash: "desktop-only", AccountHint: "de***@example.com",
+		PlanType: "max", Source: "claude-oauth-usage", ObservedAt: now,
+		Buckets: []syncapi.Bucket{{Key: "weekly", UsedPercent: ptr(31.0), WindowMinutes: ptr(10080)}}}
+	var res syncapi.SyncResponse
+	if st := alice.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version, Snapshots: []syncapi.Snapshot{snap}}, &res); st != http.StatusOK || res.Accepted != 1 {
+		t.Fatalf("sync = %d, accepted %d; want 200, 1", st, res.Accepted)
+	}
+	var ov syncapi.Overview
+	if st := alice.do("GET", syncapi.PathOverview, nil, &ov); st != http.StatusOK || len(ov.Accounts) != 1 {
+		t.Fatalf("overview = %d, %+v", st, ov)
+	}
+	a := ov.Accounts[0]
+	if a.Label != "de***@example.com" || a.PlanType != "max" || len(a.Buckets) != 1 {
+		t.Errorf("account = %+v, want it named by the snapshot", a)
+	}
+	if len(a.ActiveUsers) != 0 {
+		t.Errorf("active users = %+v; a sign-in is not a sign-in on the CLI", a.ActiveUsers)
+	}
+}
+
 // The dedupe key is global, so whichever device uploads a request first fixes
 // its account. A device that parsed the same request differently must still be
 // able to correct the account without becoming the record's owner.

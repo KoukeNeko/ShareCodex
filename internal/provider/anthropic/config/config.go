@@ -27,18 +27,28 @@ type ChangePlan struct {
 
 func (p ChangePlan) Empty() bool { return !p.changed }
 
-// SettingsPath is Claude Code's user settings file. With several
-// CLAUDE_CONFIG_DIR entries the first is used.
-func SettingsPath() (string, error) {
+// ConfigDir is Claude Code's user configuration directory, where it keeps
+// settings and credentials alike. With several CLAUDE_CONFIG_DIR entries the
+// first is used.
+func ConfigDir() (string, error) {
 	if env := os.Getenv("CLAUDE_CONFIG_DIR"); env != "" {
 		first, _, _ := strings.Cut(env, ",")
-		return filepath.Join(strings.TrimSpace(first), "settings.json"), nil
+		return strings.TrimSpace(first), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".claude", "settings.json"), nil
+	return filepath.Join(home, ".claude"), nil
+}
+
+// SettingsPath is Claude Code's user settings file.
+func SettingsPath() (string, error) {
+	dir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "settings.json"), nil
 }
 
 // ShimCommand is the statusLine command that runs this executable's shim.

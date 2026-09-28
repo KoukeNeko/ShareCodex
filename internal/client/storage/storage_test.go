@@ -295,3 +295,24 @@ func TestSessionOriginatorAndLastUse(t *testing.T) {
 		t.Errorf("LastUse without events = %q at %v, %v; want none", ref, at, err)
 	}
 }
+
+func TestClaudeLoginsReplaceBySameAccount(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	if err := s.AddClaudeLogin(ctx, ClaudeLogin{RefHash: "a", Hint: "al***@example.com", PlanType: "pro"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddClaudeLogin(ctx, ClaudeLogin{RefHash: "a", Hint: "al***@example.com", PlanType: "max"}); err != nil {
+		t.Fatal(err)
+	}
+	logins, err := s.ClaudeLogins(ctx)
+	if err != nil || len(logins) != 1 || logins[0].PlanType != "max" {
+		t.Fatalf("logins = %+v, %v; want one, upgraded to max", logins, err)
+	}
+	if err := s.RemoveClaudeLogin(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+	if logins, _ := s.ClaudeLogins(ctx); len(logins) != 0 {
+		t.Fatalf("logins after removal = %+v", logins)
+	}
+}

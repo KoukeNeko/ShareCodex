@@ -321,7 +321,7 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 			if snap.AccountRefHash == "" || len(snap.Buckets) == 0 {
 				continue
 			}
-			id, err := ensure(snap.Provider, snap.AccountRefHash, "", "")
+			id, err := ensure(snap.Provider, snap.AccountRefHash, snap.AccountHint, snap.PlanType)
 			if err != nil {
 				return err
 			}

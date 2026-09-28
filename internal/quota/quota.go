@@ -22,6 +22,18 @@ const (
 	SourceCodexRollout     Source = "codex-rollout"
 	SourceCodexRPC         Source = "codex-rpc"
 	SourceClaudeStatusLine Source = "claude-statusline"
+	// SourceClaudeOAuthUsage is Anthropic's own usage endpoint, read with
+	// Claude Code's credential or a ShareCodex sign-in. Unlike the statusLine
+	// it needs no session, so it also reports usage that only Claude Desktop
+	// produces.
+	SourceClaudeOAuthUsage Source = "claude-oauth-usage"
+)
+
+// Window lengths of the rate limits Claude reports. Codex reports each
+// window's own length, so these serve Claude's sources only.
+const (
+	FiveHourMinutes = 300
+	WeeklyMinutes   = 10080
 )
 
 // Bucket is one limit window. Providers may omit any field, so optional
@@ -35,11 +47,16 @@ type Bucket struct {
 
 type Snapshot struct {
 	AccountRefHash string
-	DeviceID       string
-	Provider       account.Provider
-	ObservedAt     time.Time
-	Source         Source
-	Buckets        []Bucket
+	// AccountHint and PlanType name an account the device knows only from a
+	// sign-in, not from an observation. They travel to the server with the
+	// snapshot and are not kept in the ledger.
+	AccountHint string
+	PlanType    string
+	DeviceID    string
+	Provider    account.Provider
+	ObservedAt  time.Time
+	Source      Source
+	Buckets     []Bucket
 }
 
 // Observed is a bucket together with when it was reported.

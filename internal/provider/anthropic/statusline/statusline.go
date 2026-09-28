@@ -184,8 +184,8 @@ func toSnapshot(e spoolEntry) (quota.Snapshot, bool) {
 		}
 		buckets = append(buckets, b)
 	}
-	add(quota.BucketFiveHour, 300, e.RateLimits.FiveHour)
-	add(quota.BucketWeekly, 10080, e.RateLimits.SevenDay)
+	add(quota.BucketFiveHour, quota.FiveHourMinutes, e.RateLimits.FiveHour)
+	add(quota.BucketWeekly, quota.WeeklyMinutes, e.RateLimits.SevenDay)
 	if len(buckets) == 0 {
 		return quota.Snapshot{}, false
 	}

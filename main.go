@@ -3,12 +3,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"os/user"
 	"path/filepath"
@@ -18,6 +20,7 @@ import (
 
 	"github.com/KoukeNeko/ShareCodex/internal/client/agent"
 	"github.com/KoukeNeko/ShareCodex/internal/client/settings"
+	"github.com/KoukeNeko/ShareCodex/internal/provider/anthropic/oauthusage"
 	"github.com/KoukeNeko/ShareCodex/internal/provider/anthropic/statusline"
 )
 
@@ -34,6 +37,8 @@ const usageText = `usage:
   sharecodex statusline-capture on|off capture Claude's quota through Claude Code's statusLine
   sharecodex scan [--json]             print daily token totals from local logs
   sharecodex resync                    re-read local logs and upload the result again
+  sharecodex claude-login              sign a Claude account in to ShareCodex to read its quota
+  sharecodex claude-logout ACCOUNT     forget a Claude sign-in, as listed by status
   sharecodex statusline                Claude Code statusLine shim (installed by the above)`
 
 func main() {
@@ -58,6 +63,14 @@ func main() {
 		err = runStatus()
 	case "resync":
 		err = runResync()
+	case "claude-login":
+		err = runClaudeLogin()
+	case "claude-logout":
+		if len(args) != 2 {
+			err = errors.New(usageText)
+			break
+		}
+		err = runClaudeLogout(args[1])
 	case "invite":
 		err = runInvite()
 	case "autostart", "statusline-capture":
@@ -183,7 +196,89 @@ func runStatus() error {
 	fmt.Printf("Pending uploads:    %d\n", st.PendingUploads)
 	fmt.Printf("statusLine capture: %s\n", onOff(st.StatusLineInstalled))
 	fmt.Printf("Autostart:          %s\n", onOff(st.LaunchAtLogin))
+	logins, err := a.ClaudeLogins(ctx)
+	if err != nil {
+		return err
+	}
+	for i, l := range logins {
+		label := "Claude sign-ins:   "
+		if i > 0 {
+			label = "                   "
+		}
+		fmt.Printf("%s %s (%s)\n", label, l.Hint, l.PlanType)
+	}
 	return nil
+}
+
+// runClaudeLogin signs a Claude account in to ShareCodex, the way Claude
+// Code signs in, so its quota is read even where only Claude Desktop uses it.
+func runClaudeLogin() error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	a, err := newAgent(ctx)
+	if err != nil {
+		return err
+	}
+	defer a.Close()
+	login, err := oauthusage.StartLogin()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Open this page and approve the sign-in:\n\n  %s\n\n", login.URL)
+	fmt.Println("If the browser is on another machine, paste the code the page shows here and press Enter.")
+	openBrowser(login.URL)
+	go func() {
+		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err == nil || line != "" {
+			login.Submit(line)
+		}
+	}()
+	tokens, profile, err := login.Wait(ctx)
+	if err != nil {
+		return err
+	}
+	l, buckets, err := a.LinkClaude(ctx, tokens, profile)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Signed in: %s (%s)\n", l.Hint, l.PlanType)
+	for _, b := range buckets {
+		if b.UsedPercent != nil {
+			fmt.Printf("  %-9s %.0f%%\n", b.Key, *b.UsedPercent)
+		}
+	}
+	return nil
+}
+
+func runClaudeLogout(hint string) error {
+	ctx := context.Background()
+	a, err := newAgent(ctx)
+	if err != nil {
+		return err
+	}
+	defer a.Close()
+	if err := a.UnlinkClaude(ctx, hint); err != nil {
+		return err
+	}
+	fmt.Printf("Signed out: %s\n", hint)
+	return nil
+}
+
+// openBrowser shows the sign-in page where there is a desktop to show it on;
+// over SSH the printed link is used instead.
+func openBrowser(url string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		return
+	}
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintln(os.Stderr, "sharecodex: open browser:", err)
+	}
 }
 
 // runResync throws away this device's ledger and reads its logs again, which

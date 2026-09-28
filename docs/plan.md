@@ -21,7 +21,7 @@
 4. **模型名稱來自 `turn_context.payload.model`。** 這與 ccusage 的做法一致。
 5. **Claude Code 的 statusLine 輸入有額度資料。** 欄位包括 `rate_limits.five_hour / seven_day {used_percentage, resets_at}`、`session_id` 和 `transcript_path`，但只有 Pro/Max 帳號會有，而且要等 session 中第一個 API 回應之後才出現。
 6. **Claude 用量改從 transcript JSONL 讀取**（`~/.claude/projects/**/*.jsonl`，也就是 ccusage 的做法），不用 OTel。這樣不需要改動每個人的環境變數。去重鍵是 `message.id + requestId`。
-7. **帳號身分可以從官方介面取得，不需要讀取憑證檔。** Claude 用 `claude auth status --json`（`orgId`、`email`）；Codex 用 app-server 的 `account/read` 與 `account/rateLimits/read`（`accountId`、`email`）。`codex login status` 沒有帳號識別，不採用（見 `docs/spikes.md`）。**本專案絕不讀取 `auth.json`、`.credentials` 或 keychain 裡的 OAuth token。**
+7. **帳號身分可以從官方介面取得，不需要讀取憑證檔。** Claude 用 `claude auth status --json`（`orgId`、`email`）；Codex 用 app-server 的 `account/read` 與 `account/rateLimits/read`（`accountId`、`email`）。`codex login status` 沒有帳號識別，不採用（見 `docs/spikes.md`）。**帳號身分一律不讀憑證檔；唯一的例外是額度：Claude Code 自己的 OAuth token，以及使用者在 ShareCodex 另外登入的 Claude 帳號（ShareCodex 自有的 OAuth token，存在系統憑證儲存區），只用來呼叫 Anthropic 的 `/api/oauth/usage` 取得額度（見 `internal/provider/anthropic/oauthusage`），不會上傳、不會寫入帳本。Codex 的 `auth.json` 完全不讀。**
 
 ## 架構總覽
 

@@ -396,6 +396,44 @@ func (s *Store) EventCount(ctx context.Context) (int, error) {
 	return n, err
 }
 
+// ClaudeLogin is a Claude account signed in to ShareCodex itself.
+type ClaudeLogin struct {
+	RefHash  string
+	Hint     string
+	PlanType string
+}
+
+// AddClaudeLogin records a sign-in, replacing an earlier one of the account.
+func (s *Store) AddClaudeLogin(ctx context.Context, l ClaudeLogin) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO claude_logins (ref_hash, hint, plan_type) VALUES (?, ?, ?)
+		 ON CONFLICT (ref_hash) DO UPDATE SET hint = excluded.hint, plan_type = excluded.plan_type`,
+		l.RefHash, l.Hint, l.PlanType)
+	return err
+}
+
+func (s *Store) ClaudeLogins(ctx context.Context) ([]ClaudeLogin, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT ref_hash, hint, plan_type FROM claude_logins ORDER BY hint`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ClaudeLogin
+	for rows.Next() {
+		var l ClaudeLogin
+		if err := rows.Scan(&l.RefHash, &l.Hint, &l.PlanType); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) RemoveClaudeLogin(ctx context.Context, refHash string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM claude_logins WHERE ref_hash = ?`, refHash)
+	return err
+}
+
 func enqueue(ctx context.Context, tx *sql.Tx, kind string, payload any) error {
 	b, err := json.Marshal(payload)
 	if err != nil {

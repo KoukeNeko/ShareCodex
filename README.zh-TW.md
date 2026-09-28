@@ -90,8 +90,11 @@ server 連不上時照常記錄，恢復連線後再上傳。可以設定登入�
 - 離開電腦的只有 token 數、模型名稱、時間與額度百分比。
 - prompt、回應內容、工作目錄與專案路徑從不寫入帳本，也不會上傳。
 - 帳號以單向雜湊識別；server 只保留遮罩過的 email（例如 `al***@example.com`），讓 admin 分辨是哪個帳號。
-- 不讀取任何憑證檔。帳號身分來自 `claude auth status`、Codex 自己的 app server，以及 Claude Desktop
-  存放 Claude Code session 的資料夾名稱。
+- 會讀取 Claude Code 自己的登入資訊（macOS 從 Keychain，其他平台從 `.credentials.json`），只用來向
+  Anthropic 查詢該帳號的額度。在 **Claude 額度** 新增的帳號使用 ShareCodex 自己的登入，存放在系統的
+  憑證儲存區（Linux 為僅限擁有者讀取的檔案），用途相同。任何 token 都不會上傳、不會寫進 log，
+  也不會寫入帳本。其他帳號身分來自 `claude auth status`、Codex 自己的 app server，以及 Claude
+  Desktop 存放 Claude Code session 的資料夾名稱。
 - server 由你自己架設，沒有第三方服務、分析或追蹤。
 
 ## 開始使用
@@ -102,8 +105,9 @@ server 連不上時照常記錄，恢復連線後再上傳。可以設定登入�
    下一台的連結可以從 **設定 › 新增裝置** 或 `sharecodex invite` 取得。Linux 請見
    [Linux 與 SSH 主機](#linux-與-ssh-主機)。
 4. **照常在 Claude Code 或 Codex 登入共用帳號。** app 看到該帳號後就會出現。
-5. **在 app 設定頁啟用 statusLine 擷取**，才能取得 Claude 的額度。原本的 statusLine 照常顯示，
-   停用時會還原原本的設定。
+5. **取得 Claude 的額度。** Claude Code 自己的登入會自動讀取。只在 Claude Desktop 使用的帳號，
+   在 **設定 › Claude 額度 › 新增帳號** 登入即可（Linux 用 `sharecodex claude-login`）。同一處的
+   statusLine 擷取則從 Claude Code 工作階段讀取；原本的 statusLine 照常顯示，停用時會還原原本的設定。
 
 加入之前的歷史用量不會上傳。
 
@@ -203,7 +207,8 @@ Linux 沒有系統匣 app，改由 `sharecodex` 指令在背景執行相同的 a
 ```bash
 brew install koukeneko/tap/sharecodex-cli                # Linux 上的 Homebrew
 sharecodex join 'https://sharecodex.example.com/join/…'  # 在 Mac 的「設定 › 新增裝置」取得
-sharecodex statusline-capture on                         # Claude 額度
+sharecodex claude-login                                  # Claude 額度，給沒在這台登入的帳號
+sharecodex statusline-capture on                         # 從 Claude Code 工作階段讀取 Claude 額度
 sharecodex autostart on                                  # systemd 使用者服務
 loginctl enable-linger                                   # 登出後繼續執行
 sharecodex status
@@ -229,8 +234,9 @@ sharecodex status
   也只算一次。
 - **Codex**：讀取 `~/.codex/sessions` 與 `archived_sessions` 的 rollout。有逐次請求紀錄時直接使用；
   舊格式改用累計值的差額。
-- **額度**：Codex 的額度視窗來自 rollout 與 `codex app-server`；Claude 的來自 statusLine 輸入，
-  由 app 透過一個小 shim 擷取。
+- **額度**：Codex 的額度視窗來自 rollout 與 `codex app-server`；Claude 的來自 statusLine 輸入（由 app
+  透過一個小 shim 擷取），以及 Anthropic 的 usage endpoint（用 Claude Code 自己的登入資訊，以及在
+  ShareCodex 新增的帳號讀取）。後者不需要 session，因此只在 Claude Desktop 使用的帳號也能取得額度。
 - **Claude Desktop**：Code 分頁寫入同一份 transcript；Cowork 則存在 Desktop 的
   `local-agent-mode-sessions` 下。Desktop 的登入與 `claude` CLI 分開，因此它的用量依存放 session
   metadata 的資料夾（`claude-code-sessions/<帳號>/<組織>`）對應到組織。Desktop 也會列出在終端機啟動的

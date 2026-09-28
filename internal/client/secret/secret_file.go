@@ -15,15 +15,24 @@ import (
 )
 
 func tokenPath(deviceID string) (string, error) {
-	// The ID comes from the server; it must not escape the data directory.
-	if deviceID == "" || strings.ContainsAny(deviceID, `/\`) || deviceID == "." || deviceID == ".." {
-		return "", fmt.Errorf("invalid device ID %q", deviceID)
+	return secretPath("device-", deviceID, ".token")
+}
+
+func claudeLoginPath(refHash string) (string, error) {
+	return secretPath("claude-login-", refHash, ".json")
+}
+
+func secretPath(prefix, id, suffix string) (string, error) {
+	// IDs come from the server or a hash; they must not escape the data
+	// directory.
+	if id == "" || strings.ContainsAny(id, `/\`) || id == "." || id == ".." {
+		return "", fmt.Errorf("invalid secret ID %q", id)
 	}
 	dir, err := settings.Dir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "device-"+deviceID+".token"), nil
+	return filepath.Join(dir, prefix+id+suffix), nil
 }
 
 func SetToken(deviceID, token string) error {
@@ -39,6 +48,42 @@ func Token(deviceID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return readSecret(p)
+}
+
+func DeleteToken(deviceID string) error {
+	p, err := tokenPath(deviceID)
+	if err != nil {
+		return err
+	}
+	return removeSecret(p)
+}
+
+func SetClaudeLogin(refHash, value string) error {
+	p, err := claudeLoginPath(refHash)
+	if err != nil {
+		return err
+	}
+	return atomicfile.Write(p, []byte(value), 0o600)
+}
+
+func ClaudeLogin(refHash string) (string, error) {
+	p, err := claudeLoginPath(refHash)
+	if err != nil {
+		return "", err
+	}
+	return readSecret(p)
+}
+
+func DeleteClaudeLogin(refHash string) error {
+	p, err := claudeLoginPath(refHash)
+	if err != nil {
+		return err
+	}
+	return removeSecret(p)
+}
+
+func readSecret(p string) (string, error) {
 	b, err := os.ReadFile(p)
 	if errors.Is(err, fs.ErrNotExist) {
 		return "", ErrNotFound
@@ -49,11 +94,7 @@ func Token(deviceID string) (string, error) {
 	return strings.TrimSpace(string(b)), nil
 }
 
-func DeleteToken(deviceID string) error {
-	p, err := tokenPath(deviceID)
-	if err != nil {
-		return err
-	}
+func removeSecret(p string) error {
 	if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}

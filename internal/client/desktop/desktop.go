@@ -14,6 +14,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/events"
 
 	"github.com/KoukeNeko/ShareCodex/internal/client/agent"
+	"github.com/KoukeNeko/ShareCodex/internal/provider/anthropic/oauthusage"
 )
 
 // StateEvent carries a fresh agent.State to the frontend.
@@ -223,6 +224,31 @@ func (s *Service) InstallStatusLine() error {
 
 func (s *Service) RestoreStatusLine() error {
 	return s.agent.RestoreStatusLine()
+}
+
+// SignInClaude signs a Claude account in to ShareCodex in the browser, so
+// its quota is read even where only Claude Desktop uses it. It returns once
+// the sign-in finishes or is abandoned.
+func (s *Service) SignInClaude(ctx context.Context) error {
+	login, err := oauthusage.StartLogin()
+	if err != nil {
+		return err
+	}
+	if err := s.app.Browser.OpenURL(login.URL); err != nil {
+		login.Close()
+		return err
+	}
+	tokens, profile, err := login.Wait(ctx)
+	if err != nil {
+		return err
+	}
+	_, _, err = s.agent.LinkClaude(ctx, tokens, profile)
+	return err
+}
+
+// SignOutClaude forgets a sign-in, named as State lists it.
+func (s *Service) SignOutClaude(ctx context.Context, hint string) error {
+	return s.agent.UnlinkClaude(ctx, hint)
 }
 
 func (s *Service) SetLaunchAtLogin(enabled bool) error {

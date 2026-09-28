@@ -102,8 +102,13 @@ your server. No shell access to the container is needed.
   uploaded.
 - Accounts are identified by a one-way hash; the server keeps only a masked email such as
   `al***@example.com` so admins can tell accounts apart.
-- No credential files are read. Account identity comes from `claude auth status`, Codex's own app
-  server, and the folder names of Claude Desktop's Claude Code sessions.
+- Claude Code's own sign-in is read — from the macOS Keychain, or from `.credentials.json` where
+  there is none — and used for one thing: asking Anthropic for that account's rate limits. Accounts
+  you add under **Claude quota** get ShareCodex's own sign-in, kept in the OS credential store (an
+  owner-only file on Linux) and used the same way. No token is ever uploaded, logged, or written to
+  the ledger. Everything else about identity comes from
+  `claude auth status`, Codex's own app server, and the folder names of Claude Desktop's Claude Code
+  sessions.
 - The server is yours. There is no third-party service, analytics or tracking.
 
 ## Getting started
@@ -116,8 +121,11 @@ your server. No shell access to the container is needed.
    `sharecodex invite`. On Linux, see [Linux and SSH machines](#linux-and-ssh-machines).
 4. **Sign in to the shared account** in Claude Code or Codex as usual. The account appears once the
    app sees it.
-5. **Turn on statusLine capture** in the app's settings to get Claude's quota. Your existing
-   statusLine keeps working, and turning it off restores your original setting.
+5. **Get Claude's quota.** Claude Code's own sign-in is read automatically. To cover an account used
+   only in Claude Desktop, add it under **Settings › Claude quota › Add account** (on Linux,
+   `sharecodex claude-login`). statusLine capture in the same place also reads it from Claude Code
+   sessions; your existing statusLine keeps working, and turning it off restores your original
+   setting.
 
 Usage from before you joined is not uploaded.
 
@@ -223,7 +231,8 @@ machine you reach over SSH adds up with your other computers under your name.
 ```bash
 brew install koukeneko/tap/sharecodex-cli                # Homebrew on Linux
 sharecodex join 'https://sharecodex.example.com/join/…'  # from Settings › Add device on your Mac
-sharecodex statusline-capture on                         # Claude's quota
+sharecodex claude-login                                  # Claude's quota, for accounts not signed in here
+sharecodex statusline-capture on                         # Claude's quota from Claude Code sessions
 sharecodex autostart on                                  # systemd user service
 loginctl enable-linger                                   # keep it running after you log out
 sharecodex status
@@ -250,7 +259,9 @@ To update, run `brew update && brew upgrade sharecodex-cli` (or rerun the instal
 - **Codex** — `~/.codex/sessions` and `archived_sessions` rollouts. Per-request records are used when
   present; older files fall back to the difference between cumulative totals.
 - **Quota** — Codex reports its windows in the rollouts and through `codex app-server`; Claude's come
-  from the statusLine input, which the app captures through a small shim.
+  from the statusLine input, which the app captures through a small shim, and from Anthropic's usage
+  endpoint, read with Claude Code's own sign-in and with the accounts added to ShareCodex. That
+  endpoint needs no session, so an account used only through Claude Desktop reports its limits too.
 - **Claude Desktop** — its Code tab writes to the same transcripts, and Cowork keeps its own under
   Desktop's `local-agent-mode-sessions`. Desktop signs in separately from the `claude` CLI, so its
   usage is matched to the organization in the folder holding the session's metadata

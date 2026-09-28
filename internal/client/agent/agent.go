@@ -24,11 +24,15 @@ import (
 const (
 	scanInterval     = 15 * time.Second
 	identityInterval = 5 * time.Minute
-	syncInterval     = 30 * time.Second
-	maxSyncBackoff   = 10 * time.Minute
-	batchSize        = 500
-	spoolMaxAge      = 7 * 24 * time.Hour
-	updateInterval   = 24 * time.Hour
+	// usageInterval matches the ten minutes Anthropic's usage endpoint is
+	// meant to be read at; it is rate limited, so probing on the scan or
+	// identity interval would be too often.
+	usageInterval  = 10 * time.Minute
+	syncInterval   = 30 * time.Second
+	maxSyncBackoff = 10 * time.Minute
+	batchSize      = 500
+	spoolMaxAge    = 7 * 24 * time.Hour
+	updateInterval = 24 * time.Hour
 )
 
 type Status string
@@ -69,9 +73,18 @@ type State struct {
 	Overview            *syncapi.Overview `json:"overview,omitempty"`
 	Local               []LocalAccount    `json:"local"`
 	StatusLineInstalled bool              `json:"status_line_installed"`
-	LaunchAtLogin       bool              `json:"launch_at_login"`
-	Language            string            `json:"language"`
-	Update              *update.Release   `json:"update,omitempty"`
+	// ClaudeLogins are the Claude accounts signed in to ShareCodex itself.
+	ClaudeLogins  []ClaudeLogin   `json:"claude_logins"`
+	LaunchAtLogin bool            `json:"launch_at_login"`
+	Language      string          `json:"language"`
+	Update        *update.Release `json:"update,omitempty"`
+}
+
+// ClaudeLogin is a Claude account signed in to ShareCodex, named as the
+// popup lists it.
+type ClaudeLogin struct {
+	Hint     string `json:"hint"`
+	PlanType string `json:"plan_type"`
 }
 
 // LocalAccount is this device's latest quota reading, shown before pairing
@@ -156,11 +169,13 @@ func (a *Agent) SpoolDir() string { return filepath.Join(a.dir, "claude-statusli
 // Run blocks until ctx is done.
 func (a *Agent) Run(ctx context.Context) {
 	a.observeAll(ctx)
+	a.probeUsage(ctx)
 	a.scanAll(ctx)
 
 	var wg gosync.WaitGroup
-	wg.Add(4)
+	wg.Add(5)
 	go func() { defer wg.Done(); a.identityLoop(ctx) }()
+	go func() { defer wg.Done(); a.usageLoop(ctx) }()
 	go func() { defer wg.Done(); a.updateLoop(ctx) }()
 	go func() { defer wg.Done(); a.scanLoop(ctx) }()
 	go func() { defer wg.Done(); a.syncLoop(ctx) }()
@@ -195,6 +210,19 @@ func (a *Agent) identityLoop(ctx context.Context) {
 			return
 		case <-t.C:
 			a.observeAll(ctx)
+		}
+	}
+}
+
+func (a *Agent) usageLoop(ctx context.Context) {
+	t := time.NewTicker(usageInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			a.probeUsage(ctx)
 		}
 	}
 }

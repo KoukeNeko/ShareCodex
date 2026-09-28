@@ -9,6 +9,20 @@
   let error = $state('')
   let confirmingLeave = $state(false)
   let invite = $state<Invite | null>(null)
+  // A sign-in waits on the browser, so it does not hold up the other controls.
+  let signingIn = $state(false)
+
+  async function signIn() {
+    signingIn = true
+    error = ''
+    try {
+      await Desktop.SignInClaude()
+    } catch (err) {
+      error = errorMessage(err)
+    } finally {
+      signingIn = false
+    }
+  }
 
   async function run(action: () => Promise<void>) {
     busy = true
@@ -62,6 +76,13 @@
   <section>
     <h2>{t('claudeQuota')}</h2>
     <p class="muted">{t('claudeQuotaBody')}</p>
+    {#each app.claude_logins ?? [] as login (login.hint)}
+      <div class="row">
+        <span>{login.hint} <span class="muted">{login.plan_type}</span></span>
+        <button onclick={() => run(() => Desktop.SignOutClaude(login.hint))} disabled={busy}>{t('signOut')}</button>
+      </div>
+    {/each}
+    <button onclick={signIn} disabled={signingIn}>{signingIn ? t('signingIn') : t('addClaudeAccount')}</button>
     <div class="row">
       <span>{t('statusLineCapture')}</span>
       {#if app.status_line_installed}

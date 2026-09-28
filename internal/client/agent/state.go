@@ -39,6 +39,11 @@ func (a *Agent) State(ctx context.Context) State {
 		st.PendingUploads = n
 	}
 	st.Local = a.localAccounts(ctx, time.Now())
+	if logins, err := a.store.ClaudeLogins(ctx); err == nil {
+		for _, l := range logins {
+			st.ClaudeLogins = append(st.ClaudeLogins, ClaudeLogin{Hint: l.Hint, PlanType: l.PlanType})
+		}
+	}
 	st.StatusLineInstalled = statusLineInstalled()
 	return st
 }
@@ -95,6 +100,16 @@ func (a *Agent) localAccounts(ctx context.Context, now time.Time) []LocalAccount
 		}
 		if n := len(obs); n > 0 && obs[n-1].ExternalRefHash != "" {
 			current[string(tl.provider)+":"+obs[n-1].ExternalRefHash] = true
+		}
+	}
+
+	// An account known only from a ShareCodex sign-in is named by it.
+	if logins, err := a.store.ClaudeLogins(ctx); err == nil {
+		for _, l := range logins {
+			key := string(account.ProviderAnthropic) + ":" + l.RefHash
+			if hints[key].Hint == "" {
+				hints[key] = account.Observation{Hint: l.Hint, PlanType: l.PlanType}
+			}
 		}
 	}
 

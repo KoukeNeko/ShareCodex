@@ -48,12 +48,16 @@ type Bucket struct {
 }
 
 type Snapshot struct {
-	AccountRefHash         string    `json:"account_ref_hash"`
-	PreviousAccountRefHash string    `json:"previous_account_ref_hash,omitempty"`
-	Provider               string    `json:"provider"`
-	Source                 string    `json:"source"`
-	ObservedAt             time.Time `json:"observed_at"`
-	Buckets                []Bucket  `json:"buckets"`
+	AccountRefHash         string `json:"account_ref_hash"`
+	PreviousAccountRefHash string `json:"previous_account_ref_hash,omitempty"`
+	// AccountHint and PlanType name the account when the device knows it
+	// only from a ShareCodex sign-in; empty otherwise.
+	AccountHint string    `json:"account_hint,omitempty"`
+	PlanType    string    `json:"plan_type,omitempty"`
+	Provider    string    `json:"provider"`
+	Source      string    `json:"source"`
+	ObservedAt  time.Time `json:"observed_at"`
+	Buckets     []Bucket  `json:"buckets"`
 }
 
 type Observation struct {
@@ -221,6 +225,8 @@ func (e Event) ToDomain() usage.Event {
 func FromSnapshot(s quota.Snapshot) Snapshot {
 	out := Snapshot{
 		AccountRefHash: s.AccountRefHash,
+		AccountHint:    s.AccountHint,
+		PlanType:       s.PlanType,
 		Provider:       string(s.Provider),
 		Source:         string(s.Source),
 		ObservedAt:     s.ObservedAt.UTC(),
