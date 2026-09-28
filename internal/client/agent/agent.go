@@ -109,6 +109,9 @@ type Agent struct {
 
 	kickSync chan struct{}
 	kickScan chan struct{}
+	// ledgerMu keeps a scan from running while Resync empties and rebuilds
+	// the ledger; a scan started before the reset would skip every file.
+	ledgerMu gosync.Mutex
 
 	mu          gosync.Mutex
 	settings    settings.Settings

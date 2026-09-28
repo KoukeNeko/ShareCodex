@@ -41,6 +41,8 @@ var sources = []source{
 }
 
 func (a *Agent) scanAll(ctx context.Context) {
+	a.ledgerMu.Lock()
+	defer a.ledgerMu.Unlock()
 	known, err := a.store.KnownFiles(ctx)
 	if err != nil {
 		a.log.Error("load scanned files", "err", err)

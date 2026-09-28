@@ -12,6 +12,13 @@
   // A sign-in waits on the browser, so it does not hold up the other controls.
   let signingIn = $state(false)
 
+  let resyncing = $state(false)
+
+  function resync() {
+    resyncing = true
+    run(() => Desktop.Resync()).finally(() => (resyncing = false))
+  }
+
   async function signIn() {
     signingIn = true
     error = ''
@@ -65,6 +72,7 @@
       {:else}
         <div class="buttons">
           <button onclick={() => run(async () => { invite = await Desktop.CreateInvite() })} disabled={busy}>{t('addDevice')}</button>
+          <button onclick={resync} disabled={busy}>{resyncing ? t('resyncing') : t('resync')}</button>
           <button class="danger" onclick={() => (confirmingLeave = true)}>{t('leaveServer')}</button>
         </div>
       {/if}

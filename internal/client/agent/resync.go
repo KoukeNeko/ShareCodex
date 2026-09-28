@@ -25,26 +25,11 @@ func (a *Agent) Resync(ctx context.Context) (ResyncStats, error) {
 	if client == nil {
 		return ResyncStats{}, errors.New("not joined; run `sharecodex join LINK` first")
 	}
-	if err := a.store.ResetLedger(ctx); err != nil {
-		return ResyncStats{}, err
-	}
-	stats := ResyncStats{}
-
 	a.observeAll(ctx)
-	known, err := a.store.KnownFiles(ctx)
+	stats, err := a.rebuildLedger(ctx)
+	// The popup shows the ledger's pending count and readings.
+	a.changed()
 	if err != nil {
-		return stats, err
-	}
-	for _, src := range sources {
-		if _, err := a.scanSource(ctx, src, known); err != nil {
-			return stats, fmt.Errorf("rescan %s: %w", src.provider, err)
-		}
-	}
-	// The statusLine spool is attributed through the events just rebuilt.
-	if _, err := a.ingestStatusLine(ctx); err != nil {
-		return stats, fmt.Errorf("rescan statusLine: %w", err)
-	}
-	if stats.Events, err = a.store.EventCount(ctx); err != nil {
 		return stats, err
 	}
 	if err := a.upload(ctx, client); err != nil {
@@ -58,4 +43,30 @@ func (a *Agent) Resync(ctx context.Context) (ResyncStats, error) {
 		return stats, err
 	}
 	return stats, nil
+}
+
+// rebuildLedger empties the ledger and reads every log again, holding off
+// the agent's own scans until it is done.
+func (a *Agent) rebuildLedger(ctx context.Context) (ResyncStats, error) {
+	a.ledgerMu.Lock()
+	defer a.ledgerMu.Unlock()
+	stats := ResyncStats{}
+	if err := a.store.ResetLedger(ctx); err != nil {
+		return stats, err
+	}
+	known, err := a.store.KnownFiles(ctx)
+	if err != nil {
+		return stats, err
+	}
+	for _, src := range sources {
+		if _, err := a.scanSource(ctx, src, known); err != nil {
+			return stats, fmt.Errorf("rescan %s: %w", src.provider, err)
+		}
+	}
+	// The statusLine spool is attributed through the events just rebuilt.
+	if _, err := a.ingestStatusLine(ctx); err != nil {
+		return stats, fmt.Errorf("rescan statusLine: %w", err)
+	}
+	stats.Events, err = a.store.EventCount(ctx)
+	return stats, err
 }

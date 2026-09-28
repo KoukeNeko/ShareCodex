@@ -218,6 +218,13 @@ func (s *Service) Refresh() {
 	s.agent.Refresh()
 }
 
+// Resync re-reads this device's logs and uploads them again, replacing what
+// was uploaded under older attribution rules.
+func (s *Service) Resync(ctx context.Context) error {
+	_, err := s.agent.Resync(ctx)
+	return err
+}
+
 func (s *Service) InstallStatusLine() error {
 	return s.agent.InstallStatusLine(s.executable)
 }
