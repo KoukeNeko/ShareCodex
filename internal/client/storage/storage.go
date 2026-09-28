@@ -378,7 +378,9 @@ func (s *Store) DeleteOutboxThrough(ctx context.Context, id int64) error {
 
 // ResetLedger drops everything this device reported as usage and nothing
 // else: observations stay, because they date the join and hold the sign-in
-// timeline a rescan attributes events with.
+// timeline a rescan attributes events with. The server's copy may have been
+// reset too, so the timeline and quota readings are queued again; the
+// server ignores the ones it still has.
 func (s *Store) ResetLedger(ctx context.Context) error {
 	return s.inTx(ctx, func(tx *sql.Tx) error {
 		for _, table := range []string{"events", "files", "outbox"} {
@@ -386,8 +388,73 @@ func (s *Store) ResetLedger(ctx context.Context) error {
 				return fmt.Errorf("clear %s: %w", table, err)
 			}
 		}
-		return nil
+		if err := requeueObservations(ctx, tx); err != nil {
+			return err
+		}
+		return requeueSnapshots(ctx, tx)
 	})
+}
+
+func requeueObservations(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `SELECT provider, source, ref_hash, hint, plan_type, observed_at FROM observations
+		WHERE ref_hash != '' ORDER BY observed_at`)
+	if err != nil {
+		return err
+	}
+	var obs []account.Observation
+	for rows.Next() {
+		var o account.Observation
+		var at int64
+		if err := rows.Scan(&o.Provider, &o.Source, &o.ExternalRefHash, &o.Hint, &o.PlanType, &at); err != nil {
+			rows.Close()
+			return err
+		}
+		o.ObservedAt = time.UnixMilli(at)
+		obs = append(obs, o)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, o := range obs {
+		if err := enqueue(ctx, tx, KindObservation, syncapi.FromObservation(o)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func requeueSnapshots(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `SELECT provider, account_ref_hash, source, observed_at, buckets FROM snapshots ORDER BY observed_at`)
+	if err != nil {
+		return err
+	}
+	var snaps []syncapi.Snapshot
+	for rows.Next() {
+		var dto syncapi.Snapshot
+		var at int64
+		var buckets string
+		if err := rows.Scan(&dto.Provider, &dto.AccountRefHash, &dto.Source, &at, &buckets); err != nil {
+			rows.Close()
+			return err
+		}
+		if err := json.Unmarshal([]byte(buckets), &dto.Buckets); err != nil {
+			rows.Close()
+			return fmt.Errorf("decode stored buckets: %w", err)
+		}
+		dto.ObservedAt = time.UnixMilli(at).UTC()
+		snaps = append(snaps, dto)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, snap := range snaps {
+		if err := enqueue(ctx, tx, KindSnapshot, snap); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) EventCount(ctx context.Context) (int, error) {

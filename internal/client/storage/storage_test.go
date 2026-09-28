@@ -221,7 +221,11 @@ func TestResetLedgerKeepsSignInTimeline(t *testing.T) {
 	if _, err := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.AddObservation(ctx, account.Observation{Provider: account.ProviderAnthropic, ExternalRefHash: "acct", ObservedAt: at}); err != nil {
+	if err := s.AddObservation(ctx, account.Observation{Provider: account.ProviderAnthropic, ExternalRefHash: "acct", Hint: "ac***@example.com", ObservedAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	// Signed out: stays local, as it was never sent.
+	if err := s.AddObservation(ctx, account.Observation{Provider: account.ProviderAnthropic, ObservedAt: at.Add(time.Second)}); err != nil {
 		t.Fatal(err)
 	}
 	used, minutes := 42.0, 300
@@ -239,11 +243,25 @@ func TestResetLedgerKeepsSignInTimeline(t *testing.T) {
 	if files, err := s.KnownFiles(ctx); err != nil || len(files) != 0 {
 		t.Errorf("files after reset = %v, %v; want none, so every session is read again", files, err)
 	}
-	if n, err := s.OutboxLen(ctx); err != nil || n != 0 {
-		t.Errorf("outbox after reset = %d, %v; want none", n, err)
+	// The server may have been reset as well, so the timeline and readings
+	// go out again; the event does not, since the rescan queues it.
+	items, err := s.PendingOutbox(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]int{}
+	for _, it := range items {
+		kinds[it.Kind]++
+	}
+	if len(items) != 2 || kinds[KindObservation] != 1 || kinds[KindSnapshot] != 1 {
+		t.Errorf("outbox after reset = %v; want the observation and the snapshot again", kinds)
+	}
+	var o syncapi.Observation
+	if err := json.Unmarshal(items[0].Payload, &o); err != nil || o.Hint != "ac***@example.com" || !o.ObservedAt.Equal(at) {
+		t.Errorf("requeued observation = %+v, %v; want its name and time kept", o, err)
 	}
 	obs, err := s.Observations(ctx, account.ProviderAnthropic, account.SourceCLI)
-	if err != nil || len(obs) != 1 || !obs[0].ObservedAt.Equal(at) {
+	if err != nil || len(obs) != 2 || !obs[0].ObservedAt.Equal(at) {
 		t.Errorf("observations after reset = %+v, %v; want the sign-in timeline kept", obs, err)
 	}
 	if snaps, err := s.LatestSnapshots(ctx, at.Add(-time.Minute)); err != nil || len(snaps) != 1 {
