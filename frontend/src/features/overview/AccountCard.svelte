@@ -144,6 +144,12 @@
                   </li>
                 {/each}
               </ul>
+            {:else if (m.devices ?? []).length === 1}
+              {@const d = m.devices![0]}
+              <div class="row muted small">
+                <span class="device-name">{d.name}</span>
+                <span class="num">{percent(d.used_percent)}</span>
+              </div>
             {/if}
           </li>
         {/each}
