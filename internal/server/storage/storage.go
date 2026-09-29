@@ -259,7 +259,14 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 			if o.AccountRefHash == "" {
 				continue
 			}
-			id, err := ensure(o.Provider, o.AccountRefHash, o.Hint, o.PlanType, o.ObservedAt)
+			// claude auth status reports the plan stored with Claude Code's
+			// sign-in, which an upgrade does not change; Claude's plan comes
+			// from usage readings instead, which ask Anthropic.
+			plan := o.PlanType
+			if o.Provider == string(account.ProviderAnthropic) {
+				plan = ""
+			}
+			id, err := ensure(o.Provider, o.AccountRefHash, o.Hint, plan, o.ObservedAt)
 			if err != nil {
 				return err
 			}

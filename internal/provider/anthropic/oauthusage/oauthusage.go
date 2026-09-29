@@ -51,16 +51,12 @@ var ErrNoCredential = errors.New("no Claude Code credential")
 type Credential struct {
 	Token     string
 	ExpiresAt time.Time
-	// PlanType is the plan with its Max tier, such as "max 20x".
-	PlanType string
 }
 
 type credentialFile struct {
 	OAuth *struct {
-		AccessToken      string `json:"accessToken"`
-		ExpiresAt        int64  `json:"expiresAt"`
-		SubscriptionType string `json:"subscriptionType"`
-		RateLimitTier    string `json:"rateLimitTier"`
+		AccessToken string `json:"accessToken"`
+		ExpiresAt   int64  `json:"expiresAt"`
 	} `json:"claudeAiOauth"`
 }
 
@@ -78,11 +74,13 @@ func PlanWithTier(plan, tier string) string {
 	return plan
 }
 
-// Probe returns the account's current rate-limit buckets and its plan. It
-// returns no buckets when there is nothing to read: Claude Code is not
-// signed in, or its credential expired before the CLI's own background
-// refresh renewed it.
-func Probe(ctx context.Context, now time.Time) ([]quota.Bucket, string, error) {
+// Probe returns the account's current rate-limit buckets, and the token it
+// read them with so the caller can ask for the account's current plan too:
+// the plan Claude Code stores with its credential is only as new as its
+// sign-in. It returns no buckets when there is nothing to read: Claude Code
+// is not signed in, or its credential expired before the CLI's own
+// background refresh renewed it.
+func Probe(ctx context.Context, now time.Time) (buckets []quota.Bucket, token string, err error) {
 	c, err := readCredential(ctx)
 	if errors.Is(err, ErrNoCredential) {
 		return nil, "", nil
@@ -95,8 +93,8 @@ func Probe(ctx context.Context, now time.Time) ([]quota.Bucket, string, error) {
 	if !c.ExpiresAt.IsZero() && !now.Before(c.ExpiresAt) {
 		return nil, "", nil
 	}
-	buckets, err := fetchUsage(ctx, c.Token)
-	return buckets, c.PlanType, err
+	buckets, err = fetchUsage(ctx, c.Token)
+	return buckets, c.Token, err
 }
 
 // readCredential returns the credential of the profile the agent reports
@@ -148,11 +146,7 @@ func parseCredential(raw []byte) (Credential, error) {
 	if f.OAuth == nil || f.OAuth.AccessToken == "" {
 		return Credential{}, ErrNoCredential
 	}
-	return Credential{
-		Token:     f.OAuth.AccessToken,
-		ExpiresAt: time.UnixMilli(f.OAuth.ExpiresAt).UTC(),
-		PlanType:  PlanWithTier(f.OAuth.SubscriptionType, f.OAuth.RateLimitTier),
-	}, nil
+	return Credential{Token: f.OAuth.AccessToken, ExpiresAt: time.UnixMilli(f.OAuth.ExpiresAt).UTC()}, nil
 }
 
 type window struct {

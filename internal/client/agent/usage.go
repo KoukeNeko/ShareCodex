@@ -71,7 +71,7 @@ func (a *Agent) probeClaudeCode(ctx context.Context) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	buckets, plan, err := oauthusage.Probe(ctx, now)
+	buckets, token, err := oauthusage.Probe(ctx, now)
 	if err != nil {
 		a.log.Warn("read Claude usage", "err", err)
 		return "", false
@@ -81,7 +81,7 @@ func (a *Agent) probeClaudeCode(ctx context.Context) (string, bool) {
 	}
 	err = a.store.AddSnapshot(ctx, quota.Snapshot{
 		AccountRefHash: ref,
-		PlanType:       plan,
+		PlanType:       a.currentPlan(ctx, token, ""),
 		Provider:       account.ProviderAnthropic,
 		ObservedAt:     now,
 		Source:         quota.SourceClaudeOAuthUsage,
@@ -122,15 +122,11 @@ func (a *Agent) probeLogin(ctx context.Context, l storage.ClaudeLogin) ([]quota.
 	if len(buckets) == 0 {
 		return nil, nil
 	}
-	// Sign-ins made before the Max tier was recorded learn it once.
-	if l.PlanType == "max" {
-		if p, err := oauthusage.ReadProfile(ctx, renewed.Access); err != nil {
-			a.log.Warn("read Claude profile", "account", l.Hint, "err", err)
-		} else if p.PlanType != l.PlanType {
-			l.PlanType = p.PlanType
-			if err := a.store.AddClaudeLogin(ctx, l); err != nil {
-				return nil, err
-			}
+	// The plan can change after signing in, as when upgrading to Max.
+	if plan := a.currentPlan(ctx, renewed.Access, l.Hint); plan != "" && plan != l.PlanType {
+		l.PlanType = plan
+		if err := a.store.AddClaudeLogin(ctx, l); err != nil {
+			return nil, err
 		}
 	}
 	err = a.store.AddSnapshot(ctx, quota.Snapshot{
@@ -143,6 +139,18 @@ func (a *Agent) probeLogin(ctx context.Context, l storage.ClaudeLogin) ([]quota.
 		Buckets:        buckets,
 	})
 	return buckets, err
+}
+
+// currentPlan asks Anthropic for the account's plan now. The reading it goes
+// with is still worth keeping without it, so a failure only leaves the plan
+// out.
+func (a *Agent) currentPlan(ctx context.Context, token, hint string) string {
+	p, err := oauthusage.ReadProfile(ctx, token)
+	if err != nil {
+		a.log.Warn("read Claude profile", "account", hint, "err", err)
+		return ""
+	}
+	return p.PlanType
 }
 
 // LinkClaude keeps a finished ShareCodex sign-in and reads its account's

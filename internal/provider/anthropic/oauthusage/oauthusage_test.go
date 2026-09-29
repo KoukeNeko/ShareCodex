@@ -16,8 +16,7 @@ import (
 const sample = `{"five_hour":{"utilization":23.5,"resets_at":"2026-09-27T22:00:00.146239+00:00"},
  "seven_day":{"utilization":41.2,"resets_at":"2026-10-04T07:00:00+00:00"}}`
 
-const signedIn = `{"claudeAiOauth":{"accessToken":"tok","expiresAt":1790537052000,
- "subscriptionType":"max","rateLimitTier":"default_claude_max_5x"}}`
+const signedIn = `{"claudeAiOauth":{"accessToken":"tok","expiresAt":1790537052000}}`
 
 func TestParseCredential(t *testing.T) {
 	t.Run("signed in", func(t *testing.T) {
@@ -25,7 +24,7 @@ func TestParseCredential(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if c.Token != "tok" || !c.ExpiresAt.Equal(time.UnixMilli(1790537052000).UTC()) || c.PlanType != "max 5x" {
+		if c.Token != "tok" || !c.ExpiresAt.Equal(time.UnixMilli(1790537052000).UTC()) {
 			t.Errorf("got %+v", c)
 		}
 	})

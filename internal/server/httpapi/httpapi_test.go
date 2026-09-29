@@ -569,9 +569,11 @@ func TestLeaveAccount(t *testing.T) {
 	}
 }
 
-// A usage reading names the Max tier; the CLI's plain "max" keeps it, while a
-// newer different plan still replaces it and an older one does not.
-func TestPlainPlanKeepsMaxTier(t *testing.T) {
+// Claude's plan comes from usage readings, which ask Anthropic: a newer one
+// changes it, an older one replayed by a resync does not, and a plain "max"
+// keeps the tier. claude auth status reports the plan stored with the
+// sign-in, which can be from before an upgrade, so observations never set it.
+func TestClaudePlanFollowsNewestUsageReading(t *testing.T) {
 	store := storagetest.New(t)
 	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
 	defer srv.Close()
@@ -581,8 +583,10 @@ func TestPlainPlanKeepsMaxTier(t *testing.T) {
 	observe := func(plan string, at time.Time) syncapi.Observation {
 		return syncapi.Observation{Provider: "anthropic", AccountRefHash: "max", Hint: "ma***", PlanType: plan, ObservedAt: at}
 	}
-	snap := syncapi.Snapshot{Provider: "anthropic", AccountRefHash: "max", PlanType: "max 20x", Source: "claude-oauth-usage",
-		ObservedAt: now, Buckets: []syncapi.Bucket{{Key: "weekly", UsedPercent: ptr(5.0), WindowMinutes: ptr(10080)}}}
+	reading := func(plan string, at time.Time) syncapi.Snapshot {
+		return syncapi.Snapshot{Provider: "anthropic", AccountRefHash: "max", PlanType: plan, Source: "claude-oauth-usage",
+			ObservedAt: at, Buckets: []syncapi.Bucket{{Key: "weekly", UsedPercent: ptr(5.0), WindowMinutes: ptr(10080)}}}
+	}
 	plan := func(req syncapi.SyncRequest) string {
 		t.Helper()
 		req.Version = syncapi.Version
@@ -596,17 +600,22 @@ func TestPlainPlanKeepsMaxTier(t *testing.T) {
 		return ov.Accounts[0].PlanType
 	}
 
-	if got := plan(syncapi.SyncRequest{Observations: []syncapi.Observation{observe("max", now.Add(-time.Minute))}, Snapshots: []syncapi.Snapshot{snap}}); got != "max 20x" {
-		t.Errorf("plan after the usage reading = %q, want max 20x", got)
+	if got := plan(syncapi.SyncRequest{Observations: []syncapi.Observation{observe("pro", now)}}); got != "" {
+		t.Errorf("plan from a sign-in observation = %q, want none", got)
 	}
-	if got := plan(syncapi.SyncRequest{Observations: []syncapi.Observation{observe("max", now)}}); got != "max 20x" {
-		t.Errorf("plan after a plain max observation = %q, want max 20x", got)
+	if got := plan(syncapi.SyncRequest{Snapshots: []syncapi.Snapshot{reading("max 20x", now)}}); got != "max 20x" {
+		t.Errorf("plan after a usage reading = %q, want max 20x", got)
 	}
-	// A resync replays sign-ins from before an upgrade.
-	if got := plan(syncapi.SyncRequest{Observations: []syncapi.Observation{observe("pro", now.Add(-2*time.Hour))}}); got != "max 20x" {
-		t.Errorf("plan after replaying an older pro sign-in = %q, want max 20x", got)
+	if got := plan(syncapi.SyncRequest{Observations: []syncapi.Observation{observe("pro", now.Add(time.Minute))}}); got != "max 20x" {
+		t.Errorf("plan after a newer stale sign-in = %q, want max 20x", got)
 	}
-	if got := plan(syncapi.SyncRequest{Observations: []syncapi.Observation{observe("pro", now.Add(time.Minute))}}); got != "pro" {
+	if got := plan(syncapi.SyncRequest{Snapshots: []syncapi.Snapshot{reading("max", now.Add(time.Minute))}}); got != "max 20x" {
+		t.Errorf("plan after a plain max reading = %q, want max 20x", got)
+	}
+	if got := plan(syncapi.SyncRequest{Snapshots: []syncapi.Snapshot{reading("pro", now.Add(-2*time.Hour))}}); got != "max 20x" {
+		t.Errorf("plan after replaying an older pro reading = %q, want max 20x", got)
+	}
+	if got := plan(syncapi.SyncRequest{Snapshots: []syncapi.Snapshot{reading("pro", now.Add(2*time.Minute))}}); got != "pro" {
 		t.Errorf("plan after a downgrade = %q, want pro", got)
 	}
 }
