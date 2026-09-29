@@ -149,9 +149,12 @@
         <ul class="models">
           <li class="muted small">{t('models')}</li>
           {#each bucket.models ?? [] as model (model.model)}
-            <li class="row">
-              <span class="model" title={model.model}><i class="swatch" style:background={modelColor.get(model.model)}></i><span class="model-name">{model.model}</span></span>
-              <span class="num usage"><span class="muted">{t('tokens', { count: tokens(model.tokens) })}</span>{t('estimated', { percent: percent(model.used_percent) })}</span>
+            <li>
+              <div class="row">
+                <span class="model" title={model.model}><i class="swatch" style:background={modelColor.get(model.model)}></i><span class="model-name">{model.model}</span></span>
+                <span class="num usage"><span class="muted">{t('tokens', { count: tokens(model.tokens) })}</span>{t('estimated', { percent: percent(model.used_percent) })}</span>
+              </div>
+              <QuotaBar value={model.used_percent} segments={segmentsFor([model])} thin />
             </li>
           {/each}
         </ul>
@@ -210,7 +213,8 @@
   .members { list-style: none; margin: 0; padding: 8px 0 0; border-top: 1px solid var(--line); display: grid; gap: 9px; }
   .members li { display: grid; gap: 4px; }
   .allot { margin-left: 8px; }
-  .models { list-style: none; margin: 0; padding: 8px 0 0; border-top: 1px solid var(--line); display: grid; gap: 5px; }
+  .models { list-style: none; margin: 0; padding: 8px 0 0; border-top: 1px solid var(--line); display: grid; gap: 9px; }
+  .models li { display: grid; gap: 4px; }
   .models .muted { margin-right: 8px; }
   .model { min-width: 0; display: flex; align-items: center; gap: 6px; }
   .model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
