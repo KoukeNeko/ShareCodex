@@ -69,6 +69,39 @@ func TestBucketOverviewBreaksDownModels(t *testing.T) {
 	}
 }
 
+// One person's usage splits by device, most used first, and adds up to
+// their share.
+func TestBucketOverviewSplitsMembersByDevice(t *testing.T) {
+	now := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
+	resets := now.Add(2 * time.Hour)
+	used, window := 40.0, 300
+	b := quota.Observed{Bucket: quota.Bucket{Key: quota.BucketFiveHour, UsedPercent: &used, ResetsAt: &resets, WindowMinutes: &window}}
+	tok := usage.Tokens{Input: 1000, Output: 100}
+	rows := []storage.UsageRow{
+		{PersonID: "a", DeviceName: "mac", Model: "claude-opus-5-5", Tokens: tok, Requests: 1},
+		{PersonID: "a", DeviceName: "linux", Model: "claude-opus-5-5", Tokens: tok, Requests: 1},
+		{PersonID: "a", DeviceName: "linux", Model: "claude-opus-5-5", Tokens: tok, Requests: 1},
+		{PersonID: "b", DeviceName: "pc", Model: "claude-opus-5-5", Tokens: tok, Requests: 1},
+	}
+	members := []storage.Member{{PersonID: "a", Name: "alice", ShareWeight: 1}, {PersonID: "b", Name: "bob", ShareWeight: 1}}
+
+	bo := bucketOverview(b, now, members, rows, "a")
+	for _, m := range bo.Members {
+		if m.Name != "alice" {
+			continue
+		}
+		if len(m.Devices) != 2 || m.Devices[0].Name != "linux" || m.Devices[1].Name != "mac" {
+			t.Fatalf("alice's devices = %+v, want linux then mac", m.Devices)
+		}
+		if math.Abs(m.Devices[0].UsedPercent-20) > 1e-9 || math.Abs(m.Devices[1].UsedPercent-10) > 1e-9 {
+			t.Errorf("alice's devices = %+v, want linux 20%%, mac 10%%", m.Devices)
+		}
+		if math.Abs(m.Devices[0].UsedPercent+m.Devices[1].UsedPercent-m.UsedPercent) > 1e-9 {
+			t.Errorf("devices sum to %v, want alice's %v", m.Devices[0].UsedPercent+m.Devices[1].UsedPercent, m.UsedPercent)
+		}
+	}
+}
+
 func TestBucketOverviewAfterResetHasNoModels(t *testing.T) {
 	now := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
 	resets := now.Add(-time.Minute)

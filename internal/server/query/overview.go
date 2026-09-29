@@ -97,6 +97,7 @@ func bucketOverview(b quota.Observed, now time.Time, members []storage.Member, r
 	models := map[string]*syncapi.ModelUsage{}
 	modelCosts := map[string]float64{}
 	personModelCosts := map[string]map[string]float64{}
+	personDeviceCosts := map[string]map[string]float64{}
 	var totalCost float64
 	if b.HasReset(now) {
 		// No new provider reading after reset: the current percentage is unknown.
@@ -121,6 +122,10 @@ func bucketOverview(b quota.Observed, now time.Time, members []storage.Member, r
 				personModelCosts[r.PersonID] = map[string]float64{}
 			}
 			personModelCosts[r.PersonID][r.Model] += cost
+			if personDeviceCosts[r.PersonID] == nil {
+				personDeviceCosts[r.PersonID] = map[string]float64{}
+			}
+			personDeviceCosts[r.PersonID][r.DeviceName] += cost
 		}
 	}
 	for name, m := range models {
@@ -155,6 +160,7 @@ func bucketOverview(b quota.Observed, now time.Time, members []storage.Member, r
 			UsedPercent:     s.UsedPercent,
 			Requests:        requests[person],
 			Models:          []syncapi.MemberModel{},
+			Devices:         []syncapi.MemberDevice{},
 		}
 		// Same order as bo.Models so the popup can color segments by model.
 		for _, m := range bo.Models {
@@ -162,6 +168,17 @@ func bucketOverview(b quota.Observed, now time.Time, members []storage.Member, r
 				ms.Models = append(ms.Models, syncapi.MemberModel{Model: m.Model, UsedPercent: bo.UsedPercent * c / totalCost})
 			}
 		}
+		for name, c := range personDeviceCosts[person] {
+			if c > 0 && totalCost > 0 {
+				ms.Devices = append(ms.Devices, syncapi.MemberDevice{Name: name, UsedPercent: bo.UsedPercent * c / totalCost})
+			}
+		}
+		sort.Slice(ms.Devices, func(i, j int) bool {
+			if ms.Devices[i].UsedPercent != ms.Devices[j].UsedPercent {
+				return ms.Devices[i].UsedPercent > ms.Devices[j].UsedPercent
+			}
+			return ms.Devices[i].Name < ms.Devices[j].Name
+		})
 		bo.Members = append(bo.Members, ms)
 	}
 	sort.Slice(bo.Members, func(i, j int) bool {

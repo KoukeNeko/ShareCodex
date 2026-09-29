@@ -179,6 +179,14 @@ type MemberShare struct {
 	Requests    int     `json:"requests"`
 	// Models splits UsedPercent by model, in the bucket's Models order.
 	Models []MemberModel `json:"models"`
+	// Devices splits UsedPercent by the device the usage came from, most
+	// used first.
+	Devices []MemberDevice `json:"devices"`
+}
+
+type MemberDevice struct {
+	Name        string  `json:"name"`
+	UsedPercent float64 `json:"used_percent"`
 }
 
 type MemberModel struct {

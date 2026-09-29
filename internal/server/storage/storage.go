@@ -526,19 +526,22 @@ func (s *Store) ActiveDevices(ctx context.Context, since time.Time) ([]ActiveDev
 	return out, rows.Err()
 }
 
-// UsageRow is one person's token totals on one model.
+// UsageRow is one person's token totals on one model from one device.
 type UsageRow struct {
-	PersonID string
-	Model    string
-	Tokens   usage.Tokens
-	Requests int
+	PersonID   string
+	DeviceName string
+	Model      string
+	Tokens     usage.Tokens
+	Requests   int
 }
 
 func (s *Store) Usage(ctx context.Context, accountID string, from, to time.Time) ([]UsageRow, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT person_id, model, sum(input), sum(cached_input), sum(cache_write), sum(output), sum(reasoning_output), count(*)
-		FROM usage_events WHERE account_id = $1 AND occurred_at >= $2 AND occurred_at <= $3
-		GROUP BY person_id, model`, accountID, from, to)
+		SELECT e.person_id, d.name, e.model, sum(e.input), sum(e.cached_input), sum(e.cache_write), sum(e.output),
+			sum(e.reasoning_output), count(*)
+		FROM usage_events e JOIN devices d ON d.id = e.device_id
+		WHERE e.account_id = $1 AND e.occurred_at >= $2 AND e.occurred_at <= $3
+		GROUP BY e.person_id, d.name, e.model`, accountID, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -547,7 +550,7 @@ func (s *Store) Usage(ctx context.Context, accountID string, from, to time.Time)
 	for rows.Next() {
 		var r UsageRow
 		t := &r.Tokens
-		if err := rows.Scan(&r.PersonID, &r.Model, &t.Input, &t.CachedInput, &t.CacheWrite, &t.Output, &t.ReasoningOutput, &r.Requests); err != nil {
+		if err := rows.Scan(&r.PersonID, &r.DeviceName, &r.Model, &t.Input, &t.CachedInput, &t.CacheWrite, &t.Output, &t.ReasoningOutput, &r.Requests); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
