@@ -5,37 +5,45 @@
 
   let { usage }: { usage: PersonalUsage } = $props()
 
-  const periods = $derived([
-    { label: t('today'), totals: usage.today },
-    { label: t('last30Days'), totals: usage.last_30_days },
-  ])
+  const periods = $derived([usage.today, usage.last_30_days])
 
   function input(u: UsageTotals): number {
     return u.input + u.cached_input + u.cache_write
   }
+
+  function cached(u: UsageTotals): string {
+    return input(u) > 0 ? t('cachedShare', { percent: percent((u.cached_input / input(u)) * 100) }) : ''
+  }
 </script>
 
 <section class="card">
-  {#each periods as p (p.label)}
-    <dl>
-      <dt class="period muted">{p.label}</dt>
-      <dd></dd>
-      <dt class="muted">{t('totalTokens')}</dt>
-      <dd class="num total">{tokens(input(p.totals) + p.totals.output)}</dd>
-      <dt class="muted">{t('input')}</dt>
-      <dd class="num">{tokens(input(p.totals))}</dd>
-      {#if input(p.totals) > 0}
-        <dt></dt>
-        <dd class="num muted small">{t('cachedShare', { percent: percent((p.totals.cached_input / input(p.totals)) * 100) })}</dd>
-      {/if}
-      <dt class="muted">{t('output')}</dt>
-      <dd class="num">{tokens(p.totals.output)}</dd>
-      <dt class="muted">{t('estCost')}</dt>
-      <dd class="num">{usd(p.totals.cost_usd)}</dd>
-      <dt class="muted">{t('requests')}</dt>
-      <dd class="num">{tokens(p.totals.requests)}</dd>
-    </dl>
-  {/each}
+  <table>
+    <thead>
+      <tr><th></th><th class="muted">{t('today')}</th><th class="muted">{t('last30Days')}</th></tr>
+    </thead>
+    <tbody>
+      <tr class="total">
+        <th class="muted">{t('totalTokens')}</th>
+        {#each periods as u, i (i)}<td class="num">{tokens(input(u) + u.output)}</td>{/each}
+      </tr>
+      <tr>
+        <th class="muted">{t('input')}</th>
+        {#each periods as u, i (i)}<td class="num">{tokens(input(u))}<span class="sub muted">{cached(u)}</span></td>{/each}
+      </tr>
+      <tr>
+        <th class="muted">{t('output')}</th>
+        {#each periods as u, i (i)}<td class="num">{tokens(u.output)}</td>{/each}
+      </tr>
+      <tr>
+        <th class="muted">{t('estCost')}</th>
+        {#each periods as u, i (i)}<td class="num">{usd(u.cost_usd)}</td>{/each}
+      </tr>
+      <tr>
+        <th class="muted">{t('requests')}</th>
+        {#each periods as u, i (i)}<td class="num">{tokens(u.requests)}</td>{/each}
+      </tr>
+    </tbody>
+  </table>
 </section>
 
 <style>
@@ -43,22 +51,14 @@
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    padding: 14px;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    padding: 12px 14px;
   }
-  dl {
-    margin: 0;
-    display: grid;
-    grid-template-columns: auto 1fr;
-    align-content: start;
-    gap: 5px 8px;
-  }
-  dl + dl { border-left: 1px solid var(--line); padding-left: 14px; margin-left: 14px; }
-  dt { white-space: nowrap; }
-  dd { margin: 0; text-align: right; }
-  .period { grid-column: 1 / -1; margin-bottom: 2px; }
-  .period + dd { display: none; }
-  .total { font-size: 17px; font-weight: 600; }
-  .small { font-size: 11.5px; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th, td { padding: 3px 0; font-weight: normal; vertical-align: top; }
+  th { text-align: left; white-space: nowrap; }
+  td, thead th { text-align: right; white-space: nowrap; }
+  thead th { padding-bottom: 6px; font-size: 11.5px; }
+  tbody th { width: 38%; }
+  .total td { font-size: 16px; font-weight: 600; }
+  .sub { display: block; font-size: 11px; }
 </style>

@@ -144,6 +144,7 @@
     overflow-y: auto;
     padding: 14px;
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     align-content: start;
     gap: 10px;
   }

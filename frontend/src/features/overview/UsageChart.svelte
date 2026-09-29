@@ -121,8 +121,10 @@
     color: var(--muted);
   }
   .people button.active { color: var(--text); border-color: var(--accent); }
-  .plot { position: relative; height: 96px; }
-  svg { display: block; overflow: visible; touch-action: none; }
+  .plot { position: relative; height: 96px; min-width: 0; }
+  /* Positioned so the drawn width never holds the card open when the
+     popup narrows; the width comes from the plot, not the other way. */
+  svg { position: absolute; inset: 0; display: block; overflow: visible; touch-action: none; }
   .grid { stroke: var(--line); stroke-width: 1; }
   .cross { stroke: var(--muted); stroke-width: 1; }
   path { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }

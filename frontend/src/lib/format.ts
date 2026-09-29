@@ -39,9 +39,10 @@ export function tokens(n: number): string {
   return String(n)
 }
 
-/** An estimated price in US dollars. */
+/** An estimated price in US dollars; cents only below $100. */
 export function usd(n: number): string {
-  return `US$${n.toFixed(2)}`
+  const digits = n < 100 ? 2 : 0
+  return `US$${n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`
 }
 
 export function dateTime(iso: string): string {

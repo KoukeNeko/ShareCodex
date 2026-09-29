@@ -200,6 +200,7 @@
     border-radius: var(--radius);
     padding: 14px;
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 10px;
   }
   .card.current { border-color: var(--accent); }
