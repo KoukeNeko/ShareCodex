@@ -305,6 +305,15 @@ func TestResolveSplitsClaudeDesktopFromTheCLI(t *testing.T) {
 		}
 	}
 
+	// Desktop on another computer drove this one over SSH: no Desktop here.
+	remote := accounts{provider: account.ProviderAnthropic, cli: ac.cli, since: t0}
+	if ref, ok := remote.resolve("desk", "claude-desktop", later); !ok || ref != "cli-max" {
+		t.Errorf("Desktop session over SSH resolve = %q, %v; want the CLI's cli-max", ref, ok)
+	}
+	if _, ok := remote.resolve("desk", "claude-desktop-3p", later); ok {
+		t.Error("third-party inference over SSH must stay unpooled")
+	}
+
 	// Without the CLI, Desktop usage is still pooled.
 	desktopOnly := accounts{provider: account.ProviderAnthropic, desktopSeen: true, desktop: ac.desktop, since: t0}
 	if !desktopOnly.pooled() {

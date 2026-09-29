@@ -145,13 +145,15 @@ func (ac accounts) pooled() bool {
 // its session under; any other usage, including a terminal session Desktop
 // happens to list, uses the CLI's account at t. Desktop sessions whose
 // metadata is gone, and Desktop set up for third-party inference, have no
-// known pooled account.
+// known pooled account. A device where Desktop never ran got its Desktop
+// sessions over SSH from another computer, whose metadata is not here; they
+// use this device's CLI account, as the likeliest match.
 func (ac accounts) resolve(sessionID, entrypoint string, t time.Time) (string, bool) {
 	if ac.provider == account.ProviderAnthropic {
 		switch {
 		case desktop.ThirdParty(entrypoint):
 			return "", false
-		case desktop.FromDesktop(entrypoint):
+		case desktop.FromDesktop(entrypoint) && ac.desktopSeen:
 			org, ok := ac.desktop[sessionID]
 			if !ok || t.Before(ac.since) {
 				return "", false
