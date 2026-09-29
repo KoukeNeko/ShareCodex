@@ -55,6 +55,11 @@ chat, is not tracked.
 
 ## What it shows
 
+### Your own usage
+
+The popup opens with your own usage across every account, for today and the last 30 days: total
+tokens, input and how much of it was cached, output, requests, and an estimated API-equivalent cost.
+
 ### Every shared account at a glance
 
 The popup lists each shared account with its 5-hour and weekly windows, how much of each is used,
@@ -64,7 +69,8 @@ and when it resets. The numbers come straight from Claude Code and Codex.
 
 Each member has a bar for their estimated usage and a tick mark at their allotment. Anyone past their
 share is marked **over allotment**. Quota used with no matching record from anyone is shown as
-**unattributed** instead of being pinned on someone.
+**unattributed** instead of being pinned on someone. Under each member, their usage is split by the
+computer it came from.
 
 ### Who is signed in where
 
@@ -77,6 +83,11 @@ up on the account it last used for Claude Code, for 15 minutes after that use.
 
 Each window also breaks usage down by model — requests, tokens, and an estimated share — so you can
 tell whether the week went to Opus or to a long run of Sonnet.
+
+### Usage over time
+
+A chart under the window switch shows tokens over the current 5-hour or weekly window, a line per
+model. Switch it between everyone and a single member; hover to read each model's tokens at a time.
 
 ### Joining takes one link
 
