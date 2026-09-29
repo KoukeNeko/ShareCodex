@@ -558,6 +558,65 @@ func (s *Store) Usage(ctx context.Context, accountID string, from, to time.Time)
 	return out, rows.Err()
 }
 
+// TimelineRow is one person's tokens on one model within one bin.
+type TimelineRow struct {
+	Bin      int
+	PersonID string
+	Model    string
+	Tokens   int64
+}
+
+// UsageTimeline sums an account's tokens per bin of binMinutes from start,
+// for events before end.
+func (s *Store) UsageTimeline(ctx context.Context, accountID string, start, end time.Time, binMinutes int) ([]TimelineRow, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT floor(extract(epoch FROM occurred_at - $2) / ($4 * 60))::int AS bin, person_id, model,
+			sum(input + cached_input + cache_write + output)
+		FROM usage_events WHERE account_id = $1 AND occurred_at >= $2 AND occurred_at < $3
+		GROUP BY bin, person_id, model`, accountID, start, end, binMinutes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TimelineRow
+	for rows.Next() {
+		var r TimelineRow
+		if err := rows.Scan(&r.Bin, &r.PersonID, &r.Model, &r.Tokens); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// PersonUsage is one person's token totals on one model, across accounts.
+type PersonUsage struct {
+	Model    string
+	Tokens   usage.Tokens
+	Requests int
+}
+
+func (s *Store) PersonUsage(ctx context.Context, personID string, since time.Time) ([]PersonUsage, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT model, sum(input), sum(cached_input), sum(cache_write), sum(output), sum(reasoning_output), count(*)
+		FROM usage_events WHERE person_id = $1 AND occurred_at >= $2
+		GROUP BY model`, personID, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PersonUsage
+	for rows.Next() {
+		var r PersonUsage
+		t := &r.Tokens
+		if err := rows.Scan(&r.Model, &t.Input, &t.CachedInput, &t.CacheWrite, &t.Output, &t.ReasoningOutput, &r.Requests); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) inTx(ctx context.Context, fn func(*sql.Tx) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

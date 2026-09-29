@@ -71,9 +71,12 @@ func (c *Client) Sync(ctx context.Context, req syncapi.SyncRequest) (syncapi.Syn
 	return resp, err
 }
 
-func (c *Client) Overview(ctx context.Context) (syncapi.Overview, error) {
+// Overview fetches the popup's data; today is the start of this device's
+// day, so the viewer's "today" follows the local time zone.
+func (c *Client) Overview(ctx context.Context, today time.Time) (syncapi.Overview, error) {
 	var o syncapi.Overview
-	err := c.do(ctx, http.MethodGet, syncapi.PathOverview, nil, &o)
+	q := url.Values{syncapi.QueryToday: {today.Format(time.RFC3339)}}
+	err := c.do(ctx, http.MethodGet, syncapi.PathOverview+"?"+q.Encode(), nil, &o)
 	return o, err
 }
 

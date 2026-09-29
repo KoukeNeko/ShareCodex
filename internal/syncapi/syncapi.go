@@ -23,6 +23,10 @@ const (
 	// PathAccounts prefixes per-account actions: <id>/leave.
 	PathAccounts = "/internal/api/v1/accounts/"
 	PathJoin     = "/join/"
+
+	// QueryToday is the overview's optional start of the viewer's day, in
+	// RFC 3339, so "today" follows the client's time zone.
+	QueryToday = "today"
 )
 
 type Event struct {
@@ -118,6 +122,26 @@ type Error struct {
 type Overview struct {
 	GeneratedAt time.Time         `json:"generated_at"`
 	Accounts    []AccountOverview `json:"accounts"`
+	// You is the viewer's own usage across every account.
+	You *PersonalUsage `json:"you,omitempty"`
+}
+
+// PersonalUsage sums the viewer's requests since the start of their day
+// (the client sends it, in its own time zone) and over the last 30 days.
+type PersonalUsage struct {
+	Today     UsageTotals `json:"today"`
+	Last30Day UsageTotals `json:"last_30_days"`
+}
+
+type UsageTotals struct {
+	Input       int64 `json:"input"`
+	CachedInput int64 `json:"cached_input"`
+	CacheWrite  int64 `json:"cache_write"`
+	Output      int64 `json:"output"`
+	Requests    int   `json:"requests"`
+	// CostUSD is the API-equivalent price from the embedded price table, an
+	// estimate rather than a bill.
+	CostUSD float64 `json:"cost_usd"`
 }
 
 type AccountOverview struct {
@@ -154,6 +178,26 @@ type BucketOverview struct {
 	UnattributedPercent float64       `json:"unattributed_percent"`
 	Members             []MemberShare `json:"members"`
 	Models              []ModelUsage  `json:"models"`
+	// Timeline is the window's tokens over time; absent after a reset.
+	Timeline *Timeline `json:"timeline,omitempty"`
+}
+
+// Timeline splits a quota window into equal bins, from the window's start
+// to its full length, so the chart's time axis is the whole window.
+type Timeline struct {
+	Start      time.Time `json:"start"`
+	BinMinutes int       `json:"bin_minutes"`
+	Bins       int       `json:"bins"`
+	// Points holds only bins with usage.
+	Points []TimelinePoint `json:"points"`
+}
+
+type TimelinePoint struct {
+	Bin      int    `json:"bin"`
+	PersonID string `json:"person_id"`
+	Model    string `json:"model"`
+	// Tokens counts input, cached input, cache writes and output together.
+	Tokens int64 `json:"tokens"`
 }
 
 // ModelUsage is one model's usage within a quota window, across members.

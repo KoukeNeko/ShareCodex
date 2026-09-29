@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"testing"
 	"time"
@@ -617,5 +619,91 @@ func TestClaudePlanFollowsNewestUsageReading(t *testing.T) {
 	}
 	if got := plan(syncapi.SyncRequest{Snapshots: []syncapi.Snapshot{reading("pro", now.Add(2*time.Minute))}}); got != "pro" {
 		t.Errorf("plan after a downgrade = %q, want pro", got)
+	}
+}
+
+// The overview carries the viewer's own totals since the start of their day
+// and over 30 days, across accounts, and each window's tokens over time.
+func TestPersonalUsageAndTimeline(t *testing.T) {
+	store := storagetest.New(t)
+	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	defer srv.Close()
+	alice := pair(t, store, srv.URL, "alice")
+	bob := pair(t, store, srv.URL, "bob")
+
+	now := time.Now().UTC().Truncate(time.Second)
+	resets := now.Add(time.Hour)
+	start := resets.Add(-5 * time.Hour)
+	obs := func(ref string) syncapi.Observation {
+		return syncapi.Observation{Provider: "openai", AccountRefHash: ref, Hint: ref, ObservedAt: now.Add(-40 * 24 * time.Hour)}
+	}
+	event := func(key, ref string, at time.Time) syncapi.Event {
+		return syncapi.Event{DedupeKey: key, AccountRefHash: ref, Provider: "openai", Product: "codex", Model: "gpt-5.5",
+			OccurredAt: at, Input: 100, CachedInput: 300, Output: 10}
+	}
+	snap := syncapi.Snapshot{Provider: "openai", AccountRefHash: "plus", Source: "codex-rollout", ObservedAt: now,
+		Buckets: []syncapi.Bucket{{Key: "five_hour", UsedPercent: ptr(10.0), ResetsAt: &resets, WindowMinutes: ptr(300)}}}
+	req := syncapi.SyncRequest{Version: syncapi.Version,
+		Observations: []syncapi.Observation{obs("plus"), obs("team")},
+		Events: []syncapi.Event{
+			event("codex:1", "plus", start.Add(5*time.Minute)),  // bin 0
+			event("codex:2", "plus", start.Add(40*time.Minute)), // bin 2
+			event("codex:3", "team", now.Add(-2*time.Hour)),     // another account, today
+			event("codex:4", "plus", now.Add(-10*24*time.Hour)), // within 30 days only
+			event("codex:5", "plus", now.Add(-35*24*time.Hour)), // older than 30 days
+		},
+		Snapshots: []syncapi.Snapshot{snap}}
+	if st := alice.do("POST", syncapi.PathSync, req, nil); st != http.StatusOK {
+		t.Fatalf("sync = %d", st)
+	}
+	bobReq := syncapi.SyncRequest{Version: syncapi.Version, Observations: []syncapi.Observation{obs("plus")},
+		Events: []syncapi.Event{event("codex:b1", "plus", start.Add(40*time.Minute))}}
+	if st := bob.do("POST", syncapi.PathSync, bobReq, nil); st != http.StatusOK {
+		t.Fatalf("bob sync = %d", st)
+	}
+
+	today := now.Add(-3 * time.Hour)
+	var ov syncapi.Overview
+	path := syncapi.PathOverview + "?" + url.Values{syncapi.QueryToday: {today.Format(time.RFC3339)}}.Encode()
+	if st := alice.do("GET", path, nil, &ov); st != http.StatusOK || ov.You == nil {
+		t.Fatalf("overview = %d, %+v", st, ov)
+	}
+	// The window started 4 hours ago, so only codex:3 falls after today.
+	if ov.You.Today.Requests != 1 {
+		t.Errorf("today requests = %d, want 1", ov.You.Today.Requests)
+	}
+	if got := ov.You.Last30Day; got.Requests != 4 || got.Input != 400 || got.CachedInput != 1200 || got.Output != 40 || got.CostUSD <= 0 {
+		t.Errorf("30 days = %+v, want 4 requests of alice's across both accounts", got)
+	}
+
+	var plus *syncapi.AccountOverview
+	for i := range ov.Accounts {
+		if ov.Accounts[i].Label == "plus" {
+			plus = &ov.Accounts[i]
+		}
+	}
+	if plus == nil || len(plus.Buckets) != 1 || plus.Buckets[0].Timeline == nil {
+		t.Fatalf("plus account = %+v", plus)
+	}
+	tl := plus.Buckets[0].Timeline
+	if !tl.Start.Equal(start) || tl.BinMinutes != 15 || tl.Bins != 20 {
+		t.Errorf("timeline = start %v, %d min × %d; want %v, 15 min × 20", tl.Start, tl.BinMinutes, tl.Bins, start)
+	}
+	got := map[[2]string]int64{}
+	names := map[string]string{}
+	for _, m := range plus.Buckets[0].Members {
+		names[m.PersonID] = m.Name
+	}
+	for _, p := range tl.Points {
+		got[[2]string{names[p.PersonID], fmt.Sprint(p.Bin)}] += p.Tokens
+	}
+	want := map[[2]string]int64{{"alice", "0"}: 410, {"alice", "2"}: 410, {"bob", "2"}: 410}
+	if len(got) != len(want) {
+		t.Errorf("timeline points = %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("timeline %v = %d, want %d", k, got[k], v)
+		}
 	}
 }

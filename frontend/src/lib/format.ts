@@ -39,6 +39,11 @@ export function tokens(n: number): string {
   return String(n)
 }
 
+/** An estimated price in US dollars. */
+export function usd(n: number): string {
+  return `US$${n.toFixed(2)}`
+}
+
 export function dateTime(iso: string): string {
   return new Date(iso).toLocaleString(locale(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
 }

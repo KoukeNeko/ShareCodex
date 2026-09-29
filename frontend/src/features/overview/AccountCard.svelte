@@ -1,5 +1,6 @@
 <script lang="ts">
   import QuotaBar, { type Segment } from '../../components/QuotaBar.svelte'
+  import UsageChart from './UsageChart.svelte'
   import { Desktop, errorMessage, type ActiveUser, type BucketOverview } from '../../lib/api'
   import { bucketName, percent, providerName, resetsIn, tokens } from '../../lib/format'
   import { t } from '../../lib/i18n.svelte'
@@ -108,6 +109,16 @@
           </button>
         {/each}
       </div>
+    {/if}
+
+    {#if !local && !expired && bucket.timeline && (bucket.timeline.points ?? []).length > 0}
+      <UsageChart
+        timeline={bucket.timeline}
+        models={(bucket.models ?? []).map((m) => m.model)}
+        color={(model) => modelColor.get(model) ?? 'var(--model-other)'}
+        members={bucket.members ?? []}
+        {now}
+      />
     {/if}
 
     <div class="total">

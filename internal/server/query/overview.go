@@ -23,9 +23,10 @@ const snapshotLookback = 8 * 24 * time.Hour
 const activeWindow = 15 * time.Minute
 
 // Overview returns every account with its quota windows and, per window,
-// each member's allotment and estimated usage. Members see every account
-// except those they have left.
-func Overview(ctx context.Context, st *storage.Store, viewerPersonID string, now time.Time) (syncapi.Overview, error) {
+// each member's allotment and estimated usage, plus the viewer's own usage
+// since today (the start of the viewer's day) and over 30 days. Members see
+// every account except those they have left.
+func Overview(ctx context.Context, st *storage.Store, viewerPersonID string, now, today time.Time) (syncapi.Overview, error) {
 	accounts, err := st.Accounts(ctx)
 	if err != nil {
 		return syncapi.Overview{}, err
@@ -67,15 +68,80 @@ func Overview(ctx context.Context, st *storage.Store, viewerPersonID string, now
 			if err != nil {
 				return syncapi.Overview{}, err
 			}
-			ao.Buckets = append(ao.Buckets, bucketOverview(b, now, members, rows, viewerPersonID))
+			bo := bucketOverview(b, now, members, rows, viewerPersonID)
+			if !bo.Reset {
+				if bo.Timeline, err = timeline(ctx, st, a.ID, b, start, end); err != nil {
+					return syncapi.Overview{}, err
+				}
+			}
+			ao.Buckets = append(ao.Buckets, bo)
 		}
 		out.Accounts = append(out.Accounts, ao)
 	}
+	// The admin console views as no one.
+	if viewerPersonID != "" {
+		you := syncapi.PersonalUsage{}
+		for _, p := range []struct {
+			since time.Time
+			into  *syncapi.UsageTotals
+		}{{today, &you.Today}, {now.Add(-30 * 24 * time.Hour), &you.Last30Day}} {
+			rows, err := st.PersonUsage(ctx, viewerPersonID, p.since)
+			if err != nil {
+				return syncapi.Overview{}, err
+			}
+			*p.into = usageTotals(rows)
+		}
+		out.You = &you
+	}
+
 	// The accounts the viewer is signed into come first.
 	sort.SliceStable(out.Accounts, func(i, j int) bool {
 		return usedByViewer(out.Accounts[i]) && !usedByViewer(out.Accounts[j])
 	})
 	return out, nil
+}
+
+func usageTotals(rows []storage.PersonUsage) syncapi.UsageTotals {
+	var u syncapi.UsageTotals
+	for _, r := range rows {
+		u.Input += r.Tokens.Input
+		u.CachedInput += r.Tokens.CachedInput
+		u.CacheWrite += r.Tokens.CacheWrite
+		u.Output += r.Tokens.Output
+		u.Requests += r.Requests
+		u.CostUSD += attribution.Cost(r.Model, r.Tokens)
+	}
+	return u
+}
+
+// timelineBinMinutes keeps a chart near 20–30 points: 15 minutes for a
+// 5-hour window, 6 hours for a week.
+func timelineBinMinutes(windowMinutes int) int {
+	switch {
+	case windowMinutes <= 6*60:
+		return 15
+	case windowMinutes <= 24*60:
+		return 60
+	default:
+		return 6 * 60
+	}
+}
+
+func timeline(ctx context.Context, st *storage.Store, accountID string, b quota.Observed, start, end time.Time) (*syncapi.Timeline, error) {
+	if b.WindowMinutes == nil || *b.WindowMinutes <= 0 {
+		return nil, nil
+	}
+	window := *b.WindowMinutes
+	bin := timelineBinMinutes(window)
+	rows, err := st.UsageTimeline(ctx, accountID, start, end, bin)
+	if err != nil {
+		return nil, err
+	}
+	tl := &syncapi.Timeline{Start: start.UTC(), BinMinutes: bin, Bins: (window + bin - 1) / bin, Points: []syncapi.TimelinePoint{}}
+	for _, r := range rows {
+		tl.Points = append(tl.Points, syncapi.TimelinePoint{Bin: r.Bin, PersonID: r.PersonID, Model: r.Model, Tokens: r.Tokens})
+	}
+	return tl, nil
 }
 
 func usedByViewer(a syncapi.AccountOverview) bool {

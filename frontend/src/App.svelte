@@ -3,6 +3,7 @@
   import { Events } from '@wailsio/runtime'
   import AccountCard from './features/overview/AccountCard.svelte'
   import JoinForm from './features/overview/JoinForm.svelte'
+  import UsageStats from './features/overview/UsageStats.svelte'
   import Settings from './features/settings/Settings.svelte'
   import { Desktop, errorMessage, type ActiveUser, type ProviderState, type State } from './lib/api'
   import { clock, providerName } from './lib/format'
@@ -83,6 +84,10 @@
       {#each issues as p (p.provider)}
         <p class="banner"><strong>{providerName(p.provider)}</strong>：{providerIssue(p)}</p>
       {/each}
+
+      {#if app.paired && app.overview?.you}
+        <UsageStats usage={app.overview.you} />
+      {/if}
 
       {#if app.paired && accounts.length > 0}
         {#each accounts as a (a.id)}

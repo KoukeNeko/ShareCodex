@@ -34,7 +34,8 @@ func (a *Agent) syncOnce(ctx context.Context) error {
 	var overviewErr error
 	if uploadErr == nil {
 		var o syncapi.Overview
-		if o, overviewErr = client.Overview(ctx); overviewErr == nil {
+		y, m, d := time.Now().Date()
+		if o, overviewErr = client.Overview(ctx, time.Date(y, m, d, 0, 0, 0, 0, time.Local)); overviewErr == nil {
 			a.mu.Lock()
 			a.overview = &o
 			a.mu.Unlock()

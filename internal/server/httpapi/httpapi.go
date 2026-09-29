@@ -127,12 +127,22 @@ func (s *Server) sync(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
-	o, err := query.Overview(r.Context(), s.store, deviceFrom(r).PersonID, time.Now())
+	now := time.Now()
+	o, err := query.Overview(r.Context(), s.store, deviceFrom(r).PersonID, now, startOfDay(r.URL.Query().Get(syncapi.QueryToday), now))
 	if err != nil {
 		s.internalError(w, "build overview", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, o)
+}
+
+// startOfDay reads the client's start of day, falling back to UTC midnight
+// when it is missing or is not within the last day.
+func startOfDay(raw string, now time.Time) time.Time {
+	if t, err := time.Parse(time.RFC3339, raw); err == nil && !t.After(now) && now.Sub(t) <= 24*time.Hour {
+		return t
+	}
+	return now.UTC().Truncate(24 * time.Hour)
 }
 
 // invite lets a joined device add another device for the same person, so

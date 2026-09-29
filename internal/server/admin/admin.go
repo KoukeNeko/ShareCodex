@@ -249,7 +249,8 @@ func (c *Console) logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Console) overview(w http.ResponseWriter, r *http.Request) {
-	o, err := query.Overview(r.Context(), c.store, "", time.Now())
+	now := time.Now()
+	o, err := query.Overview(r.Context(), c.store, "", now, now)
 	if err != nil {
 		c.fail(w, "build overview", err)
 		return
