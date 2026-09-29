@@ -84,6 +84,10 @@ type accounts struct {
 	cli []account.Observation
 	// desktopSeen is true once Claude Desktop has been observed.
 	desktopSeen bool
+	// desktopHere is true when Claude Desktop's data folder is on this
+	// device. Without it, Desktop sessions here were run over SSH from
+	// another computer.
+	desktopHere bool
 	// desktop maps Claude Desktop's session IDs to the organization it filed
 	// them under; see loadDesktopSessions.
 	desktop map[string]string
@@ -103,6 +107,11 @@ func (a *Agent) loadAccounts(ctx context.Context, p account.Provider) (accounts,
 	}
 	if p != account.ProviderAnthropic {
 		return ac, nil
+	}
+	if dir, err := desktop.Dir(); err == nil {
+		if _, err := os.Stat(dir); err == nil {
+			ac.desktopHere = true
+		}
 	}
 	dsk, err := a.store.Observations(ctx, p, account.SourceClaudeDesktop)
 	if err != nil {
@@ -145,15 +154,15 @@ func (ac accounts) pooled() bool {
 // its session under; any other usage, including a terminal session Desktop
 // happens to list, uses the CLI's account at t. Desktop sessions whose
 // metadata is gone, and Desktop set up for third-party inference, have no
-// known pooled account. A device where Desktop never ran got its Desktop
-// sessions over SSH from another computer, whose metadata is not here; they
-// use this device's CLI account, as the likeliest match.
+// known pooled account. A device without Desktop got its Desktop sessions
+// over SSH from another computer, whose metadata is not here; they use this
+// device's CLI account, as the likeliest match.
 func (ac accounts) resolve(sessionID, entrypoint string, t time.Time) (string, bool) {
 	if ac.provider == account.ProviderAnthropic {
 		switch {
 		case desktop.ThirdParty(entrypoint):
 			return "", false
-		case desktop.FromDesktop(entrypoint) && ac.desktopSeen:
+		case desktop.FromDesktop(entrypoint) && ac.desktopHere:
 			org, ok := ac.desktop[sessionID]
 			if !ok || t.Before(ac.since) {
 				return "", false
