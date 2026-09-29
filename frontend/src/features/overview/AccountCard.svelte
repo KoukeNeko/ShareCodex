@@ -133,9 +133,15 @@
             </div>
             <QuotaBar value={m.used_percent} marker={m.allotted_percent} segments={segmentsFor(m.models)} thin />
             {#if (m.devices ?? []).length > 1}
-              <ul class="devices muted small">
+              <ul class="devices">
                 {#each m.devices ?? [] as d (d.name)}
-                  <li><span class="device-name">{d.name}</span><span class="num">{percent(d.used_percent)}</span></li>
+                  <li>
+                    <div class="row muted small">
+                      <span class="device-name">{d.name}</span>
+                      <span class="num">{percent(d.used_percent)}</span>
+                    </div>
+                    <QuotaBar value={d.used_percent} tone="muted" thin />
+                  </li>
                 {/each}
               </ul>
             {/if}
@@ -220,9 +226,9 @@
   .members { list-style: none; margin: 0; padding: 8px 0 0; border-top: 1px solid var(--line); display: grid; gap: 9px; }
   .members li { display: grid; gap: 4px; }
   .allot { margin-left: 8px; }
-  .devices { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 12px; }
-  .devices li { display: flex; gap: 5px; min-width: 0; }
-  .device-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .devices { list-style: none; margin: 2px 0 0; padding: 0; display: grid; gap: 4px; }
+  .devices li { display: grid; gap: 3px; }
+  .device-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .models { list-style: none; margin: 0; padding: 8px 0 0; border-top: 1px solid var(--line); display: grid; gap: 9px; }
   .models li { display: grid; gap: 4px; }
   .models .muted { margin-right: 8px; }
