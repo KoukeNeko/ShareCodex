@@ -570,7 +570,7 @@ func TestLeaveAccount(t *testing.T) {
 }
 
 // A usage reading names the Max tier; the CLI's plain "max" keeps it, while a
-// different plan still replaces it.
+// newer different plan still replaces it and an older one does not.
 func TestPlainPlanKeepsMaxTier(t *testing.T) {
 	store := storagetest.New(t)
 	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
@@ -601,6 +601,10 @@ func TestPlainPlanKeepsMaxTier(t *testing.T) {
 	}
 	if got := plan(syncapi.SyncRequest{Observations: []syncapi.Observation{observe("max", now)}}); got != "max 20x" {
 		t.Errorf("plan after a plain max observation = %q, want max 20x", got)
+	}
+	// A resync replays sign-ins from before an upgrade.
+	if got := plan(syncapi.SyncRequest{Observations: []syncapi.Observation{observe("pro", now.Add(-2*time.Hour))}}); got != "max 20x" {
+		t.Errorf("plan after replaying an older pro sign-in = %q, want max 20x", got)
 	}
 	if got := plan(syncapi.SyncRequest{Observations: []syncapi.Observation{observe("pro", now.Add(time.Minute))}}); got != "pro" {
 		t.Errorf("plan after a downgrade = %q, want pro", got)

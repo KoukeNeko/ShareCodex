@@ -241,12 +241,13 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 	var reported []syncapi.Event
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
 		accounts := map[[2]string]string{}
-		ensure := func(provider, refHash, hint, plan string) (string, error) {
+		// planAt is when plan was observed; zero when plan is empty.
+		ensure := func(provider, refHash, hint, plan string, planAt time.Time) (string, error) {
 			key := [2]string{provider, refHash}
 			if id, ok := accounts[key]; ok && hint == "" && plan == "" {
 				return id, nil
 			}
-			id, err := ensureAccount(ctx, tx, provider, refHash, hint, plan, d.PersonID)
+			id, err := ensureAccount(ctx, tx, provider, refHash, hint, plan, planAt, d.PersonID)
 			if err != nil {
 				return "", err
 			}
@@ -258,7 +259,7 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 			if o.AccountRefHash == "" {
 				continue
 			}
-			id, err := ensure(o.Provider, o.AccountRefHash, o.Hint, o.PlanType)
+			id, err := ensure(o.Provider, o.AccountRefHash, o.Hint, o.PlanType, o.ObservedAt)
 			if err != nil {
 				return err
 			}
@@ -275,7 +276,7 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 			if e.AccountRefHash == "" || e.DedupeKey == "" {
 				continue
 			}
-			id, err := ensure(e.Provider, e.AccountRefHash, "", "")
+			id, err := ensure(e.Provider, e.AccountRefHash, "", "", time.Time{})
 			if err != nil {
 				return err
 			}
@@ -321,7 +322,7 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 			if snap.AccountRefHash == "" || len(snap.Buckets) == 0 {
 				continue
 			}
-			id, err := ensure(snap.Provider, snap.AccountRefHash, snap.AccountHint, snap.PlanType)
+			id, err := ensure(snap.Provider, snap.AccountRefHash, snap.AccountHint, snap.PlanType, snap.ObservedAt)
 			if err != nil {
 				return err
 			}
@@ -353,19 +354,27 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 	return syncapi.SyncResponse{Accepted: accepted, Diverged: diverged}, err
 }
 
-func ensureAccount(ctx context.Context, tx *sql.Tx, provider, refHash, hint, plan, personID string) (string, error) {
+func ensureAccount(ctx context.Context, tx *sql.Tx, provider, refHash, hint, plan string, planAt time.Time, personID string) (string, error) {
+	var at sql.NullTime
+	if plan != "" {
+		at = sql.NullTime{Time: planAt, Valid: true}
+	}
 	var id string
 	err := tx.QueryRowContext(ctx, `
-		INSERT INTO accounts (id, provider, ref_hash, hint, label, plan_type) VALUES ($1, $2, $3, $4, $4, $5)
+		INSERT INTO accounts (id, provider, ref_hash, hint, label, plan_type, plan_observed_at) VALUES ($1, $2, $3, $4, $4, $5, $6)
 		ON CONFLICT (provider, ref_hash) DO UPDATE SET
 			hint = COALESCE(NULLIF(excluded.hint, ''), accounts.hint),
 			label = CASE WHEN accounts.label = '' THEN excluded.label ELSE accounts.label END,
-			-- claude auth status reports "max" without the tier a usage
-			-- reading carries ("max 20x"); the plain plan never replaces it.
+			-- A resync replays old sign-ins, so only a newer reading changes
+			-- the plan. claude auth status reports "max" without the tier a
+			-- usage reading carries ("max 20x"); the plain plan never
+			-- replaces it.
 			plan_type = CASE
-				WHEN excluded.plan_type = '' OR accounts.plan_type LIKE excluded.plan_type || ' %' THEN accounts.plan_type
-				ELSE excluded.plan_type END
-		RETURNING id`, newID(), provider, refHash, hint, plan).Scan(&id)
+				WHEN excluded.plan_type = '' OR excluded.plan_observed_at < accounts.plan_observed_at OR
+					accounts.plan_type LIKE excluded.plan_type || ' %' THEN accounts.plan_type
+				ELSE excluded.plan_type END,
+			plan_observed_at = GREATEST(accounts.plan_observed_at, excluded.plan_observed_at)
+		RETURNING id`, newID(), provider, refHash, hint, plan, at).Scan(&id)
 	if err != nil {
 		return "", fmt.Errorf("ensure account: %w", err)
 	}
