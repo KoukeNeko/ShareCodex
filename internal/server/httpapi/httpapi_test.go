@@ -514,3 +514,57 @@ func TestActiveUsers(t *testing.T) {
 		}
 	}
 }
+
+// A member who leaves an account drops out of its allotment and no longer
+// sees it; signing in to it again does not add them back.
+func TestLeaveAccount(t *testing.T) {
+	store := storagetest.New(t)
+	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	defer srv.Close()
+
+	alice := pair(t, store, srv.URL, "alice")
+	bob := pair(t, store, srv.URL, "bob")
+	now := time.Now().UTC().Truncate(time.Second)
+	resets := now.Add(time.Hour)
+	sync := syncapi.SyncRequest{Version: syncapi.Version,
+		Observations: []syncapi.Observation{{Provider: "anthropic", AccountRefHash: "max", Hint: "ma***", ObservedAt: now}},
+		Snapshots: []syncapi.Snapshot{{Provider: "anthropic", AccountRefHash: "max", Source: "claude-statusline", ObservedAt: now,
+			Buckets: []syncapi.Bucket{{Key: "five_hour", UsedPercent: ptr(10.0), ResetsAt: &resets, WindowMinutes: ptr(300)}}}}}
+	for _, c := range []client{alice, bob} {
+		if st := c.do("POST", syncapi.PathSync, sync, nil); st != http.StatusOK {
+			t.Fatalf("sync = %d", st)
+		}
+	}
+	var ov syncapi.Overview
+	if st := bob.do("GET", syncapi.PathOverview, nil, &ov); st != http.StatusOK || len(ov.Accounts) != 1 {
+		t.Fatalf("overview = %d, %+v", st, ov)
+	}
+	id := ov.Accounts[0].ID
+
+	if st := bob.do("POST", syncapi.PathAccounts+"missing/leave", nil, nil); st != http.StatusNotFound {
+		t.Errorf("leaving an unknown account = %d, want 404", st)
+	}
+	if st := bob.do("POST", syncapi.PathAccounts+id+"/leave", nil, nil); st != http.StatusOK {
+		t.Fatalf("leave = %d", st)
+	}
+	if st := bob.do("POST", syncapi.PathSync, sync, nil); st != http.StatusOK {
+		t.Fatalf("sync = %d", st)
+	}
+
+	ov = syncapi.Overview{}
+	if st := bob.do("GET", syncapi.PathOverview, nil, &ov); st != http.StatusOK || len(ov.Accounts) != 0 {
+		t.Errorf("bob's overview after leaving = %d, %+v; want no accounts", st, ov)
+	}
+	ov = syncapi.Overview{}
+	if st := alice.do("GET", syncapi.PathOverview, nil, &ov); st != http.StatusOK || len(ov.Accounts) != 1 {
+		t.Fatalf("alice's overview = %d, %+v", st, ov)
+	}
+	for _, m := range ov.Accounts[0].Buckets[0].Members {
+		if m.Name == "alice" && m.AllottedPercent != 100 {
+			t.Errorf("alice allotted %v, want 100 after bob left", m.AllottedPercent)
+		}
+		if m.Name == "bob" && m.AllottedPercent != 0 {
+			t.Errorf("bob allotted %v, want 0 after leaving", m.AllottedPercent)
+		}
+	}
+}

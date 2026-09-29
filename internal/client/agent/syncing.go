@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -185,6 +186,34 @@ func (a *Agent) CreateInvite(ctx context.Context) (Invite, error) {
 		return Invite{}, err
 	}
 	return Invite{Link: strings.TrimRight(base, "/") + syncapi.PathJoin + resp.Code, ExpiresAt: resp.ExpiresAt}, nil
+}
+
+// LeaveAccount takes this person out of a shared account's allotment; the
+// server then leaves it off their overview.
+func (a *Agent) LeaveAccount(ctx context.Context, accountID string) error {
+	a.mu.Lock()
+	client, revoked := a.client, a.revoked
+	a.mu.Unlock()
+	if client == nil {
+		return errors.New("join a server first")
+	}
+	if revoked {
+		return sync.ErrRevoked
+	}
+	if err := client.LeaveAccount(ctx, accountID); err != nil {
+		return err
+	}
+	// Drop the card now rather than after the next overview fetch.
+	a.mu.Lock()
+	if a.overview != nil {
+		o := *a.overview
+		o.Accounts = slices.DeleteFunc(slices.Clone(o.Accounts), func(ao syncapi.AccountOverview) bool { return ao.ID == accountID })
+		a.overview = &o
+	}
+	a.mu.Unlock()
+	a.changed()
+	a.Refresh()
+	return nil
 }
 
 // Leave forgets the server on this device. Usage already uploaded stays on

@@ -23,7 +23,8 @@ const snapshotLookback = 8 * 24 * time.Hour
 const activeWindow = 15 * time.Minute
 
 // Overview returns every account with its quota windows and, per window,
-// each member's allotment and estimated usage. All members see all accounts.
+// each member's allotment and estimated usage. Members see every account
+// except those they have left.
 func Overview(ctx context.Context, st *storage.Store, viewerPersonID string, now time.Time) (syncapi.Overview, error) {
 	accounts, err := st.Accounts(ctx)
 	if err != nil {
@@ -43,6 +44,14 @@ func Overview(ctx context.Context, st *storage.Store, viewerPersonID string, now
 		members, err := st.Members(ctx, a.ID)
 		if err != nil {
 			return syncapi.Overview{}, err
+		}
+
+		// A member who left an account, or whom an admin set to weight 0,
+		// no longer sees it.
+		if slices.ContainsFunc(members, func(m storage.Member) bool {
+			return m.PersonID == viewerPersonID && m.ShareWeight == 0
+		}) {
+			continue
 		}
 
 		ao := syncapi.AccountOverview{

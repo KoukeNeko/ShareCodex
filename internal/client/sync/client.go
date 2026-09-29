@@ -20,7 +20,7 @@ var (
 	ErrRevoked       = errors.New("this device was revoked by an admin")
 	ErrUpgrade       = errors.New("the server needs a newer ShareCodex")
 	ErrInvalidInvite = errors.New("join link is invalid, expired or already used")
-	ErrServerTooOld  = errors.New("the server needs a newer ShareCodex to create join links; ask an admin for one")
+	ErrServerTooOld  = errors.New("the server needs a newer ShareCodex for this; ask an admin to update it")
 )
 
 type Client struct {
@@ -85,6 +85,15 @@ func (c *Client) Invite(ctx context.Context) (syncapi.InviteResponse, error) {
 		return syncapi.InviteResponse{}, ErrServerTooOld
 	}
 	return resp, err
+}
+
+// LeaveAccount takes this person out of a shared account.
+func (c *Client) LeaveAccount(ctx context.Context, accountID string) error {
+	err := c.do(ctx, http.MethodPost, syncapi.PathAccounts+url.PathEscape(accountID)+"/leave", nil, &struct{}{})
+	if errors.Is(err, errNotFound) {
+		return ErrServerTooOld
+	}
+	return err
 }
 
 var (

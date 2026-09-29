@@ -1,10 +1,11 @@
 <script lang="ts">
   import QuotaBar, { type Segment } from '../../components/QuotaBar.svelte'
-  import type { ActiveUser, BucketOverview } from '../../lib/api'
+  import { Desktop, errorMessage, type ActiveUser, type BucketOverview } from '../../lib/api'
   import { bucketName, percent, providerName, resetsIn, tokens } from '../../lib/format'
   import { t } from '../../lib/i18n.svelte'
 
-  let { provider, label, planType, buckets, activeUsers, now, local = false }: {
+  let { id = '', provider, label, planType, buckets, activeUsers, now, local = false }: {
+    id?: string
     provider: string
     label: string
     planType: string
@@ -16,6 +17,22 @@
 
   // The viewer's own computer is signed into this account.
   const current = $derived(activeUsers.some((u) => u.is_you))
+
+  let confirmingLeave = $state(false)
+  let leaving = $state(false)
+  let leaveError = $state('')
+
+  async function leave() {
+    leaving = true
+    leaveError = ''
+    try {
+      await Desktop.LeaveAccount(id)
+    } catch (err) {
+      leaveError = errorMessage(err)
+    } finally {
+      leaving = false
+    }
+  }
 
   let selected = $state(0)
   const bucket = $derived(buckets[Math.min(selected, buckets.length - 1)])
@@ -50,7 +67,21 @@
     <span class="provider">{providerName(provider)}</span>
     <span class="label">{label}</span>
     {#if planType}<span class="plan">{planType}</span>{/if}
+    {#if !local && !confirmingLeave}
+      <button class="leave" onclick={() => (confirmingLeave = true)}>{t('leave')}</button>
+    {/if}
   </header>
+
+  {#if confirmingLeave}
+    <div class="confirm">
+      <p><strong>{t('leaveAccountConfirm')}</strong><br /><span class="muted">{t('leaveAccountBody')}</span></p>
+      {#if leaveError}<p class="error">{leaveError}</p>{/if}
+      <div class="actions">
+        <button onclick={() => (confirmingLeave = false)} disabled={leaving}>{t('cancel')}</button>
+        <button class="danger" onclick={leave} disabled={leaving}>{t('leave')}</button>
+      </div>
+    </div>
+  {/if}
 
   {#if activeUsers.length > 0}
     <div class="active">
@@ -151,6 +182,10 @@
     border-radius: 4px;
     padding: 1px 6px;
   }
+  .leave { flex: none; padding: 1px 6px; font-size: 11px; color: var(--muted); }
+  .confirm { display: grid; gap: 8px; }
+  .confirm p { margin: 0; }
+  .actions { display: flex; gap: 6px; justify-content: flex-end; }
   .active { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 11.5px; }
   .active .muted { margin-right: 2px; }
   .user { background: var(--track); border-radius: 4px; padding: 0 5px; }

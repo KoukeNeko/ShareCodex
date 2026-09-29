@@ -214,6 +214,10 @@ func (s *Service) Leave() error {
 	return s.agent.Leave()
 }
 
+func (s *Service) LeaveAccount(ctx context.Context, accountID string) error {
+	return s.agent.LeaveAccount(ctx, accountID)
+}
+
 func (s *Service) Refresh() {
 	s.agent.Refresh()
 }

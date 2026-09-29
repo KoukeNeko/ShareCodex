@@ -35,6 +35,7 @@ func New(store *storage.Store, log *slog.Logger) http.Handler {
 	mux.HandleFunc("POST "+syncapi.PathSync, s.authed(s.sync))
 	mux.HandleFunc("GET "+syncapi.PathOverview, s.authed(s.overview))
 	mux.HandleFunc("POST "+syncapi.PathInvite, s.authed(s.invite))
+	mux.HandleFunc("POST "+syncapi.PathAccounts+"{id}/leave", s.authed(s.leaveAccount))
 	return mux
 }
 
@@ -145,6 +146,27 @@ func (s *Server) invite(w http.ResponseWriter, r *http.Request) {
 	}
 	s.log.Info("device created invite", "person", d.Person.DisplayName, "device", d.Name)
 	writeJSON(w, http.StatusOK, syncapi.InviteResponse{Code: code, ExpiresAt: expires})
+}
+
+// leaveAccount takes the member out of an account's allotment and off their
+// overview. The membership stays at weight 0, so signing in to the account
+// again does not add them back; an admin can restore the weight.
+func (s *Server) leaveAccount(w http.ResponseWriter, r *http.Request) {
+	d := deviceFrom(r)
+	id := r.PathValue("id")
+	if _, err := s.store.Account(r.Context(), id); errors.Is(err, storage.ErrNotFound) {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	} else if err != nil {
+		s.internalError(w, "load account", err)
+		return
+	}
+	if err := s.store.SetShareWeight(r.Context(), id, d.PersonID, 0); err != nil {
+		s.internalError(w, "leave account", err)
+		return
+	}
+	s.log.Info("member left account", "person", d.Person.DisplayName, "account", id)
+	writeJSON(w, http.StatusOK, struct{}{})
 }
 
 func decode(w http.ResponseWriter, r *http.Request, limit int64, v any) bool {

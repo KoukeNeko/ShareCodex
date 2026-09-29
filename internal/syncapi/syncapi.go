@@ -20,6 +20,8 @@ const (
 	PathSync     = "/internal/api/v1/sync"
 	PathOverview = "/internal/api/v1/overview"
 	PathInvite   = "/internal/api/v1/invite"
+	// PathAccounts prefixes per-account actions: <id>/leave.
+	PathAccounts = "/internal/api/v1/accounts/"
 	PathJoin     = "/join/"
 )
 

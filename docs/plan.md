@@ -114,7 +114,7 @@ ShareCodex/
    - 頁面顯示一條加入連結 `https://<server>/join/<code>`，24 小時內有效、只能用一次。Server 只存 code 的雜湊，因此連結只顯示這一次。
 3. **成員加入**：成員安裝桌面 app，貼上加入連結。app 會以 `POST /pair` 送出 `{code, device_name, platform}`，換回 `{device_id, person_id, token}`，token 存進 OS keychain。
 4. **同一人的其他裝置**：對同一個 person 再產生一條邀請即可。一條邀請只能綁一台裝置。
-5. **加入帳號**：不需要 admin 手動設定。成員在自己電腦上以共用帳號登入 Claude Code 或 Codex 後，裝置第一次回報該帳號的觀測，Server 就自動建立 Membership（`ShareWeight = 1`）。admin 可以在「帳號」頁調整權重；權重設為 0 即移出分配，但保留該成員的用量紀錄（Membership 列保留，自動加入不會把人加回來）。
+5. **加入帳號**：不需要 admin 手動設定。成員在自己電腦上以共用帳號登入 Claude Code 或 Codex 後，裝置第一次回報該帳號的觀測，Server 就自動建立 Membership（`ShareWeight = 1`）。admin 可以在「帳號」頁調整權重；權重設為 0 即移出分配，但保留該成員的用量紀錄（Membership 列保留，自動加入不會把人加回來）。成員也可以在 popup 的帳號卡片按「離開」，效果等同把自己的權重設為 0；權重為 0 的成員不會在自己的 popup 看到該帳號。
 6. **退出與撤銷**：在「裝置」頁撤銷裝置，讓 token 失效，之後該裝置的同步會收到 401，app 顯示「裝置已撤銷」。既有的用量紀錄保留，因為帳本只能新增。
 
 ## 額度占比分配
