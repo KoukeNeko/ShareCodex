@@ -150,8 +150,8 @@
           <li class="muted small">{t('models')}</li>
           {#each bucket.models ?? [] as model (model.model)}
             <li class="row">
-              <span class="model"><i class="swatch" style:background={modelColor.get(model.model)}></i>{model.model}</span>
-              <span class="num"><span class="muted">{t('tokens', { count: tokens(model.tokens) })}</span>{t('estimated', { percent: percent(model.used_percent) })}</span>
+              <span class="model" title={model.model}><i class="swatch" style:background={modelColor.get(model.model)}></i><span class="model-name">{model.model}</span></span>
+              <span class="num usage"><span class="muted">{t('tokens', { count: tokens(model.tokens) })}</span>{t('estimated', { percent: percent(model.used_percent) })}</span>
             </li>
           {/each}
         </ul>
@@ -212,7 +212,10 @@
   .allot { margin-left: 8px; }
   .models { list-style: none; margin: 0; padding: 8px 0 0; border-top: 1px solid var(--line); display: grid; gap: 5px; }
   .models .muted { margin-right: 8px; }
-  .model { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; display: flex; align-items: center; gap: 6px; }
+  .model { min-width: 0; display: flex; align-items: center; gap: 6px; }
+  .model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The numbers keep their line; a long model name is cut instead. */
+  .usage { flex: none; white-space: nowrap; }
   .swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
   .name { display: flex; align-items: center; gap: 6px; }
   .you {
