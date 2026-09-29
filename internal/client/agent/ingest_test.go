@@ -244,7 +244,7 @@ func TestIngestFileCorrectsAttributionForTheOriginalSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	src := source{provider: account.ProviderAnthropic, parse: func(*os.File) (parsed, error) { return parsed{events: []usage.Event{e}}, nil }}
-	ac := accounts{provider: account.ProviderAnthropic, desktopSeen: true, desktopHere: true, desktop: map[string]string{"desk": "correct-org"}, since: t0}
+	ac := accounts{provider: account.ProviderAnthropic, desktopSeen: true, desktop: map[string]string{"desk": "correct-org"}, since: t0}
 	wrong := account.HashExternalRef(account.ProviderAnthropic, "wrong-org")
 	correct := account.HashExternalRef(account.ProviderAnthropic, "correct-org")
 	wrongEvent := e
@@ -276,7 +276,6 @@ func TestResolveSplitsClaudeDesktopFromTheCLI(t *testing.T) {
 		provider:    account.ProviderAnthropic,
 		cli:         []account.Observation{{Provider: account.ProviderAnthropic, ExternalRefHash: "cli-max", ObservedAt: t0}},
 		desktopSeen: true,
-		desktopHere: true,
 		desktop:     map[string]string{"desk": "org-b", "listed": "org-c"},
 		since:       t0,
 	}
@@ -306,18 +305,8 @@ func TestResolveSplitsClaudeDesktopFromTheCLI(t *testing.T) {
 		}
 	}
 
-	// Desktop on another computer drove this one over SSH: no Desktop here,
-	// even if an earlier attribution left a Desktop sighting behind.
-	remote := accounts{provider: account.ProviderAnthropic, cli: ac.cli, desktopSeen: true, since: t0}
-	if ref, ok := remote.resolve("desk", "claude-desktop", later); !ok || ref != "cli-max" {
-		t.Errorf("Desktop session over SSH resolve = %q, %v; want the CLI's cli-max", ref, ok)
-	}
-	if _, ok := remote.resolve("desk", "claude-desktop-3p", later); ok {
-		t.Error("third-party inference over SSH must stay unpooled")
-	}
-
 	// Without the CLI, Desktop usage is still pooled.
-	desktopOnly := accounts{provider: account.ProviderAnthropic, desktopSeen: true, desktopHere: true, desktop: ac.desktop, since: t0}
+	desktopOnly := accounts{provider: account.ProviderAnthropic, desktopSeen: true, desktop: ac.desktop, since: t0}
 	if !desktopOnly.pooled() {
 		t.Error("a device using only Claude Desktop must be pooled")
 	}
