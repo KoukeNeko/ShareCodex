@@ -568,3 +568,41 @@ func TestLeaveAccount(t *testing.T) {
 		}
 	}
 }
+
+// A usage reading names the Max tier; the CLI's plain "max" keeps it, while a
+// different plan still replaces it.
+func TestPlainPlanKeepsMaxTier(t *testing.T) {
+	store := storagetest.New(t)
+	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	defer srv.Close()
+	alice := pair(t, store, srv.URL, "alice")
+
+	now := time.Now().UTC().Truncate(time.Second)
+	observe := func(plan string, at time.Time) syncapi.Observation {
+		return syncapi.Observation{Provider: "anthropic", AccountRefHash: "max", Hint: "ma***", PlanType: plan, ObservedAt: at}
+	}
+	snap := syncapi.Snapshot{Provider: "anthropic", AccountRefHash: "max", PlanType: "max 20x", Source: "claude-oauth-usage",
+		ObservedAt: now, Buckets: []syncapi.Bucket{{Key: "weekly", UsedPercent: ptr(5.0), WindowMinutes: ptr(10080)}}}
+	plan := func(req syncapi.SyncRequest) string {
+		t.Helper()
+		req.Version = syncapi.Version
+		if st := alice.do("POST", syncapi.PathSync, req, nil); st != http.StatusOK {
+			t.Fatalf("sync = %d", st)
+		}
+		var ov syncapi.Overview
+		if st := alice.do("GET", syncapi.PathOverview, nil, &ov); st != http.StatusOK || len(ov.Accounts) != 1 {
+			t.Fatalf("overview = %d, %+v", st, ov)
+		}
+		return ov.Accounts[0].PlanType
+	}
+
+	if got := plan(syncapi.SyncRequest{Observations: []syncapi.Observation{observe("max", now.Add(-time.Minute))}, Snapshots: []syncapi.Snapshot{snap}}); got != "max 20x" {
+		t.Errorf("plan after the usage reading = %q, want max 20x", got)
+	}
+	if got := plan(syncapi.SyncRequest{Observations: []syncapi.Observation{observe("max", now)}}); got != "max 20x" {
+		t.Errorf("plan after a plain max observation = %q, want max 20x", got)
+	}
+	if got := plan(syncapi.SyncRequest{Observations: []syncapi.Observation{observe("pro", now.Add(time.Minute))}}); got != "pro" {
+		t.Errorf("plan after a downgrade = %q, want pro", got)
+	}
+}

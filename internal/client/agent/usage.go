@@ -71,7 +71,7 @@ func (a *Agent) probeClaudeCode(ctx context.Context) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	buckets, err := oauthusage.Probe(ctx, now)
+	buckets, plan, err := oauthusage.Probe(ctx, now)
 	if err != nil {
 		a.log.Warn("read Claude usage", "err", err)
 		return "", false
@@ -81,6 +81,7 @@ func (a *Agent) probeClaudeCode(ctx context.Context) (string, bool) {
 	}
 	err = a.store.AddSnapshot(ctx, quota.Snapshot{
 		AccountRefHash: ref,
+		PlanType:       plan,
 		Provider:       account.ProviderAnthropic,
 		ObservedAt:     now,
 		Source:         quota.SourceClaudeOAuthUsage,
@@ -120,6 +121,17 @@ func (a *Agent) probeLogin(ctx context.Context, l storage.ClaudeLogin) ([]quota.
 	}
 	if len(buckets) == 0 {
 		return nil, nil
+	}
+	// Sign-ins made before the Max tier was recorded learn it once.
+	if l.PlanType == "max" {
+		if p, err := oauthusage.ReadProfile(ctx, renewed.Access); err != nil {
+			a.log.Warn("read Claude profile", "account", l.Hint, "err", err)
+		} else if p.PlanType != l.PlanType {
+			l.PlanType = p.PlanType
+			if err := a.store.AddClaudeLogin(ctx, l); err != nil {
+				return nil, err
+			}
+		}
 	}
 	err = a.store.AddSnapshot(ctx, quota.Snapshot{
 		AccountRefHash: l.RefHash,

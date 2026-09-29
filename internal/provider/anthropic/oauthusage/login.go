@@ -272,7 +272,13 @@ type profileResponse struct {
 	Organization struct {
 		UUID             string `json:"uuid"`
 		OrganizationType string `json:"organization_type"`
+		RateLimitTier    string `json:"rate_limit_tier"`
 	} `json:"organization"`
+}
+
+// ReadProfile names the account a ShareCodex sign-in belongs to.
+func ReadProfile(ctx context.Context, token string) (Profile, error) {
+	return fetchProfile(ctx, token)
 }
 
 func fetchProfile(ctx context.Context, token string) (Profile, error) {
@@ -302,11 +308,12 @@ func fetchProfile(ctx context.Context, token string) (Profile, error) {
 	return Profile{OrgID: pr.Organization.UUID, Email: pr.Account.Email, PlanType: planType(pr)}, nil
 }
 
-// planType matches the subscriptionType `claude auth status` reports.
+// planType matches the subscriptionType `claude auth status` reports, with
+// the Max tier added.
 func planType(pr profileResponse) string {
 	switch {
 	case pr.Account.HasClaudeMax:
-		return "max"
+		return PlanWithTier("max", pr.Organization.RateLimitTier)
 	case pr.Account.HasClaudePro:
 		return "pro"
 	}

@@ -243,7 +243,7 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 		accounts := map[[2]string]string{}
 		ensure := func(provider, refHash, hint, plan string) (string, error) {
 			key := [2]string{provider, refHash}
-			if id, ok := accounts[key]; ok && hint == "" {
+			if id, ok := accounts[key]; ok && hint == "" && plan == "" {
 				return id, nil
 			}
 			id, err := ensureAccount(ctx, tx, provider, refHash, hint, plan, d.PersonID)
@@ -360,7 +360,11 @@ func ensureAccount(ctx context.Context, tx *sql.Tx, provider, refHash, hint, pla
 		ON CONFLICT (provider, ref_hash) DO UPDATE SET
 			hint = COALESCE(NULLIF(excluded.hint, ''), accounts.hint),
 			label = CASE WHEN accounts.label = '' THEN excluded.label ELSE accounts.label END,
-			plan_type = COALESCE(NULLIF(excluded.plan_type, ''), accounts.plan_type)
+			-- claude auth status reports "max" without the tier a usage
+			-- reading carries ("max 20x"); the plain plan never replaces it.
+			plan_type = CASE
+				WHEN excluded.plan_type = '' OR accounts.plan_type LIKE excluded.plan_type || ' %' THEN accounts.plan_type
+				ELSE excluded.plan_type END
 		RETURNING id`, newID(), provider, refHash, hint, plan).Scan(&id)
 	if err != nil {
 		return "", fmt.Errorf("ensure account: %w", err)

@@ -32,7 +32,7 @@ func fakeAnthropic(t *testing.T, token func(body map[string]string) (int, string
 				return
 			}
 			w.Write([]byte(`{"account":{"email":"alice@example.com","has_claude_max":true},
-				"organization":{"uuid":"org-1","organization_type":"claude_max"}}`))
+				"organization":{"uuid":"org-1","organization_type":"claude_max","rate_limit_tier":"default_claude_max_20x"}}`))
 		case "/usage":
 			if r.Header.Get("Authorization") != "Bearer new-access" {
 				w.WriteHeader(http.StatusUnauthorized)
@@ -98,7 +98,7 @@ func TestLoginExchangesTheRedirectedCode(t *testing.T) {
 	if tokens.Access != "new-access" || tokens.Refresh != "new-refresh" || !tokens.ExpiresAt.After(time.Now()) {
 		t.Errorf("tokens = %+v", tokens)
 	}
-	want := Profile{OrgID: "org-1", Email: "alice@example.com", PlanType: "max"}
+	want := Profile{OrgID: "org-1", Email: "alice@example.com", PlanType: "max 20x"}
 	if profile != want {
 		t.Errorf("profile = %+v, want %+v", profile, want)
 	}

@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/KoukeNeko/ShareCodex/internal/provider/anthropic/config"
@@ -50,32 +51,52 @@ var ErrNoCredential = errors.New("no Claude Code credential")
 type Credential struct {
 	Token     string
 	ExpiresAt time.Time
+	// PlanType is the plan with its Max tier, such as "max 20x".
+	PlanType string
 }
 
 type credentialFile struct {
 	OAuth *struct {
-		AccessToken string `json:"accessToken"`
-		ExpiresAt   int64  `json:"expiresAt"`
+		AccessToken      string `json:"accessToken"`
+		ExpiresAt        int64  `json:"expiresAt"`
+		SubscriptionType string `json:"subscriptionType"`
+		RateLimitTier    string `json:"rateLimitTier"`
 	} `json:"claudeAiOauth"`
 }
 
-// Probe returns the account's current rate-limit buckets. It returns nothing
-// when there is nothing to read: Claude Code is not signed in, or its
-// credential expired before the CLI's own background refresh renewed it.
-func Probe(ctx context.Context, now time.Time) ([]quota.Bucket, error) {
+// PlanWithTier adds the Max tier to a plan: "max" with the rate-limit tier
+// "default_claude_max_20x" becomes "max 20x". Other plans are unchanged.
+func PlanWithTier(plan, tier string) string {
+	if plan != "max" {
+		return plan
+	}
+	for _, t := range []string{"20x", "5x"} {
+		if strings.HasSuffix(tier, "_max_"+t) {
+			return plan + " " + t
+		}
+	}
+	return plan
+}
+
+// Probe returns the account's current rate-limit buckets and its plan. It
+// returns no buckets when there is nothing to read: Claude Code is not
+// signed in, or its credential expired before the CLI's own background
+// refresh renewed it.
+func Probe(ctx context.Context, now time.Time) ([]quota.Bucket, string, error) {
 	c, err := readCredential(ctx)
 	if errors.Is(err, ErrNoCredential) {
-		return nil, nil
+		return nil, "", nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	// Claude Code's supervisor refreshes the credential in the background,
 	// so an expired one only means nothing has renewed it yet.
 	if !c.ExpiresAt.IsZero() && !now.Before(c.ExpiresAt) {
-		return nil, nil
+		return nil, "", nil
 	}
-	return fetchUsage(ctx, c.Token)
+	buckets, err := fetchUsage(ctx, c.Token)
+	return buckets, c.PlanType, err
 }
 
 // readCredential returns the credential of the profile the agent reports
@@ -127,7 +148,11 @@ func parseCredential(raw []byte) (Credential, error) {
 	if f.OAuth == nil || f.OAuth.AccessToken == "" {
 		return Credential{}, ErrNoCredential
 	}
-	return Credential{Token: f.OAuth.AccessToken, ExpiresAt: time.UnixMilli(f.OAuth.ExpiresAt).UTC()}, nil
+	return Credential{
+		Token:     f.OAuth.AccessToken,
+		ExpiresAt: time.UnixMilli(f.OAuth.ExpiresAt).UTC(),
+		PlanType:  PlanWithTier(f.OAuth.SubscriptionType, f.OAuth.RateLimitTier),
+	}, nil
 }
 
 type window struct {

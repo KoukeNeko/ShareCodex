@@ -16,7 +16,8 @@ import (
 const sample = `{"five_hour":{"utilization":23.5,"resets_at":"2026-09-27T22:00:00.146239+00:00"},
  "seven_day":{"utilization":41.2,"resets_at":"2026-10-04T07:00:00+00:00"}}`
 
-const signedIn = `{"claudeAiOauth":{"accessToken":"tok","expiresAt":1790537052000}}`
+const signedIn = `{"claudeAiOauth":{"accessToken":"tok","expiresAt":1790537052000,
+ "subscriptionType":"max","rateLimitTier":"default_claude_max_5x"}}`
 
 func TestParseCredential(t *testing.T) {
 	t.Run("signed in", func(t *testing.T) {
@@ -24,7 +25,7 @@ func TestParseCredential(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if c.Token != "tok" || !c.ExpiresAt.Equal(time.UnixMilli(1790537052000).UTC()) {
+		if c.Token != "tok" || !c.ExpiresAt.Equal(time.UnixMilli(1790537052000).UTC()) || c.PlanType != "max 5x" {
 			t.Errorf("got %+v", c)
 		}
 	})
@@ -38,6 +39,20 @@ func TestParseCredential(t *testing.T) {
 	}
 	if _, err := parseCredential([]byte("nope")); err == nil || errors.Is(err, ErrNoCredential) {
 		t.Errorf("err = %v, want a decode error", err)
+	}
+}
+
+func TestPlanWithTier(t *testing.T) {
+	for _, tc := range []struct{ plan, tier, want string }{
+		{"max", "default_claude_max_20x", "max 20x"},
+		{"max", "default_claude_max_5x", "max 5x"},
+		{"max", "", "max"},
+		{"pro", "default_claude_ai", "pro"},
+		{"", "default_claude_max_5x", ""},
+	} {
+		if got := PlanWithTier(tc.plan, tc.tier); got != tc.want {
+			t.Errorf("PlanWithTier(%q, %q) = %q, want %q", tc.plan, tc.tier, got, tc.want)
+		}
 	}
 }
 
@@ -66,7 +81,7 @@ func TestProbeSkipsExpiredCredential(t *testing.T) {
 	}
 	// An expired credential must not reach the endpoint: Claude Code's own
 	// supervisor renews it, and this probe only reads what is there.
-	got, err := Probe(context.Background(), time.Unix(2000, 0))
+	got, _, err := Probe(context.Background(), time.Unix(2000, 0))
 	if err != nil || len(got) != 0 {
 		t.Errorf("Probe = %v, %v; want nothing to read", got, err)
 	}
