@@ -92,6 +92,10 @@ Claude Code 與 Claude Desktop 可以透過閘道使用其他廠商的模型。�
 但不計入額度、估計用量或分配。透過 OpenCodex 或 Ollama（`ollama launch claude`）使用的模型會標上
 **OCX** 或 **Ollama**。
 
+從 Claude Code 或 Claude Desktop 經 OpenCodex 使用的 ChatGPT 模型會用到 ChatGPT 訂閱，因此計入這台電腦
+Codex 登入的帳號，以獨立的 OCX 列顯示。若 OpenCodex 自己的請求紀錄顯示是由池中另一個帳號處理，
+該請求仍列為第三方。
+
 ### 一條連結就能加入
 
 admin 在網頁管理介面產生一次性加入連結；已加入的成員也能替自己的其他電腦產生連結。成員把連結貼進 app，照常在 Claude Code 或 Codex

@@ -101,6 +101,10 @@ in a separate **Third-party models** list, with bars on the same scale as its ow
 never count toward the quota, the estimates or the allotments. Models used through OpenCodex or
 Ollama (`ollama launch claude`) are tagged **OCX** or **Ollama**.
 
+ChatGPT used from Claude Code or Claude Desktop through OpenCodex does draw on a ChatGPT subscription,
+so it counts on the Codex account the computer is signed into, as its own OCX row. When OpenCodex's
+own request log shows another account in its pool served a request, that request stays third-party.
+
 ### Joining takes one link
 
 An admin creates a single-use join link in the web console; a member who has joined can create
