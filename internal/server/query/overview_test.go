@@ -145,27 +145,32 @@ func TestGroupActiveUsers(t *testing.T) {
 	}
 }
 
-// Once a window ends and the provider has not started the next one, the
-// timeline covers the last window length and marks where the old one reset.
+// The timeline marks where earlier windows reset. A reading of a window that
+// has not started yet reports a reset a full window away, which moves with
+// every idle reading; those are not resets.
 func TestPastResetsMarksEarlierWindowsInsideTheTimeline(t *testing.T) {
 	now := time.Date(2026, 9, 30, 8, 25, 0, 0, time.UTC)
 	start := now.Add(-5 * time.Hour)
-	at := func(h, m, ms int) *time.Time {
-		v := time.Date(2026, 9, 30, h, m, 0, ms*int(time.Millisecond), time.UTC)
-		return &v
+	five := 300
+	at := func(h, m, ms int) time.Time {
+		return time.Date(2026, 9, 30, h, m, 0, ms*int(time.Millisecond), time.UTC)
 	}
-	snap := func(resets *time.Time, key quota.BucketKey) quota.Snapshot {
-		return quota.Snapshot{Buckets: []quota.Bucket{{Key: key, ResetsAt: resets}}}
+	snap := func(observed time.Time, resets *time.Time, key quota.BucketKey) quota.Snapshot {
+		return quota.Snapshot{ObservedAt: observed, Buckets: []quota.Bucket{{Key: key, ResetsAt: resets, WindowMinutes: &five}}}
 	}
+	ptr := func(t time.Time) *time.Time { return &t }
 	snaps := []quota.Snapshot{
-		snap(at(8, 20, 647), quota.BucketFiveHour),
-		snap(at(8, 20, 142), quota.BucketFiveHour), // the same window, read again
-		snap(nil, quota.BucketFiveHour),            // after the reset, before a new window
-		snap(at(3, 20, 0), quota.BucketFiveHour),   // before the timeline starts
-		snap(at(9, 0, 0), quota.BucketWeekly),      // another bucket
+		snap(at(8, 1, 0), ptr(at(8, 20, 647)), quota.BucketFiveHour),
+		snap(at(8, 16, 0), ptr(at(8, 20, 142)), quota.BucketFiveHour), // the same window, read again
+		snap(at(8, 21, 0), nil, quota.BucketFiveHour),                 // after the reset, before a new window
+		snap(at(1, 20, 0), ptr(at(3, 20, 0)), quota.BucketFiveHour),   // before the timeline starts
+		snap(at(8, 0, 0), ptr(at(9, 0, 0)), quota.BucketWeekly),       // another bucket
+		// Idle readings: each reports a window that would start then.
+		snap(at(0, 43, 0), ptr(at(5, 43, 0)), quota.BucketFiveHour),
+		snap(at(0, 46, 0), ptr(at(5, 46, 0)), quota.BucketFiveHour),
 	}
-	got := pastResets(snaps, quota.BucketFiveHour, start, now)
-	if want := []time.Time{*at(8, 20, 0)}; !slices.EqualFunc(got, want, time.Time.Equal) {
+	got := pastResets(snaps, quota.BucketFiveHour, start, now, 15*time.Minute)
+	if want := []time.Time{at(8, 20, 0)}; !slices.EqualFunc(got, want, time.Time.Equal) {
 		t.Errorf("pastResets = %v, want %v", got, want)
 	}
 }

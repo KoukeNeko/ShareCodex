@@ -126,22 +126,37 @@ func timelineBinMinutes(windowMinutes int) int {
 }
 
 // pastResets lists the reset times readings of one bucket reported within
-// (start, end], to the nearest minute: readings of one window differ in their
-// sub-second reset times, and a window starts about when the last one reset.
-func pastResets(snaps []quota.Snapshot, key quota.BucketKey, start, end time.Time) []time.Time {
-	out := []time.Time{}
+// (start, end]. A reading of a window that has not started (Codex reports
+// one a full window after every idle reading) is no reset, so a time counts
+// only once a reading shows its window running. Times closer than merge are
+// one reset, the later kept: readings of one window differ slightly in their
+// reset times, and a window starts about when the last one reset.
+func pastResets(snaps []quota.Snapshot, key quota.BucketKey, start, end time.Time, merge time.Duration) []time.Time {
+	const started = 2 * time.Minute
+	var times []time.Time
 	for _, s := range snaps {
 		for _, b := range s.Buckets {
-			if b.Key != key || b.ResetsAt == nil {
+			if b.Key != key || b.ResetsAt == nil || b.WindowMinutes == nil {
 				continue
 			}
-			at := b.ResetsAt.UTC().Round(time.Minute)
-			if at.After(start) && !at.After(end) && !slices.ContainsFunc(out, at.Equal) {
-				out = append(out, at)
+			window := time.Duration(*b.WindowMinutes) * time.Minute
+			if b.ResetsAt.Sub(s.ObservedAt) > window-started {
+				continue
+			}
+			if at := b.ResetsAt.UTC().Round(time.Minute); at.After(start) && !at.After(end) {
+				times = append(times, at)
 			}
 		}
 	}
-	slices.SortFunc(out, time.Time.Compare)
+	slices.SortFunc(times, time.Time.Compare)
+	out := []time.Time{}
+	for _, at := range times {
+		if n := len(out); n > 0 && at.Sub(out[n-1]) < merge {
+			out[n-1] = at
+			continue
+		}
+		out = append(out, at)
+	}
 	return out
 }
 
@@ -159,12 +174,14 @@ func timeline(ctx context.Context, st *storage.Store, accountID string, b quota.
 	if err != nil {
 		return nil, err
 	}
-	resets := pastResets(snaps, b.Key, start, now)
+	merge := time.Duration(bin) * time.Minute
+	resets := pastResets(snaps, b.Key, start, now, merge)
 	// The current window's start is a reset too, though only its end is
-	// ever reported.
+	// ever reported; it counts once the window has been running a while.
 	if b.ResetsAt != nil {
 		at := b.ResetsAt.Add(-time.Duration(window) * time.Minute).UTC().Round(time.Minute)
-		if at.After(start) && !at.After(now) && !slices.ContainsFunc(resets, at.Equal) {
+		if at.After(start) && now.Sub(at) >= 2*time.Minute &&
+			!slices.ContainsFunc(resets, func(r time.Time) bool { return r.Sub(at).Abs() < merge }) {
 			resets = append(resets, at)
 			slices.SortFunc(resets, time.Time.Compare)
 		}
