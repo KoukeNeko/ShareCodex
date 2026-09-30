@@ -55,26 +55,34 @@ func TestWindow(t *testing.T) {
 	}
 }
 
-// Within one window usage only rises, so a stale statusLine reading observed
-// later cannot pull the value back down; a later window replaces it.
-func TestLatestKeepsTheHighestReadingOfTheCurrentWindow(t *testing.T) {
+// A statusLine reading carries its session's last figure, so a later but
+// lower one of the same window is stale; the provider's own readings are
+// current, so the newest wins even when lower, as after a plan upgrade.
+func TestLatestTrustsCurrentReadingsOverStaleStatusLine(t *testing.T) {
 	t0 := time.Date(2026, 9, 30, 15, 0, 0, 0, time.UTC)
 	five := 300
 	resets := t0.Add(3 * time.Hour)
-	reading := func(at time.Time, used float64, resets time.Time) Snapshot {
-		return Snapshot{ObservedAt: at, Buckets: []Bucket{{Key: BucketFiveHour, UsedPercent: &used, ResetsAt: &resets, WindowMinutes: &five}}}
+	reading := func(source Source, at time.Time, used float64, resets time.Time) Snapshot {
+		return Snapshot{Source: source, ObservedAt: at, Buckets: []Bucket{{Key: BucketFiveHour, UsedPercent: &used, ResetsAt: &resets, WindowMinutes: &five}}}
 	}
-	fresh := reading(t0, 90, resets.Add(-400*time.Millisecond))
-	stale := reading(t0.Add(time.Second), 41, resets) // statusLine, from an idle session
-	if got := *Latest([]Snapshot{fresh, stale})[BucketFiveHour].UsedPercent; got != 90 {
-		t.Errorf("five_hour = %v, want 90: a stale lower reading of the same window must not win", got)
+	used := func(snaps ...Snapshot) float64 { return *Latest(snaps)[BucketFiveHour].UsedPercent }
+
+	fresh := reading(SourceClaudeOAuthUsage, t0, 90, resets.Add(-400*time.Millisecond))
+	if got := used(fresh, reading(SourceClaudeStatusLine, t0.Add(time.Second), 41, resets)); got != 90 {
+		t.Errorf("stale lower statusLine won: %v, want 90", got)
 	}
-	next := reading(t0.Add(4*time.Hour), 3, resets.Add(5*time.Hour))
-	if got := *Latest([]Snapshot{fresh, stale, next})[BucketFiveHour].UsedPercent; got != 3 {
-		t.Errorf("five_hour = %v, want 3 from the next window", got)
+	if got := used(fresh, reading(SourceClaudeStatusLine, t0.Add(time.Minute), 93, resets)); got != 93 {
+		t.Errorf("newer higher statusLine of the same window = %v, want 93", got)
 	}
-	old := reading(t0.Add(5*time.Hour), 99, resets) // a late reading of the ended window
-	if got := *Latest([]Snapshot{next, old})[BucketFiveHour].UsedPercent; got != 3 {
-		t.Errorf("five_hour = %v, want 3: a late reading of an earlier window must not win", got)
+	if got := used(fresh, reading(SourceClaudeStatusLine, t0.Add(time.Minute), 1, resets.Add(5*time.Hour))); got != 1 {
+		t.Errorf("statusLine of a later window = %v, want 1", got)
+	}
+	// An upgrade restarts the window two hours later, at 2%%.
+	upgraded := reading(SourceClaudeOAuthUsage, t0.Add(time.Hour), 2, resets.Add(2*time.Hour))
+	if got := used(fresh, upgraded); got != 2 {
+		t.Errorf("after an upgrade = %v, want 2 from the newest usage reading", got)
+	}
+	if got := used(fresh, upgraded, reading(SourceClaudeStatusLine, t0.Add(2*time.Hour), 100, resets)); got != 2 {
+		t.Errorf("a late statusLine reading of the old window = %v, want 2", got)
 	}
 }

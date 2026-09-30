@@ -4,6 +4,7 @@
 package quota
 
 import (
+	"sort"
 	"time"
 
 	"github.com/KoukeNeko/ShareCodex/internal/account"
@@ -68,46 +69,53 @@ type Observed struct {
 // Latest merges snapshots reported by any device for one account into each
 // bucket's current value.
 //
-// Readings of one window can disagree: a statusLine reading carries the
-// percentage of its session's last response, which can be long out of date,
-// while it is observed now. Usage within a window only rises, so among
-// readings of the current window the highest percentage is the most recent
-// truth. A reading of a later window replaces the earlier window's (a reset).
-// Readings belong to one window when their reset times are less than half a
-// window apart, which absorbs jitter in the reported reset time. A bucket
-// without a reset time or percentage falls back to the newest reading.
+// Most sources report the provider's figure as of the moment they read it,
+// so the newest reading is the truth, even when it is lower: a plan upgrade
+// can restart a window. A statusLine reading is different: it carries the
+// figure from its session's last response, which can be long out of date,
+// yet it is observed now. It only replaces the current value when it is
+// newer and either reports more usage of the same window or a later window.
 func Latest(snapshots []Snapshot) map[BucketKey]Observed {
 	latest := make(map[BucketKey]Observed)
+	var stale []Observed
 	for _, s := range snapshots {
 		for _, b := range s.Buckets {
-			next := Observed{Bucket: b, ObservedAt: s.ObservedAt}
-			cur, ok := latest[b.Key]
-			if !ok || replaces(next, cur) {
-				latest[b.Key] = next
+			o := Observed{Bucket: b, ObservedAt: s.ObservedAt}
+			if s.Source == SourceClaudeStatusLine {
+				stale = append(stale, o)
+				continue
 			}
+			if cur, ok := latest[b.Key]; !ok || o.ObservedAt.After(cur.ObservedAt) {
+				latest[b.Key] = o
+			}
+		}
+	}
+	sort.Slice(stale, func(i, j int) bool { return stale[i].ObservedAt.Before(stale[j].ObservedAt) })
+	for _, o := range stale {
+		if cur, ok := latest[o.Key]; !ok || statusLineReplaces(o, cur) {
+			latest[o.Key] = o
 		}
 	}
 	return latest
 }
 
-// replaces reports whether a reading should replace the current value.
-func replaces(next, cur Observed) bool {
-	comparable := next.ResetsAt != nil && cur.ResetsAt != nil && next.WindowMinutes != nil &&
-		next.UsedPercent != nil && cur.UsedPercent != nil
-	if !comparable {
-		return next.ObservedAt.After(cur.ObservedAt)
+// sameWindowSlack absorbs the jitter in a window's reported reset time.
+const sameWindowSlack = time.Minute
+
+func statusLineReplaces(next, cur Observed) bool {
+	if !next.ObservedAt.After(cur.ObservedAt) {
+		return false
 	}
-	half := time.Duration(*next.WindowMinutes) * time.Minute / 2
+	if next.ResetsAt == nil || cur.ResetsAt == nil || next.UsedPercent == nil || cur.UsedPercent == nil {
+		return true
+	}
 	switch d := next.ResetsAt.Sub(*cur.ResetsAt); {
-	case d > half:
+	case d > sameWindowSlack:
 		return true // a later window
-	case d < -half:
+	case d < -sameWindowSlack:
 		return false // an earlier window
 	}
-	if *next.UsedPercent != *cur.UsedPercent {
-		return *next.UsedPercent > *cur.UsedPercent
-	}
-	return next.ObservedAt.After(cur.ObservedAt)
+	return *next.UsedPercent > *cur.UsedPercent
 }
 
 // HasReset reports whether the window closed after the observation, in which
