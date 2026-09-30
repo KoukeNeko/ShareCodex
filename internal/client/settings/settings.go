@@ -27,6 +27,9 @@ type Settings struct {
 	PopupHeight int `json:"popup_height,omitempty"`
 	// Language is the UI language ("en" or "zh-TW"); empty means English.
 	Language string `json:"language,omitempty"`
+	// FineChart draws the usage chart at the server's full detail instead of
+	// grouping it into about 60 points.
+	FineChart bool `json:"fine_chart,omitempty"`
 }
 
 type SavedStatusLine struct {

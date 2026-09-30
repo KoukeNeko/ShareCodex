@@ -28,6 +28,7 @@ func (a *Agent) State(ctx context.Context) State {
 		Overview:      a.overview,
 		LaunchAtLogin: a.settings.LaunchAtLogin,
 		Language:      a.language(),
+		FineChart:     a.settings.FineChart,
 		Update:        a.update,
 	}
 	for _, p := range []account.Provider{account.ProviderAnthropic, account.ProviderOpenAI} {

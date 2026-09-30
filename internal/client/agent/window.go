@@ -29,6 +29,19 @@ func (a *Agent) SetPopupHeight(height int) {
 	}
 }
 
+// SetFineChart saves whether the usage chart shows its full detail.
+func (a *Agent) SetFineChart(enabled bool) error {
+	a.mu.Lock()
+	a.settings.FineChart = enabled
+	st := a.settings
+	a.mu.Unlock()
+	if err := settings.Save(st); err != nil {
+		return err
+	}
+	a.changed()
+	return nil
+}
+
 // Languages the UI is translated into; the first is the default.
 var languages = []string{"en", "zh-TW"}
 

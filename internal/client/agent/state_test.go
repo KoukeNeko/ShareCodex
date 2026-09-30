@@ -45,6 +45,16 @@ func TestStateCarriesLanguageAndUpdate(t *testing.T) {
 	if err := a.SetLanguage("fr"); err == nil {
 		t.Fatal("an unsupported language must be rejected")
 	}
+
+	if err := a.SetFineChart(true); err != nil {
+		t.Fatal(err)
+	}
+	if !a.State(ctx).FineChart {
+		t.Error("state does not show the full-detail chart after turning it on")
+	}
+	if saved, err := settings.Load(); err != nil || !saved.FineChart {
+		t.Fatalf("saved fine chart = %v, %v; want it persisted", saved.FineChart, err)
+	}
 }
 
 func TestLocalAccountExpiredReadingIsUnknown(t *testing.T) {

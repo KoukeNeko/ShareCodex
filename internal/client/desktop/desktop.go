@@ -276,6 +276,10 @@ func (s *Service) OpenReleasePage(ctx context.Context) error {
 	return s.app.Browser.OpenURL(rel.URL)
 }
 
+func (s *Service) SetFineChart(enabled bool) error {
+	return s.agent.SetFineChart(enabled)
+}
+
 // SetLanguage switches the UI language, including the tray menu.
 func (s *Service) SetLanguage(lang string) error {
 	if err := s.agent.SetLanguage(lang); err != nil {

@@ -77,6 +77,7 @@ type State struct {
 	ClaudeLogins  []ClaudeLogin   `json:"claude_logins"`
 	LaunchAtLogin bool            `json:"launch_at_login"`
 	Language      string          `json:"language"`
+	FineChart     bool            `json:"fine_chart"`
 	Update        *update.Release `json:"update,omitempty"`
 }
 

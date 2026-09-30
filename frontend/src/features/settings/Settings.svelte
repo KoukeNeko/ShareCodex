@@ -115,6 +115,11 @@
       <input type="checkbox" checked={app.launch_at_login} disabled={busy}
         onchange={(e) => run(() => Desktop.SetLaunchAtLogin(e.currentTarget.checked))} />
     </label>
+    <label class="row">
+      <span>{t('fineChart')}</span>
+      <input type="checkbox" checked={app.fine_chart} disabled={busy}
+        onchange={(e) => run(() => Desktop.SetFineChart(e.currentTarget.checked))} />
+    </label>
     <div class="row">
       <span class="muted">{t('version', { version: app.version })}</span>
       <button onclick={() => Desktop.Quit()}>{t('quit')}</button>

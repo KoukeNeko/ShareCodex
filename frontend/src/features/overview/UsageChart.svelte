@@ -10,14 +10,17 @@
 
   // Tokens over about the last window length, a line per model, for
   // everyone or one member: running totals, which start again from zero
-  // where a window reset, or the amount in each bin. Models keep the colors
-  // and order of the card's Models list, its legend.
-  let { timeline, models, color, members, now }: {
+  // where a window reset, or the amount in each point's span. Points group
+  // the server's bins into about 60 (5 minutes on a 5-hour chart) unless
+  // fine asks for every bin. Models keep the colors and order of the card's
+  // Models list, its legend.
+  let { timeline, models, color, members, now, fine = false }: {
     timeline: Timeline
     models: string[]
     color: (model: string) => string
     members: MemberShare[]
     now: Date
+    fine?: boolean
   } = $props()
 
   let person = $state('')
@@ -29,6 +32,11 @@
   const binMs = $derived(timeline.bin_minutes * 60_000)
   // Bins after now have not happened yet, so their lines stop at now.
   const lastBin = $derived(Math.min(timeline.bins - 1, Math.max(0, Math.floor((now.getTime() - start) / binMs))))
+
+  // Bins per point, and each point's bins [from, to).
+  const group = $derived(fine ? 1 : Math.max(1, Math.ceil(timeline.bins / 60)))
+  const lastPoint = $derived(Math.floor(lastBin / group))
+  const binsOf = (point: number) => [point * group, Math.min((point + 1) * group, lastBin + 1)]
 
   // The bins in which a window starts again.
   const resetBins = $derived(new Set((timeline.resets ?? []).map((r) => Math.floor((new Date(r).getTime() - start) / binMs))))
@@ -46,13 +54,18 @@
       .filter((m) => byModel.has(m))
       .map((m) => {
         const perBin = byModel.get(m)!
-        if (!cumulative) return { model: m, values: perBin }
+        const points = Array.from({ length: lastPoint + 1 }, (_, i) => binsOf(i))
+        if (!cumulative) {
+          // The tokens used within each point's span.
+          return { model: m, values: points.map(([from, to]) => perBin.slice(from, to).reduce((a, v) => a + v, 0)) }
+        }
+        // The running total at the end of each point's span.
         let total = 0
-        const values = perBin.map((v, bin) => {
+        const totals = perBin.map((v, bin) => {
           if (resetBins.has(bin)) total = 0
           return (total += v)
         })
-        return { model: m, values }
+        return { model: m, values: points.map(([, to]) => totals[to - 1]) }
       })
   })
 
@@ -64,7 +77,11 @@
     return [1, 2, 5, 10].map((k) => k * step).find((v) => v >= max)!
   })
 
-  const x = (bin: number) => ((bin + 0.5) / timeline.bins) * width
+  // A span's amount sits in its middle; a running total at its end.
+  const x = (point: number) => {
+    const [from, to] = binsOf(point)
+    return ((cumulative ? to : (from + to) / 2) / timeline.bins) * width
+  }
   // Where an earlier window reset, on the same time axis as the bins.
   const resets = $derived(
     (timeline.resets ?? []).map((r) => {
@@ -85,12 +102,15 @@
       : d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', hour12: false })
   }
 
-  // A bin longer than a minute covers a span, so its tooltip names both ends.
-  function slot(bin: number): string {
-    const from = start + bin * binMs
+  // A running total is as of its span's end; an amount names its span's
+  // ends when it covers more than a minute.
+  function slot(point: number): string {
+    const [fromBin, toBin] = binsOf(point)
+    const from = start + fromBin * binMs
+    const to = Math.min(start + toBin * binMs, now.getTime())
     const clock = (ms: number) => new Date(ms).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', hour12: false })
-    const span = timeline.bin_minutes > 1 ? `${clock(from)}–${clock(from + binMs)}` : clock(from)
-    return timeline.bins * timeline.bin_minutes > 1440 ? `${label(from)} ${span}` : span
+    const text = cumulative ? clock(to) : to - from > 60_000 ? `${clock(from)}–${clock(to)}` : clock(from)
+    return timeline.bins * timeline.bin_minutes > 1440 ? `${label(cumulative ? to : from)} ${text}` : text
   }
 
   // A reset is a moment, so it keeps its time even on a chart of days.
@@ -104,7 +124,7 @@
   function onMove(e: PointerEvent) {
     const rect = (e.currentTarget as SVGElement).getBoundingClientRect()
     const bin = Math.floor(((e.clientX - rect.left) / rect.width) * timeline.bins)
-    hover = Math.max(0, Math.min(lastBin, bin))
+    hover = Math.max(0, Math.min(lastPoint, Math.floor(bin / group)))
   }
 
   const people = $derived(members.filter((m) => (timeline.points ?? []).some((p) => p.person_id === m.person_id)))

@@ -5,7 +5,7 @@
   import { bucketName, percent, providerName, resetsIn, tokens } from '../../lib/format'
   import { t } from '../../lib/i18n.svelte'
 
-  let { id = '', provider, label, planType, buckets, activeUsers, now, local = false }: {
+  let { id = '', provider, label, planType, buckets, activeUsers, now, local = false, fineChart = false }: {
     id?: string
     provider: string
     label: string
@@ -14,6 +14,7 @@
     activeUsers: ActiveUser[]
     now: Date
     local?: boolean
+    fineChart?: boolean
   } = $props()
 
   // The viewer's own computer is signed into this account.
@@ -118,6 +119,7 @@
         color={(model) => modelColor.get(model) ?? 'var(--model-other)'}
         members={bucket.members ?? []}
         {now}
+        fine={fineChart}
       />
     {/if}
 

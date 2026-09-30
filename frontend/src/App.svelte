@@ -91,7 +91,7 @@
 
       {#if app.paired && accounts.length > 0}
         {#each accounts as a (a.id)}
-          <AccountCard id={a.id} provider={a.provider} label={a.label} planType={a.plan_type} buckets={a.buckets ?? []} activeUsers={a.active_users ?? []} {now} />
+          <AccountCard id={a.id} provider={a.provider} label={a.label} planType={a.plan_type} buckets={a.buckets ?? []} activeUsers={a.active_users ?? []} {now} fineChart={app.fine_chart} />
         {/each}
       {:else}
         {#each app.local ?? [] as a (a.provider + a.hint)}
