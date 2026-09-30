@@ -2,6 +2,7 @@ package oauthusage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -163,5 +164,31 @@ func TestGetUsageReportsHowLongToWait(t *testing.T) {
 		if !errors.As(err, &throttled) || throttled.RetryAfter != tc.want {
 			t.Errorf("%d with Retry-After %q: err = %v, want a wait of %s", tc.status, tc.retryAfter, err, tc.want)
 		}
+	}
+}
+
+// A weekly limit on one model family arrives in "limits" and becomes its
+// own bucket, keyed by the family.
+func TestBucketsIncludeWeeklyModelLimits(t *testing.T) {
+	var u usage
+	raw := `{"five_hour":{"utilization":2,"resets_at":"2026-09-30T20:30:00+00:00"},
+	 "seven_day":{"utilization":58,"resets_at":"2026-10-04T09:00:00+00:00"},
+	 "limits":[{"kind":"session","percent":2,"resets_at":"2026-09-30T20:30:00+00:00","scope":null},
+	  {"kind":"weekly_scoped","percent":19,"resets_at":"2026-10-04T09:00:00.1+00:00","scope":{"model":{"id":null,"display_name":"Fable"},"surface":null}}]}`
+	if err := json.Unmarshal([]byte(raw), &u); err != nil {
+		t.Fatal(err)
+	}
+	got := map[quota.BucketKey]float64{}
+	for _, b := range buckets(u) {
+		got[b.Key] = *b.UsedPercent
+		if b.Key == "weekly_fable" && (b.WindowMinutes == nil || *b.WindowMinutes != quota.WeeklyMinutes || b.ResetsAt == nil) {
+			t.Errorf("weekly_fable = %+v, want a weekly window with its reset time", b)
+		}
+	}
+	if len(got) != 3 || got["weekly_fable"] != 19 || got[quota.BucketWeekly] != 58 {
+		t.Errorf("buckets = %v, want five_hour, weekly and weekly_fable at 19", got)
+	}
+	if quota.BucketKey("weekly_fable").ModelFamily() != "fable" || quota.BucketWeekly.ModelFamily() != "" {
+		t.Error("only weekly_fable limits a model family")
 	}
 }

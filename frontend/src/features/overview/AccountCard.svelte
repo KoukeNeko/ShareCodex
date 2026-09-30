@@ -2,7 +2,7 @@
   import QuotaBar, { type Segment } from '../../components/QuotaBar.svelte'
   import UsageChart from './UsageChart.svelte'
   import { Desktop, errorMessage, type ActiveUser, type BucketOverview } from '../../lib/api'
-  import { bucketName, modelName, percent, providerName, resetsIn, tokens } from '../../lib/format'
+  import { bucketName, bucketTab, modelName, percent, providerName, resetsIn, tokens } from '../../lib/format'
   import { t } from '../../lib/i18n.svelte'
 
   let { id = '', provider, label, planType, buckets, activeUsers, now, local = false, fineChart = false }: {
@@ -134,7 +134,7 @@
       <div class="tabs" role="tablist">
         {#each buckets as b, i (b.key)}
           <button role="tab" aria-selected={i === selected} class:active={i === selected} onclick={() => (selected = i)}>
-            {bucketName(b.key, b.window_minutes)}
+            {bucketTab(b.key, b.window_minutes)}
             <span class="num">{b.reset || (b.resets_at && new Date(b.resets_at) <= now) ? '—' : percent(b.used_percent)}</span>
           </button>
         {/each}
@@ -284,6 +284,7 @@
     display: flex;
     justify-content: center;
     gap: 6px;
+    white-space: nowrap;
   }
   .tabs button.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
   .total { display: grid; gap: 5px; }

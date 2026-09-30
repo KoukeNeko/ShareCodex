@@ -200,3 +200,14 @@ func TestPastResetsIgnoresOutvotedReadings(t *testing.T) {
 		t.Errorf("pastResets = %v, want only the real reset %v", got, want)
 	}
 }
+
+func TestInFamily(t *testing.T) {
+	for model, want := range map[string]bool{
+		"claude-fable-5-1": true, "claude-fable-5": true,
+		"claude-opus-5-5": false, "ocx-claude-fable-x": false,
+	} {
+		if got := inFamily(model, "fable"); got != want {
+			t.Errorf("inFamily(%q, fable) = %v, want %v", model, got, want)
+		}
+	}
+}

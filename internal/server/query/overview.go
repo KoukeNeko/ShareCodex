@@ -5,6 +5,7 @@ import (
 	"context"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/KoukeNeko/ShareCodex/internal/attribution"
@@ -68,9 +69,19 @@ func Overview(ctx context.Context, st *storage.Store, viewerPersonID string, now
 			if err != nil {
 				return syncapi.Overview{}, err
 			}
+			// A limit on one model family (Claude's weekly Fable limit) is
+			// used only by that family's requests.
+			family := b.Key.ModelFamily()
+			if family != "" {
+				rows = slices.DeleteFunc(rows, func(r storage.UsageRow) bool { return !inFamily(r.Model, family) })
+			}
 			bo := bucketOverview(b, now, members, rows, viewerPersonID)
-			if bo.ThirdPartyModels, err = thirdPartyModels(ctx, st, a.ID, bo, start, end); err != nil {
-				return syncapi.Overview{}, err
+			if family == "" {
+				if bo.ThirdPartyModels, err = thirdPartyModels(ctx, st, a.ID, bo, start, end); err != nil {
+					return syncapi.Overview{}, err
+				}
+			} else {
+				bo.ThirdPartyModels = []syncapi.ModelUsage{}
 			}
 			if bo.Timeline, err = timeline(ctx, st, a.ID, b, snaps, now); err != nil {
 				return syncapi.Overview{}, err
@@ -233,11 +244,21 @@ func timeline(ctx context.Context, st *storage.Store, accountID string, b quota.
 		}
 	}
 	tl := &syncapi.Timeline{Start: start.UTC(), BinMinutes: bin, Bins: bins, Points: []syncapi.TimelinePoint{}, Resets: resets}
+	family := b.Key.ModelFamily()
 	for _, r := range rows {
+		if family != "" && (r.ThirdParty || !inFamily(r.Model, family)) {
+			continue
+		}
 		tl.Points = append(tl.Points, syncapi.TimelinePoint{Bin: r.Bin, PersonID: r.PersonID, Model: r.Model, ThirdParty: r.ThirdParty,
 			Gateway: r.Gateway, Tokens: r.Tokens})
 	}
 	return tl, nil
+}
+
+// inFamily reports whether a model belongs to a family, such as
+// claude-fable-5-1 to "fable".
+func inFamily(model, family string) bool {
+	return strings.HasPrefix(model, "claude-"+family+"-")
 }
 
 // thirdPartyModels lists the window's third-party models, most tokens first;

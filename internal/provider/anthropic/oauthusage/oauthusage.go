@@ -183,6 +183,20 @@ type window struct {
 type usage struct {
 	FiveHour *window `json:"five_hour"`
 	SevenDay *window `json:"seven_day"`
+	// Limits lists every limit the plan has, including weekly limits on
+	// one model family (kind "weekly_scoped"), such as Fable's.
+	Limits []limit `json:"limits"`
+}
+
+type limit struct {
+	Kind     string   `json:"kind"`
+	Percent  *float64 `json:"percent"`
+	ResetsAt string   `json:"resets_at"`
+	Scope    *struct {
+		Model *struct {
+			DisplayName string `json:"display_name"`
+		} `json:"model"`
+	} `json:"scope"`
 }
 
 // fetchUsage asks Anthropic for the account's rate limits with the given
@@ -242,5 +256,11 @@ func buckets(u usage) []quota.Bucket {
 	}
 	add(quota.BucketFiveHour, quota.FiveHourMinutes, u.FiveHour)
 	add(quota.BucketWeekly, quota.WeeklyMinutes, u.SevenDay)
+	for _, l := range u.Limits {
+		if l.Kind != "weekly_scoped" || l.Scope == nil || l.Scope.Model == nil || l.Scope.Model.DisplayName == "" {
+			continue
+		}
+		add(quota.WeeklyModelBucket(l.Scope.Model.DisplayName), quota.WeeklyMinutes, &window{Utilization: l.Percent, ResetsAt: l.ResetsAt})
+	}
 	return out
 }

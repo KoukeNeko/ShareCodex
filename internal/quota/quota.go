@@ -5,6 +5,7 @@ package quota
 
 import (
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/KoukeNeko/ShareCodex/internal/account"
@@ -16,6 +17,25 @@ const (
 	BucketFiveHour BucketKey = "five_hour"
 	BucketWeekly   BucketKey = "weekly"
 )
+
+// weeklyModelPrefix starts the key of a weekly limit on one model family,
+// such as Claude's "weekly_fable" beside the all-models "weekly".
+const weeklyModelPrefix = "weekly_"
+
+// WeeklyModelBucket is the key of the weekly limit on one model family.
+func WeeklyModelBucket(family string) BucketKey {
+	return BucketKey(weeklyModelPrefix + strings.ToLower(family))
+}
+
+// ModelFamily is the model family a bucket limits, such as "fable", or ""
+// for a limit on all models.
+func (k BucketKey) ModelFamily() string {
+	family, ok := strings.CutPrefix(string(k), weeklyModelPrefix)
+	if !ok {
+		return ""
+	}
+	return family
+}
 
 type Source string
 

@@ -1,8 +1,22 @@
 import { locale, t } from './i18n.svelte'
 
+/** A bucket's tab label: a model family's weekly limit is just the family. */
+export function bucketTab(key: string, windowMinutes: number): string {
+  if (key.startsWith('weekly_')) {
+    const family = key.slice('weekly_'.length)
+    return family.charAt(0).toUpperCase() + family.slice(1)
+  }
+  return bucketName(key, windowMinutes)
+}
+
 export function bucketName(key: string, windowMinutes: number): string {
   if (key === 'five_hour') return t('fiveHour')
   if (key === 'weekly') return t('weekly')
+  // A weekly limit on one model family, such as weekly_fable.
+  if (key.startsWith('weekly_')) {
+    const family = key.slice('weekly_'.length)
+    return `${t('weekly')} · ${family.charAt(0).toUpperCase()}${family.slice(1)}`
+  }
   if (windowMinutes >= 1440 && windowMinutes % 1440 === 0) return t('days', { count: windowMinutes / 1440 })
   if (windowMinutes >= 60 && windowMinutes % 60 === 0) return t('hours', { count: windowMinutes / 60 })
   return t('minutes', { count: windowMinutes })
