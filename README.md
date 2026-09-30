@@ -86,10 +86,12 @@ tell whether the week went to Opus or to a long run of Sonnet.
 
 ### Usage over time
 
-A chart under the window switch shows each model's running total of tokens over the last 5 hours or
-7 days, to the minute on the 5-hour chart. A dashed line marks each reset, labelled with its time, and
-the totals start again from zero there, so after a reset the previous window stays in view. Switch it
-between everyone and a single member; hover to read each model's total at that moment.
+A chart under the window switch shows each model's tokens over the last 5 hours or 7 days, a point
+every 5 minutes (every 3 hours on the weekly chart). With **Cumulative** on, it draws running totals
+that start again from zero at each reset, marked by a dashed line with its time, so the previous window
+stays in view after a reset; with it off, the tokens used in each span. Switch it between everyone and
+a single member, and hover to read the values. **Full chart detail** in Settings draws every minute
+(every half hour on the weekly chart) instead.
 
 ### Joining takes one link
 
