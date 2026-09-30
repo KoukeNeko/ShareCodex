@@ -112,6 +112,11 @@ more for their other computers. The member pastes it into the app, signs
 in to the shared account in Claude Code or Codex as usual, and is added to that account
 automatically.
 
+### Share it as an image
+
+The button to the left of Refresh copies the whole popup, full length, as an image ready to paste.
+Email addresses in it are replaced with Account 1, Account 2 and so on.
+
 ### Runs quietly in the background
 
 The app keeps working when the server is unreachable and uploads when it's back. It can start at
