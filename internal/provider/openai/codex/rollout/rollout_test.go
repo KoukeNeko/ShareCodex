@@ -123,3 +123,20 @@ func TestParseIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// OpenCodex lists the models it routes elsewhere as <service>/<model> under
+// Codex's own "openai" provider; they are third-party, not ChatGPT usage.
+func TestRoutedModel(t *testing.T) {
+	for model, want := range map[string]bool{
+		"gpt-6-sol":                 false,
+		"gpt-5.3-codex":             false,
+		"codex-auto-review":         false,
+		"ollama-cloud/gemma4:31b":   true,
+		"anthropic/claude-opus-5-5": true,
+		"opencode-free/big-pickle":  true,
+	} {
+		if got := routedModel(model); got != want {
+			t.Errorf("routedModel(%q) = %v, want %v", model, got, want)
+		}
+	}
+}

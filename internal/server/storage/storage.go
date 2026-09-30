@@ -307,12 +307,17 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 				return fmt.Errorf("save event %s: %w", e.DedupeKey, err)
 			}
 			accepted += rowsAffected(res)
-			// A resync names the gateway of requests uploaded before
-			// clients could tell; nothing else about them changes.
-			if e.Gateway != "" {
-				if _, err := tx.ExecContext(ctx, `UPDATE usage_events SET gateway = $2 WHERE dedupe_key = $1 AND gateway = ''`,
-					e.DedupeKey, e.Gateway); err != nil {
-					return fmt.Errorf("name gateway of %s: %w", e.DedupeKey, err)
+			// A resync marks requests uploaded before clients could tell
+			// they were third-party, and names their gateway; a request never
+			// goes back to counting against the quota, and a named gateway
+			// stays.
+			if e.ThirdParty || e.Gateway != "" {
+				if _, err := tx.ExecContext(ctx, `
+					UPDATE usage_events SET third_party = third_party OR $2,
+						gateway = CASE WHEN gateway = '' THEN $3 ELSE gateway END
+					WHERE dedupe_key = $1 AND (third_party != (third_party OR $2) OR (gateway = '' AND $3 != ''))`,
+					e.DedupeKey, e.ThirdParty, e.Gateway); err != nil {
+					return fmt.Errorf("reclassify %s: %w", e.DedupeKey, err)
 				}
 			}
 		}

@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/KoukeNeko/ShareCodex/internal/account"
@@ -228,8 +229,21 @@ func Parse(r io.Reader) (Result, error) {
 		res.Events[i].Provider = account.ProviderOpenAI
 		res.Events[i].Product = usage.ProductCodex
 		res.Events[i].Originator = originator
+		if routedModel(res.Events[i].Model) {
+			res.Events[i].ThirdParty = true
+			res.Events[i].Gateway = usage.GatewayOpenCodex
+		}
 	}
 	return res, nil
+}
+
+// routedModel reports whether Codex reached a model through OpenCodex, which
+// points Codex's "openai" provider at itself and lists the models it routes
+// elsewhere as <service>/<model> (ollama-cloud/gemma4:31b,
+// anthropic/claude-opus-5-5); OpenAI's own models carry no service. Such
+// requests never draw on the ChatGPT subscription.
+func routedModel(model string) bool {
+	return strings.Contains(model, "/")
 }
 
 func snapshotFrom(rl *rateLimits, at time.Time) (quota.Snapshot, bool) {

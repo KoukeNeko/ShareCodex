@@ -829,4 +829,19 @@ func TestThirdPartyUsageStaysOutOfTheQuota(t *testing.T) {
 	if gateways["deepseek-v4-pro"] != "ollama" || gateways["gpt-6-sol"] != "" {
 		t.Errorf("gateways = %v, want deepseek-v4-pro through ollama and gpt-6-sol unnamed", gateways)
 	}
+
+	// A request first uploaded as counting against the quota is marked
+	// third-party by a later resync, and leaves the quota's models.
+	misread := event("claude:a1", "claude-opus-5-5", false)
+	misread.ThirdParty, misread.Gateway = true, "opencodex"
+	if st := alice.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{misread}}, nil); st != http.StatusOK {
+		t.Fatalf("resync = %d", st)
+	}
+	ov = syncapi.Overview{}
+	if st := alice.do("GET", path, nil, &ov); st != http.StatusOK {
+		t.Fatalf("overview = %d", st)
+	}
+	if b := ov.Accounts[0].Buckets[0]; len(b.Models) != 0 || len(b.ThirdPartyModels) != 3 {
+		t.Errorf("after reclassifying: models %+v, third-party %+v", b.Models, b.ThirdPartyModels)
+	}
 }

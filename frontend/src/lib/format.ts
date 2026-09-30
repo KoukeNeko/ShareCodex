@@ -53,7 +53,9 @@ const gatewayTags: Record<string, { tag: string; name: string }> = {
  * the full ID stays in the title.
  */
 export function modelName(id: string, gateway = ''): { name: string; via?: string; title: string } {
-  const ocx = /^(?:ocx-claude|claude-ocx)-(.+?)--(.+)$/.exec(id)
+  // In Codex, OpenCodex lists the models it routes as <service>/<model>.
+  const ocx =
+    /^(?:ocx-claude|claude-ocx)-(.+?)--(.+)$/.exec(id) ?? (gateway === 'opencodex' ? /^([^/]+)\/(.+)$/.exec(id) : null)
   const g = gatewayTags[ocx ? 'opencodex' : gateway]
   if (!g) return { name: id, title: id }
   return { name: ocx ? ocx[2] : id, via: g.tag, title: [g.name, ocx?.[1], id].filter(Boolean).join(' · ') }
