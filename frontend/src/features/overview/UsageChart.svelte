@@ -65,6 +65,13 @@
       : d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', hour12: false })
   }
 
+  // A bin covers a span, so its tooltip names both ends.
+  function slot(bin: number): string {
+    const from = start + bin * binMs
+    const clock = (ms: number) => new Date(ms).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', hour12: false })
+    return timeline.bins * timeline.bin_minutes > 1440 ? `${label(from)} ${clock(from)}–${clock(from + binMs)}` : `${clock(from)}–${clock(from + binMs)}`
+  }
+
   // A reset is a moment, so it keeps its time even on a chart of days.
   function resetLabel(ms: number): string {
     const time = new Date(ms).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', hour12: false })
@@ -115,7 +122,7 @@
     {/each}
     {#if hover !== null}
       <div class="tip" class:flip={x(hover) > width / 2} style:left="{x(hover)}px">
-        <div class="muted">{label(start + hover * binMs)}</div>
+        <div class="muted">{slot(hover)}</div>
         {#each series as s (s.model)}
           <div class="tip-row">
             <i style:background={color(s.model)}></i>

@@ -182,7 +182,8 @@ type BucketOverview struct {
 	Timeline *Timeline `json:"timeline,omitempty"`
 }
 
-// Timeline splits the last window length before now into equal bins. It
+// Timeline splits about the last window length before now into equal bins
+// that start on round times, the last one holding now. It
 // is not the quota window itself, so a reset does not empty the chart: the
 // previous window's usage stays in view, marked off by Resets.
 type Timeline struct {

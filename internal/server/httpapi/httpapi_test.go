@@ -698,11 +698,14 @@ func TestPersonalUsageAndTimeline(t *testing.T) {
 		t.Fatalf("plus account = %+v", plus)
 	}
 	tl := plus.Buckets[0].Timeline
-	// The timeline is the last 5 hours up to now, so it reaches back past
-	// the window's start, which it marks as a reset.
-	if d := tl.Start.Sub(now.Add(-5 * time.Hour)); d < 0 || d > time.Minute || tl.BinMinutes != 15 || tl.Bins != 20 {
-		t.Errorf("timeline = start %v, %d min × %d; want about %v, 15 min × 20", tl.Start, tl.BinMinutes, tl.Bins, now.Add(-5*time.Hour))
+	// The timeline is about the last 5 hours up to now, in bins on round
+	// quarter hours, so it reaches back past the window's start, which it
+	// marks as a reset.
+	if d := tl.Start.Sub(now.Add(-5 * time.Hour)); tl.Start.Minute()%15 != 0 || tl.Start.Second() != 0 || d < 0 || d > 16*time.Minute ||
+		tl.BinMinutes != 15 || tl.Bins != 20 {
+		t.Errorf("timeline = start %v, %d min × %d; want a quarter hour within 15 min after %v, 15 min × 20", tl.Start, tl.BinMinutes, tl.Bins, now.Add(-5*time.Hour))
 	}
+	bin := func(at time.Time) string { return fmt.Sprint(int(at.Sub(tl.Start) / (15 * time.Minute))) }
 	if len(tl.Resets) != 1 || !tl.Resets[0].Equal(start.Round(time.Minute)) {
 		t.Errorf("timeline resets = %v, want the window's start %v", tl.Resets, start.Round(time.Minute))
 	}
@@ -714,8 +717,11 @@ func TestPersonalUsageAndTimeline(t *testing.T) {
 	for _, p := range tl.Points {
 		got[[2]string{names[p.PersonID], fmt.Sprint(p.Bin)}] += p.Tokens
 	}
-	// 65 and 100 minutes into the 15-minute bins.
-	want := map[[2]string]int64{{"alice", "4"}: 410, {"alice", "6"}: 410, {"bob", "6"}: 410}
+	want := map[[2]string]int64{
+		{"alice", bin(start.Add(5 * time.Minute))}:  410,
+		{"alice", bin(start.Add(40 * time.Minute))}: 410,
+		{"bob", bin(start.Add(40 * time.Minute))}:   410,
+	}
 	if len(got) != len(want) {
 		t.Errorf("timeline points = %v, want %v", got, want)
 	}

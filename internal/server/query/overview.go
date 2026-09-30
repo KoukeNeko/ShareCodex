@@ -173,7 +173,10 @@ func timeline(ctx context.Context, st *storage.Store, accountID string, b quota.
 	window := *b.WindowMinutes
 	bin := timelineBinMinutes(window)
 	bins := (window + bin - 1) / bin
-	start := now.Add(-time.Duration(bins*bin) * time.Minute)
+	// Bins start on round times (:00, :15, …), the last one holding now,
+	// so the chart's times read as clock times.
+	binDur := time.Duration(bin) * time.Minute
+	start := now.Truncate(binDur).Add(-time.Duration(bins-1) * binDur)
 	rows, err := st.UsageTimeline(ctx, accountID, start, now, bin)
 	if err != nil {
 		return nil, err
