@@ -86,8 +86,10 @@ tell whether the week went to Opus or to a long run of Sonnet.
 
 ### Usage over time
 
-A chart under the window switch shows tokens over the current 5-hour or weekly window, a line per
-model. Switch it between everyone and a single member; hover to read each model's tokens at a time.
+A chart under the window switch shows each model's running total of tokens over the last 5 hours or
+7 days, to the minute on the 5-hour chart. A dashed line marks each reset, labelled with its time, and
+the totals start again from zero there, so after a reset the previous window stays in view. Switch it
+between everyone and a single member; hover to read each model's total at that moment.
 
 ### Joining takes one link
 
