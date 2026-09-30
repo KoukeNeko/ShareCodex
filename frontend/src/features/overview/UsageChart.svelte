@@ -1,12 +1,17 @@
+<script lang="ts" module>
+  // One choice for every card's chart.
+  let cumulative = $state(true)
+</script>
+
 <script lang="ts">
   import type { MemberShare, Timeline } from '../../lib/api'
   import { tokens } from '../../lib/format'
   import { locale, t } from '../../lib/i18n.svelte'
 
-  // Cumulative tokens over about the last window length, a line per model,
-  // for everyone or one member. Each line starts again from zero where a
-  // window reset, so it reads as the usage of that window so far. Models
-  // keep the colors and order of the card's Models list, its legend.
+  // Tokens over about the last window length, a line per model, for
+  // everyone or one member: running totals, which start again from zero
+  // where a window reset, or the amount in each bin. Models keep the colors
+  // and order of the card's Models list, its legend.
   let { timeline, models, color, members, now }: {
     timeline: Timeline
     models: string[]
@@ -40,8 +45,10 @@
     return models
       .filter((m) => byModel.has(m))
       .map((m) => {
+        const perBin = byModel.get(m)!
+        if (!cumulative) return { model: m, values: perBin }
         let total = 0
-        const values = byModel.get(m)!.map((v, bin) => {
+        const values = perBin.map((v, bin) => {
           if (resetBins.has(bin)) total = 0
           return (total += v)
         })
@@ -104,14 +111,19 @@
 </script>
 
 <div class="chart">
-  {#if people.length > 1}
-    <div class="people" role="radiogroup" aria-label={t('usageOverTime')}>
-      <button role="radio" aria-checked={person === ''} class:active={person === ''} onclick={() => (person = '')}>{t('everyone')}</button>
-      {#each people as m (m.person_id)}
-        <button role="radio" aria-checked={person === m.person_id} class:active={person === m.person_id} onclick={() => (person = m.person_id)}>{m.name}</button>
-      {/each}
+  <div class="controls">
+    {#if people.length > 1}
+      <div class="chips" role="radiogroup" aria-label={t('usageOverTime')}>
+        <button role="radio" aria-checked={person === ''} class:active={person === ''} onclick={() => (person = '')}>{t('everyone')}</button>
+        {#each people as m (m.person_id)}
+          <button role="radio" aria-checked={person === m.person_id} class:active={person === m.person_id} onclick={() => (person = m.person_id)}>{m.name}</button>
+        {/each}
+      </div>
+    {/if}
+    <div class="chips toggle">
+      <button aria-pressed={cumulative} class:active={cumulative} onclick={() => (cumulative = !cumulative)}>{t('cumulative')}</button>
     </div>
-  {/if}
+  </div>
 
   <span class="axis num">{tokens(top)}</span>
   <div class="plot" bind:clientWidth={width}>
@@ -154,14 +166,16 @@
 
 <style>
   .chart { display: grid; gap: 6px; }
-  .people { display: flex; flex-wrap: wrap; gap: 4px; }
-  .people button {
+  .controls { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .toggle { margin-left: auto; }
+  .chips button {
     font-size: 11.5px;
     padding: 1px 8px;
     border-radius: 999px;
     color: var(--muted);
   }
-  .people button.active { color: var(--text); border-color: var(--accent); }
+  .chips button.active { color: var(--text); border-color: var(--accent); }
   .plot { position: relative; height: 96px; min-width: 0; }
   /* Positioned so the drawn width never holds the card open when the
      popup narrows; the width comes from the plot, not the other way. */
