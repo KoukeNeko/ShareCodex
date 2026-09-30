@@ -112,16 +112,16 @@ func usageTotals(rows []storage.PersonUsage) syncapi.UsageTotals {
 	return u
 }
 
-// timelineBinMinutes keeps a chart near 20–30 points: 15 minutes for a
-// 5-hour window, 6 hours for a week.
+// timelineBinMinutes keeps a chart near 300 points: a minute for a 5-hour
+// window, half an hour for a week.
 func timelineBinMinutes(windowMinutes int) int {
 	switch {
 	case windowMinutes <= 6*60:
-		return 15
+		return 1
 	case windowMinutes <= 24*60:
-		return 60
+		return 5
 	default:
-		return 6 * 60
+		return 30
 	}
 }
 
@@ -173,7 +173,7 @@ func timeline(ctx context.Context, st *storage.Store, accountID string, b quota.
 	window := *b.WindowMinutes
 	bin := timelineBinMinutes(window)
 	bins := (window + bin - 1) / bin
-	// Bins start on round times (:00, :15, …), the last one holding now,
+	// Bins start on round times (whole minutes, :00 and :30), the last one holding now,
 	// so the chart's times read as clock times.
 	binDur := time.Duration(bin) * time.Minute
 	start := now.Truncate(binDur).Add(-time.Duration(bins-1) * binDur)
@@ -181,7 +181,9 @@ func timeline(ctx context.Context, st *storage.Store, accountID string, b quota.
 	if err != nil {
 		return nil, err
 	}
-	merge := time.Duration(bin) * time.Minute
+	// Windows cannot overlap, so resets closer than half a window are one
+	// reset whose reported time moved.
+	merge := time.Duration(window) * time.Minute / 2
 	resets := pastResets(snaps, b.Key, start, now, merge)
 	// The current window's start is a reset too, though only its end is
 	// ever reported; like an earlier one, it counts once a reading shows the

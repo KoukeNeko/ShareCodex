@@ -3,9 +3,10 @@
   import { tokens } from '../../lib/format'
   import { locale, t } from '../../lib/i18n.svelte'
 
-  // Tokens over one quota window, a line per model, for everyone or one
-  // member. Models keep the colors and order of the card's Models list,
-  // which is the chart's legend.
+  // Cumulative tokens over about the last window length, a line per model,
+  // for everyone or one member. Each line starts again from zero where a
+  // window reset, so it reads as the usage of that window so far. Models
+  // keep the colors and order of the card's Models list, its legend.
   let { timeline, models, color, members, now }: {
     timeline: Timeline
     models: string[]
@@ -24,6 +25,9 @@
   // Bins after now have not happened yet, so their lines stop at now.
   const lastBin = $derived(Math.min(timeline.bins - 1, Math.max(0, Math.floor((now.getTime() - start) / binMs))))
 
+  // The bins in which a window starts again.
+  const resetBins = $derived(new Set((timeline.resets ?? []).map((r) => Math.floor((new Date(r).getTime() - start) / binMs))))
+
   const series = $derived.by(() => {
     const byModel = new Map<string, number[]>()
     for (const p of timeline.points ?? []) {
@@ -33,7 +37,16 @@
       if (!values) byModel.set(p.model, (values = new Array(lastBin + 1).fill(0)))
       values[p.bin] += p.tokens
     }
-    return models.filter((m) => byModel.has(m)).map((m) => ({ model: m, values: byModel.get(m)! }))
+    return models
+      .filter((m) => byModel.has(m))
+      .map((m) => {
+        let total = 0
+        const values = byModel.get(m)!.map((v, bin) => {
+          if (resetBins.has(bin)) total = 0
+          return (total += v)
+        })
+        return { model: m, values }
+      })
   })
 
   // A clean top for the axis: 1, 2 or 5 times a power of ten.
@@ -65,11 +78,12 @@
       : d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', hour12: false })
   }
 
-  // A bin covers a span, so its tooltip names both ends.
+  // A bin longer than a minute covers a span, so its tooltip names both ends.
   function slot(bin: number): string {
     const from = start + bin * binMs
     const clock = (ms: number) => new Date(ms).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', hour12: false })
-    return timeline.bins * timeline.bin_minutes > 1440 ? `${label(from)} ${clock(from)}–${clock(from + binMs)}` : `${clock(from)}–${clock(from + binMs)}`
+    const span = timeline.bin_minutes > 1 ? `${clock(from)}–${clock(from + binMs)}` : clock(from)
+    return timeline.bins * timeline.bin_minutes > 1440 ? `${label(from)} ${span}` : span
   }
 
   // A reset is a moment, so it keeps its time even on a chart of days.
@@ -123,7 +137,7 @@
     {#if hover !== null}
       <div class="tip" class:flip={x(hover) > width / 2} style:left="{x(hover)}px">
         <div class="muted">{slot(hover)}</div>
-        {#each series as s (s.model)}
+        {#each series.filter((s) => s.values[hover!] > 0) as s (s.model)}
           <div class="tip-row">
             <i style:background={color(s.model)}></i>
             <strong class="num">{tokens(s.values[hover])}</strong>
