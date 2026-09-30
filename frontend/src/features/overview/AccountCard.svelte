@@ -143,7 +143,7 @@
               </span>
             </div>
             <QuotaBar value={m.used_percent} marker={m.allotted_percent} segments={segmentsFor(m.models)} thin />
-            {#if (m.devices ?? []).length > 1}
+            {#if (m.devices ?? []).length > 0}
               <ul class="devices">
                 {#each m.devices ?? [] as d (d.name)}
                   <li>
@@ -151,16 +151,11 @@
                       <span class="device-name">{d.name}</span>
                       <span class="num">{percent(d.used_percent)}</span>
                     </div>
-                    <QuotaBar value={d.used_percent} tone="muted" thin />
+                    <!-- One device's bar would repeat the member's. -->
+                    {#if (m.devices ?? []).length > 1}<QuotaBar value={d.used_percent} tone="muted" thin />{/if}
                   </li>
                 {/each}
               </ul>
-            {:else if (m.devices ?? []).length === 1}
-              {@const d = m.devices![0]}
-              <div class="row muted small">
-                <span class="device-name">{d.name}</span>
-                <span class="num">{percent(d.used_percent)}</span>
-              </div>
             {/if}
           </li>
         {/each}
