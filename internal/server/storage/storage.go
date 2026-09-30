@@ -290,8 +290,8 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 			reported = append(reported, e)
 			res, err := tx.ExecContext(ctx, `
 				INSERT INTO usage_events (dedupe_key, account_id, person_id, device_id, product, originator, session_id,
-					model, occurred_at, input, cached_input, cache_write, output, reasoning_output, third_party)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $17)
+					model, occurred_at, input, cached_input, cache_write, output, reasoning_output, third_party, gateway)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $17, $18)
 				ON CONFLICT (dedupe_key) DO UPDATE SET
 					account_id = excluded.account_id,
 					output = GREATEST(usage_events.output, excluded.output),
@@ -301,11 +301,20 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 					 usage_events.account_id != excluded.account_id AND $16 != '' AND
 					 usage_events.account_id = (SELECT id FROM accounts WHERE provider = $15 AND ref_hash = $16))`,
 				e.DedupeKey, id, d.PersonID, d.ID, e.Product, e.Originator, e.SessionID, e.Model, e.OccurredAt,
-				e.Input, e.CachedInput, e.CacheWrite, e.Output, e.ReasoningOutput, e.Provider, e.PreviousAccountRefHash, e.ThirdParty)
+				e.Input, e.CachedInput, e.CacheWrite, e.Output, e.ReasoningOutput, e.Provider, e.PreviousAccountRefHash, e.ThirdParty,
+				e.Gateway)
 			if err != nil {
 				return fmt.Errorf("save event %s: %w", e.DedupeKey, err)
 			}
 			accepted += rowsAffected(res)
+			// A resync names the gateway of requests uploaded before
+			// clients could tell; nothing else about them changes.
+			if e.Gateway != "" {
+				if _, err := tx.ExecContext(ctx, `UPDATE usage_events SET gateway = $2 WHERE dedupe_key = $1 AND gateway = ''`,
+					e.DedupeKey, e.Gateway); err != nil {
+					return fmt.Errorf("name gateway of %s: %w", e.DedupeKey, err)
+				}
+			}
 		}
 
 		if len(reported) > 0 {
@@ -564,6 +573,7 @@ type TimelineRow struct {
 	PersonID   string
 	Model      string
 	ThirdParty bool
+	Gateway    string
 	Tokens     int64
 }
 
@@ -571,10 +581,10 @@ type TimelineRow struct {
 // for events before end.
 func (s *Store) UsageTimeline(ctx context.Context, accountID string, start, end time.Time, binMinutes int) ([]TimelineRow, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT floor(extract(epoch FROM occurred_at - $2) / ($4 * 60))::int AS bin, person_id, model, third_party,
+		SELECT floor(extract(epoch FROM occurred_at - $2) / ($4 * 60))::int AS bin, person_id, model, third_party, gateway,
 			sum(input + cached_input + cache_write + output)
 		FROM usage_events WHERE account_id = $1 AND occurred_at >= $2 AND occurred_at < $3
-		GROUP BY bin, person_id, model, third_party`, accountID, start, end, binMinutes)
+		GROUP BY bin, person_id, model, third_party, gateway`, accountID, start, end, binMinutes)
 	if err != nil {
 		return nil, err
 	}
@@ -582,7 +592,7 @@ func (s *Store) UsageTimeline(ctx context.Context, accountID string, start, end 
 	var out []TimelineRow
 	for rows.Next() {
 		var r TimelineRow
-		if err := rows.Scan(&r.Bin, &r.PersonID, &r.Model, &r.ThirdParty, &r.Tokens); err != nil {
+		if err := rows.Scan(&r.Bin, &r.PersonID, &r.Model, &r.ThirdParty, &r.Gateway, &r.Tokens); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -590,17 +600,35 @@ func (s *Store) UsageTimeline(ctx context.Context, accountID string, start, end 
 	return out, rows.Err()
 }
 
-// ThirdPartyUsage sums an account's third-party requests per model within
-// [from, to]; they are shown apart from the quota.
-func (s *Store) ThirdPartyUsage(ctx context.Context, accountID string, from, to time.Time) ([]PersonUsage, error) {
+// ThirdPartyRow is the tokens of one third-party model through one gateway.
+type ThirdPartyRow struct {
+	Model    string
+	Gateway  string
+	Tokens   usage.Tokens
+	Requests int
+}
+
+// ThirdPartyUsage sums an account's third-party requests per model and
+// gateway within [from, to]; they are shown apart from the quota.
+func (s *Store) ThirdPartyUsage(ctx context.Context, accountID string, from, to time.Time) ([]ThirdPartyRow, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT model, sum(input), sum(cached_input), sum(cache_write), sum(output), sum(reasoning_output), count(*)
+		SELECT model, gateway, sum(input), sum(cached_input), sum(cache_write), sum(output), sum(reasoning_output), count(*)
 		FROM usage_events WHERE account_id = $1 AND occurred_at >= $2 AND occurred_at <= $3 AND third_party
-		GROUP BY model`, accountID, from, to)
+		GROUP BY model, gateway`, accountID, from, to)
 	if err != nil {
 		return nil, err
 	}
-	return scanPersonUsage(rows)
+	defer rows.Close()
+	var out []ThirdPartyRow
+	for rows.Next() {
+		var r ThirdPartyRow
+		t := &r.Tokens
+		if err := rows.Scan(&r.Model, &r.Gateway, &t.Input, &t.CachedInput, &t.CacheWrite, &t.Output, &t.ReasoningOutput, &r.Requests); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // PersonUsage is one person's token totals on one model, across accounts.

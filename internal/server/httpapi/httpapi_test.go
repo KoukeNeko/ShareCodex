@@ -806,4 +806,27 @@ func TestThirdPartyUsageStaysOutOfTheQuota(t *testing.T) {
 	if ov.You == nil || ov.You.Today.Requests != 1 {
 		t.Errorf("personal totals = %+v, want only the official request", ov.You)
 	}
+
+	// A resync names the gateway of a request uploaded before clients could
+	// tell, and a named gateway stays.
+	named := event("claude:b1", "deepseek-v4-pro", true)
+	named.Gateway = "ollama"
+	for _, gw := range []string{"ollama", "opencodex"} {
+		named.Gateway = gw
+		req := syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{named}}
+		if st := bob.do("POST", syncapi.PathSync, req, nil); st != http.StatusOK {
+			t.Fatalf("resync = %d", st)
+		}
+	}
+	ov = syncapi.Overview{}
+	if st := alice.do("GET", path, nil, &ov); st != http.StatusOK {
+		t.Fatalf("overview = %d", st)
+	}
+	gateways := map[string]string{}
+	for _, m := range ov.Accounts[0].Buckets[0].ThirdPartyModels {
+		gateways[m.Model] = m.Gateway
+	}
+	if gateways["deepseek-v4-pro"] != "ollama" || gateways["gpt-6-sol"] != "" {
+		t.Errorf("gateways = %v, want deepseek-v4-pro through ollama and gpt-6-sol unnamed", gateways)
+	}
 }

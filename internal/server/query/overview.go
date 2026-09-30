@@ -134,13 +134,23 @@ func timelineBinMinutes(windowMinutes int) int {
 const resetStarted = 2 * time.Minute
 
 // pastResets lists the reset times readings of one bucket reported within
-// (start, end]. A reading of a window that has not started (Codex reports
-// one a full window after every idle reading) is no reset, so a time counts
-// only once a reading shows its window running. Times closer than merge are
-// one reset, the later kept: readings of one window differ slightly in their
-// reset times, and a window starts about when the last one reset.
+// (start, end], each to the nearest minute.
+//
+// A reading of a window that has not started (Codex reports one a full window
+// after every idle reading) is no reset, so a reading counts only once it
+// shows its window running. A reading can also be wrong, such as a statusLine
+// reading from a session on another account, so a reset time counts only if
+// no more readings, taken before it, describe a window still running past it
+// than report it. Times closer than merge are one reset, whichever the most
+// readings report: readings of one window differ slightly in their reset
+// times, and a window starts about when the last one reset.
 func pastResets(snaps []quota.Snapshot, key quota.BucketKey, start, end time.Time, merge time.Duration) []time.Time {
-	var times []time.Time
+	type reading struct {
+		observed, resets time.Time
+		window           time.Duration
+	}
+	var readings []reading
+	support := map[time.Time]int{}
 	for _, s := range snaps {
 		for _, b := range s.Buckets {
 			if b.Key != key || b.ResetsAt == nil || b.WindowMinutes == nil {
@@ -150,19 +160,42 @@ func pastResets(snaps []quota.Snapshot, key quota.BucketKey, start, end time.Tim
 			if b.ResetsAt.Sub(s.ObservedAt) > window-resetStarted {
 				continue
 			}
-			if at := b.ResetsAt.UTC().Round(time.Minute); at.After(start) && !at.After(end) {
-				times = append(times, at)
+			at := b.ResetsAt.UTC().Round(time.Minute)
+			readings = append(readings, reading{s.ObservedAt, at, window})
+			if at.After(start) && !at.After(end) {
+				support[at]++
 			}
 		}
 	}
-	slices.SortFunc(times, time.Time.Compare)
+
+	type candidate struct {
+		at      time.Time
+		support int
+	}
+	var kept []candidate
+	for at, n := range support {
+		against := 0
+		for _, r := range readings {
+			if r.observed.Before(at) && r.resets.Sub(at) > merge && r.resets.Add(-r.window).Before(at) {
+				against++
+			}
+		}
+		if n >= against {
+			kept = append(kept, candidate{at, n})
+		}
+	}
+	slices.SortFunc(kept, func(a, b candidate) int { return a.at.Compare(b.at) })
+
 	out := []time.Time{}
-	for _, at := range times {
-		if n := len(out); n > 0 && at.Sub(out[n-1]) < merge {
-			out[n-1] = at
+	best := 0
+	for _, c := range kept {
+		if n := len(out); n > 0 && c.at.Sub(out[n-1]) < merge {
+			if c.support >= best {
+				out[n-1], best = c.at, c.support
+			}
 			continue
 		}
-		out = append(out, at)
+		out, best = append(out, c.at), c.support
 	}
 	return out
 }
@@ -201,7 +234,8 @@ func timeline(ctx context.Context, st *storage.Store, accountID string, b quota.
 	}
 	tl := &syncapi.Timeline{Start: start.UTC(), BinMinutes: bin, Bins: bins, Points: []syncapi.TimelinePoint{}, Resets: resets}
 	for _, r := range rows {
-		tl.Points = append(tl.Points, syncapi.TimelinePoint{Bin: r.Bin, PersonID: r.PersonID, Model: r.Model, ThirdParty: r.ThirdParty, Tokens: r.Tokens})
+		tl.Points = append(tl.Points, syncapi.TimelinePoint{Bin: r.Bin, PersonID: r.PersonID, Model: r.Model, ThirdParty: r.ThirdParty,
+			Gateway: r.Gateway, Tokens: r.Tokens})
 	}
 	return tl, nil
 }
@@ -219,13 +253,17 @@ func thirdPartyModels(ctx context.Context, st *storage.Store, accountID string, 
 	}
 	for _, r := range rows {
 		t := r.Tokens
-		out = append(out, syncapi.ModelUsage{Model: r.Model, Requests: r.Requests, Tokens: t.Input + t.CachedInput + t.CacheWrite + t.Output})
+		out = append(out, syncapi.ModelUsage{Model: r.Model, Gateway: r.Gateway, Requests: r.Requests,
+			Tokens: t.Input + t.CachedInput + t.CacheWrite + t.Output})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Tokens != out[j].Tokens {
 			return out[i].Tokens > out[j].Tokens
 		}
-		return out[i].Model < out[j].Model
+		if out[i].Model != out[j].Model {
+			return out[i].Model < out[j].Model
+		}
+		return out[i].Gateway < out[j].Gateway
 	})
 	return out, nil
 }

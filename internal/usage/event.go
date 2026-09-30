@@ -57,6 +57,17 @@ type Event struct {
 	// third-party gateway, from a Claude client. It is recorded against the
 	// account the client was signed into but never draws on its quota.
 	ThirdParty bool
+	// Gateway names the service a third-party request went through, when
+	// the client's log shows it (GatewayOpenCodex, GatewayOllama); empty
+	// otherwise.
+	Gateway string
 
 	Tokens Tokens
 }
+
+// Gateways a Claude client's third-party requests are recognised as going
+// through.
+const (
+	GatewayOpenCodex = "opencodex"
+	GatewayOllama    = "ollama"
+)

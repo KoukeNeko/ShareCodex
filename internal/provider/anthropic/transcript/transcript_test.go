@@ -38,3 +38,21 @@ func TestParseFixture(t *testing.T) {
 		t.Errorf("tokens = %+v, want %+v", first.Tokens, want)
 	}
 }
+
+// Gateways are told apart by the message IDs they answer with, and OpenCodex
+// also by its model names; anything else is left unnamed.
+func TestGateway(t *testing.T) {
+	for _, tc := range []struct{ name, model, messageID, requestID, want string }{
+		{"Anthropic", "claude-opus-5-5", "msg_011CfZUPYx84N8rqh6cnxade", "req_011CfZUPWtqjm84Ah7j9", ""},
+		{"OpenCodex model name", "ocx-claude-ollama-cloud--deepseek-v4.1-flash", "msg_e84c4c53aab747968be1ca8434691de9", "", usage.GatewayOpenCodex},
+		{"older OpenCodex model name", "claude-ocx-ollama-cloud--deepseek-v4.1-flash", "msg_x", "", usage.GatewayOpenCodex},
+		{"OpenCodex message ID", "deepseek-v4-pro", "msg_04d13bbb22d4432e9ea9d2c167e3e775", "", usage.GatewayOpenCodex},
+		{"Ollama", "deepseek-v4.1-flash", "msg_ca2f9a1fae5d277139c0d02c", "", usage.GatewayOllama},
+		{"unknown gateway", "glm-5.3-flash", "chatcmpl-123", "", ""},
+		{"a request ID means no known gateway", "deepseek-v4.1-flash", "msg_ca2f9a1fae5d277139c0d02c", "req_1", ""},
+	} {
+		if got := gateway(tc.model, tc.messageID, tc.requestID); got != tc.want {
+			t.Errorf("%s: gateway = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}

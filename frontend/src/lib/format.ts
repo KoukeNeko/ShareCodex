@@ -39,6 +39,26 @@ export function tokens(n: number): string {
   return String(n)
 }
 
+// Tags for the gateways the client recognises (usage.Gateway*); an
+// unrecognised gateway gets none.
+const gatewayTags: Record<string, { tag: string; name: string }> = {
+  opencodex: { tag: 'OCX', name: 'OpenCodex' },
+  ollama: { tag: 'Ollama', name: 'Ollama' },
+}
+
+/**
+ * A model ID made readable, tagged with the gateway it went through. OpenCodex
+ * names the models it routes to Claude clients `ocx-claude-<service>--<model>`
+ * (older builds `claude-ocx-<service>--<model>`); they show as the model, and
+ * the full ID stays in the title.
+ */
+export function modelName(id: string, gateway = ''): { name: string; via?: string; title: string } {
+  const ocx = /^(?:ocx-claude|claude-ocx)-(.+?)--(.+)$/.exec(id)
+  const g = gatewayTags[ocx ? 'opencodex' : gateway]
+  if (!g) return { name: id, title: id }
+  return { name: ocx ? ocx[2] : id, via: g.tag, title: [g.name, ocx?.[1], id].filter(Boolean).join(' · ') }
+}
+
 /** An estimated price in US dollars; cents only below $100. */
 export function usd(n: number): string {
   const digits = n < 100 ? 2 : 0

@@ -45,6 +45,34 @@ type line struct {
 
 var anthropicModel = regexp.MustCompile(`^claude-(opus|sonnet|haiku)-`)
 
+// Claude Code logs neither the API address nor how it was launched, but
+// gateways answer with their own message IDs and no request ID: OpenCodex
+// with 32 hex digits, Ollama (`ollama launch claude`) with 24. OpenCodex also
+// names the models it routes `ocx-claude-<service>--<model>` (older builds
+// `claude-ocx-…`). Anthropic's own IDs look like msg_011C… with a req_…
+// request ID.
+var (
+	openCodexModel     = regexp.MustCompile(`^(ocx-claude|claude-ocx)-.+--.+`)
+	openCodexMessageID = regexp.MustCompile(`^msg_[0-9a-f]{32}$`)
+	ollamaMessageID    = regexp.MustCompile(`^msg_[0-9a-f]{24}$`)
+)
+
+// gateway names the service a request went through, or "" when its log
+// line does not show one.
+func gateway(model, messageID, requestID string) string {
+	switch {
+	case openCodexModel.MatchString(model):
+		return usage.GatewayOpenCodex
+	case requestID != "":
+		return ""
+	case openCodexMessageID.MatchString(messageID):
+		return usage.GatewayOpenCodex
+	case ollamaMessageID.MatchString(messageID):
+		return usage.GatewayOllama
+	}
+	return ""
+}
+
 // assistantMarker lets Parse skip decoding user and tool lines, which make up
 // most of a transcript's bytes.
 var assistantMarker = []byte(`"assistant"`)
@@ -105,6 +133,7 @@ func Parse(r io.Reader) (Result, error) {
 			// Claude Code can be pointed at other vendors' models through a
 			// gateway; only Anthropic models draw on a Claude subscription.
 			ThirdParty: !anthropicModel.MatchString(l.Message.Model),
+			Gateway:    gateway(l.Message.Model, l.Message.ID, l.RequestID),
 			Tokens: usage.Tokens{
 				Input:       u.InputTokens,
 				CachedInput: u.CacheReadInputTokens,

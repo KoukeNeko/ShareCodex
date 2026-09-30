@@ -41,12 +41,14 @@ type Event struct {
 	OccurredAt             time.Time `json:"occurred_at"`
 	// ThirdParty events are shown but never count against an account's
 	// quota; see usage.Event.
-	ThirdParty      bool  `json:"third_party,omitempty"`
-	Input           int64 `json:"input"`
-	CachedInput     int64 `json:"cached_input"`
-	CacheWrite      int64 `json:"cache_write"`
-	Output          int64 `json:"output"`
-	ReasoningOutput int64 `json:"reasoning_output"`
+	ThirdParty bool `json:"third_party,omitempty"`
+	// Gateway is the service a third-party request went through, when known.
+	Gateway         string `json:"gateway,omitempty"`
+	Input           int64  `json:"input"`
+	CachedInput     int64  `json:"cached_input"`
+	CacheWrite      int64  `json:"cache_write"`
+	Output          int64  `json:"output"`
+	ReasoningOutput int64  `json:"reasoning_output"`
 }
 
 type Bucket struct {
@@ -208,13 +210,17 @@ type TimelinePoint struct {
 	PersonID   string `json:"person_id"`
 	Model      string `json:"model"`
 	ThirdParty bool   `json:"third_party,omitempty"`
+	Gateway    string `json:"gateway,omitempty"`
 	// Tokens counts input, cached input, cache writes and output together.
 	Tokens int64 `json:"tokens"`
 }
 
 // ModelUsage is one model's usage within a quota window, across members.
 type ModelUsage struct {
-	Model    string `json:"model"`
+	Model string `json:"model"`
+	// Gateway is the service a third-party model was used through, when
+	// known; always empty for the quota's own models.
+	Gateway  string `json:"gateway,omitempty"`
 	Requests int    `json:"requests"`
 	// Tokens counts input, cached input, cache writes and output together.
 	Tokens int64 `json:"tokens"`
@@ -261,6 +267,7 @@ func FromEvent(e usage.Event) Event {
 		Model:           e.Model,
 		OccurredAt:      e.OccurredAt.UTC(),
 		ThirdParty:      e.ThirdParty,
+		Gateway:         e.Gateway,
 		Input:           e.Tokens.Input,
 		CachedInput:     e.Tokens.CachedInput,
 		CacheWrite:      e.Tokens.CacheWrite,
@@ -280,6 +287,7 @@ func (e Event) ToDomain() usage.Event {
 		Model:          e.Model,
 		OccurredAt:     e.OccurredAt,
 		ThirdParty:     e.ThirdParty,
+		Gateway:        e.Gateway,
 		Tokens: usage.Tokens{
 			Input:           e.Input,
 			CachedInput:     e.CachedInput,

@@ -174,3 +174,29 @@ func TestPastResetsMarksEarlierWindowsInsideTheTimeline(t *testing.T) {
 		t.Errorf("pastResets = %v, want %v", got, want)
 	}
 }
+
+// A few wrong readings, such as statusLine readings from a session on another
+// account, must not pass for a reset when many more readings show one window
+// running through it, and must not hide the real reset either.
+func TestPastResetsIgnoresOutvotedReadings(t *testing.T) {
+	week := 10080
+	at := func(day, hour int) time.Time { return time.Date(2026, 9, day, hour, 0, 0, 0, time.UTC) }
+	snap := func(observed, resets time.Time) quota.Snapshot {
+		return quota.Snapshot{ObservedAt: observed, Buckets: []quota.Bucket{{Key: quota.BucketWeekly, ResetsAt: &resets, WindowMinutes: &week}}}
+	}
+	var snaps []quota.Snapshot
+	for h := 0; h < 20; h++ {
+		snaps = append(snaps, snap(at(25, 17).Add(time.Duration(h)*time.Hour), at(27, 9))) // the real window
+	}
+	for h := 0; h < 3; h++ {
+		snaps = append(snaps, snap(at(26, 19).Add(time.Duration(h)*time.Minute), at(30, 11))) // stray readings
+	}
+	for h := 0; h < 60; h++ {
+		snaps = append(snaps, snap(at(27, 17).Add(time.Duration(h)*time.Hour), time.Date(2026, 10, 4, 9, 0, 0, 0, time.UTC))) // the next window
+	}
+	now := at(30, 12)
+	got := pastResets(snaps, quota.BucketWeekly, now.Add(-7*24*time.Hour), now, time.Duration(week)*time.Minute/2)
+	if want := []time.Time{at(27, 9)}; !slices.EqualFunc(got, want, time.Time.Equal) {
+		t.Errorf("pastResets = %v, want only the real reset %v", got, want)
+	}
+}

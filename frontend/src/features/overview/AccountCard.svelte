@@ -2,7 +2,7 @@
   import QuotaBar, { type Segment } from '../../components/QuotaBar.svelte'
   import UsageChart from './UsageChart.svelte'
   import { Desktop, errorMessage, type ActiveUser, type BucketOverview } from '../../lib/api'
-  import { bucketName, percent, providerName, resetsIn, tokens } from '../../lib/format'
+  import { bucketName, modelName, percent, providerName, resetsIn, tokens } from '../../lib/format'
   import { t } from '../../lib/i18n.svelte'
 
   let { id = '', provider, label, planType, buckets, activeUsers, now, local = false, fineChart = false }: {
@@ -57,13 +57,27 @@
 
   // Third-party models take the same hues in their own order; dashed marks
   // keep them apart from the quota's models.
+  const thirdPartyKey = (model: string, gateway = '') => `${gateway}:${model}`
   const thirdPartyColor = $derived.by(() => {
     const colors = new Map<string, string>()
     ;(bucket?.third_party_models ?? []).forEach((m, i) =>
-      colors.set(m.model, i < modelSlots ? `var(--model-${i + 1})` : 'var(--model-other)'),
+      colors.set(thirdPartyKey(m.model, m.gateway), i < modelSlots ? `var(--model-${i + 1})` : 'var(--model-other)'),
     )
     return colors
   })
+
+  // Third-party bars use the Models bars' scale, the quota share the
+  // window's own models used per token, so a few million tokens read as
+  // small beside a billion. Without official usage there is no scale to
+  // borrow, and a bar is its share of the third-party tokens instead.
+  function thirdPartyBar(tokensUsed: number): number {
+    const models = bucket?.models ?? []
+    const officialTokens = models.reduce((sum, m) => sum + m.tokens, 0)
+    const officialPercent = models.reduce((sum, m) => sum + m.used_percent, 0)
+    if (officialTokens > 0 && officialPercent > 0) return (tokensUsed / officialTokens) * officialPercent
+    const thirdPartyTokens = (bucket?.third_party_models ?? []).reduce((sum, m) => sum + m.tokens, 0)
+    return thirdPartyTokens ? (tokensUsed / thirdPartyTokens) * 100 : 0
+  }
 
   function segmentsFor(models: { model: string; used_percent: number }[] | null | undefined): Segment[] {
     return (models ?? []).map((m) => ({
@@ -126,8 +140,9 @@
       <UsageChart
         timeline={bucket.timeline}
         models={(bucket.models ?? []).map((m) => m.model)}
-        thirdPartyModels={(bucket.third_party_models ?? []).map((m) => m.model)}
-        color={(model, thirdParty) => (thirdParty ? thirdPartyColor : modelColor).get(model) ?? 'var(--model-other)'}
+        thirdPartyModels={(bucket.third_party_models ?? []).map((m) => ({ model: m.model, gateway: m.gateway ?? '' }))}
+        color={(model, thirdParty, gateway) =>
+          (thirdParty ? thirdPartyColor.get(thirdPartyKey(model, gateway)) : modelColor.get(model)) ?? 'var(--model-other)'}
         members={bucket.members ?? []}
         {now}
         fine={fineChart}
@@ -199,14 +214,21 @@
       {/if}
 
       {#if (bucket.third_party_models ?? []).length > 0}
-        <ul class="models">
+        <ul class="models third-list">
           <li class="muted small">{t('thirdPartyModels')}</li>
-          {#each bucket.third_party_models ?? [] as model (model.model)}
+          {#each bucket.third_party_models ?? [] as model (thirdPartyKey(model.model, model.gateway))}
+            {@const shown = modelName(model.model, model.gateway)}
+            {@const color = thirdPartyColor.get(thirdPartyKey(model.model, model.gateway)) ?? 'var(--model-other)'}
             <li>
               <div class="row">
-                <span class="model" title={model.model}><i class="swatch third" style:color={thirdPartyColor.get(model.model)}></i><span class="model-name">{model.model}</span></span>
-                <span class="num usage muted">{t('tokens', { count: tokens(model.tokens) })}</span>
+                <span class="model" title={shown.title}><i class="swatch third" style:color={color}></i><span class="model-name">{shown.name}</span>{#if shown.via}<span class="via">{shown.via}</span>{/if}</span>
+                <span class="num usage third-usage">{t('tokens', { count: tokens(model.tokens) })}</span>
               </div>
+              <QuotaBar
+                value={thirdPartyBar(model.tokens)}
+                segments={[{ value: thirdPartyBar(model.tokens), color, label: model.model }]}
+                thin
+              />
             </li>
           {/each}
         </ul>
@@ -263,13 +285,17 @@
   .strong { font-weight: 600; font-size: 15px; }
   .small { font-size: 11.5px; }
   .empty { margin: 0; }
-  .members { list-style: none; margin: 0; padding: 8px 0 0; border-top: 1px solid var(--line); display: grid; gap: 9px; }
+  /* Every list takes the card's width and no more, so a long name is cut
+     off instead of pushing its row past the card's padding. The space
+     under a divider matches the card's gap above it. */
+  .members, .models, .devices, .members li, .models li, .devices li { grid-template-columns: minmax(0, 1fr); }
+  .members { list-style: none; margin: 0; padding: 10px 0 0; border-top: 1px solid var(--line); display: grid; gap: 9px; }
   .members li { display: grid; gap: 4px; }
   .allot { margin-left: 8px; }
   .devices { list-style: none; margin: 2px 0 0; padding: 0; display: grid; gap: 4px; }
   .devices li { display: grid; gap: 3px; }
   .device-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  .models { list-style: none; margin: 0; padding: 8px 0 0; border-top: 1px solid var(--line); display: grid; gap: 9px; }
+  .models { list-style: none; margin: 0; padding: 10px 0 0; border-top: 1px solid var(--line); display: grid; gap: 9px; }
   .models li { display: grid; gap: 4px; }
   .models .muted { margin-right: 8px; }
   .model { min-width: 0; display: flex; align-items: center; gap: 6px; }
@@ -277,7 +303,19 @@
   /* The numbers keep their line; a long model name is cut instead. */
   .usage { flex: none; white-space: nowrap; }
   .swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
-  .swatch.third { border-radius: 0; height: 2px; width: 10px; background: repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 5px); }
+  .swatch.third { border-radius: 0; height: 2px; background: repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 5px); }
+  .third-usage { color: var(--muted); }
+  .via {
+    flex: none;
+    font-size: 10px;
+    letter-spacing: .04em;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0 4px;
+  }
+  /* The dashed swatch has no text baseline to line the row up by. */
+  .third-list .row { align-items: center; }
   .name { display: flex; align-items: center; gap: 6px; }
   .you {
     font-size: 10.5px;

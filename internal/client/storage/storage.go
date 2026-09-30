@@ -150,8 +150,8 @@ func (s *Store) IngestFile(ctx context.Context, path string, st scan.FileState, 
 			}
 			res, err := tx.ExecContext(ctx, `
 				INSERT INTO events (dedupe_key, account_ref_hash, provider, product, originator, session_id, model,
-					occurred_at, input, cached_input, cache_write, output, reasoning_output, third_party)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					occurred_at, input, cached_input, cache_write, output, reasoning_output, third_party, gateway)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT (dedupe_key) DO UPDATE SET
 					account_ref_hash = excluded.account_ref_hash, output = max(events.output, excluded.output),
 					reasoning_output = max(events.reasoning_output, excluded.reasoning_output)
@@ -160,7 +160,7 @@ func (s *Store) IngestFile(ctx context.Context, path string, st scan.FileState, 
 					 excluded.session_id = events.session_id AND excluded.originator = events.originator)`,
 				e.DedupeKey, e.AccountRefHash, e.Provider, e.Product, e.Originator, e.SessionID, e.Model,
 				e.OccurredAt.UnixMilli(), e.Tokens.Input, e.Tokens.CachedInput, e.Tokens.CacheWrite,
-				e.Tokens.Output, e.Tokens.ReasoningOutput, e.ThirdParty)
+				e.Tokens.Output, e.Tokens.ReasoningOutput, e.ThirdParty, e.Gateway)
 			if err != nil {
 				return fmt.Errorf("save event %s: %w", e.DedupeKey, err)
 			}
