@@ -7,12 +7,32 @@
   import Settings from './features/settings/Settings.svelte'
   import { Desktop, errorMessage, type ActiveUser, type ProviderState, type State } from './lib/api'
   import { clock, providerName } from './lib/format'
+  import { renderShareImage } from './lib/share'
   import { setLocale, t } from './lib/i18n.svelte'
 
   let app = $state<State | null>(null)
   let view = $state<'overview' | 'settings'>('overview')
   let loadError = $state('')
   let now = $state(new Date())
+  let main: HTMLElement
+  let sharing = $state(false)
+  let shared = $state(false)
+  let shareError = $state('')
+
+  async function share() {
+    sharing = true
+    shareError = ''
+    try {
+      const png = await renderShareImage(main, (n) => t('shareAccount', { n }))
+      await Desktop.CopyImage(png)
+      shared = true
+      setTimeout(() => (shared = false), 1500)
+    } catch (err) {
+      shareError = errorMessage(err)
+    } finally {
+      sharing = false
+    }
+  }
 
   function providerIssue(p: ProviderState): string {
     if (p.status === 'error') return p.error ?? t('error')
@@ -43,11 +63,18 @@
   })
 </script>
 
-<main>
+<main bind:this={main}>
   <header>
     <h1>{view === 'settings' ? t('settings') : 'ShareCodex'}</h1>
     <div class="tools">
       {#if view === 'overview'}
+        <button class="icon" title={t('copyImage')} aria-label={t('copyImage')} disabled={sharing || !app} onclick={share}>
+          {#if shared}
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 6.5 12 13 4.5" /></svg>
+          {:else}
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 10V1.8M5.2 4.4 8 1.6l2.8 2.8M5 7H3.5v7h9V7H11" /></svg>
+          {/if}
+        </button>
         <button class="icon" title={t('refresh')} aria-label={t('refresh')} onclick={() => Desktop.Refresh()}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.76 5.75A5.5 5.5 0 1 1 8 3M6.5 1.2 8.3 3 6.5 4.8" /></svg>
         </button>
@@ -73,6 +100,9 @@
           <span>{t('newVersion', { version: app.update.version })}</span>
           <button onclick={() => Desktop.OpenReleasePage()}>{t('download')}</button>
         </p>
+      {/if}
+      {#if shareError}
+        <p class="banner error">{t('copyImageFailed', { error: shareError })}</p>
       {/if}
       {#if app.revoked}
         <p class="banner error">{t('revoked')}</p>

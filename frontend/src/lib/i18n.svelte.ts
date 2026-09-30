@@ -10,6 +10,9 @@ export const locales: { id: Locale; label: string }[] = [
 
 const en = {
   refresh: 'Refresh',
+  copyImage: 'Copy as image',
+  copyImageFailed: "Couldn't copy the image: {error}",
+  shareAccount: 'Account {n}',
   settings: 'Settings',
   done: 'Done',
   loading: 'Loading…',
@@ -95,6 +98,9 @@ export type MessageKey = keyof typeof en
 
 const zhTW: Record<MessageKey, string> = {
   refresh: '重新整理',
+  copyImage: '複製為圖片',
+  copyImageFailed: '無法複製圖片：{error}',
+  shareAccount: '帳號 {n}',
   settings: '設定',
   done: '完成',
   loading: '載入中…',

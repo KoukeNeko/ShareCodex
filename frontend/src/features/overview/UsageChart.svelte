@@ -159,16 +159,26 @@
   <div class="plot" bind:clientWidth={width}>
     {#if width > 0}
       <svg {width} {height} role="img" aria-label={t('usageOverTime')} onpointermove={onMove} onpointerleave={() => (hover = null)}>
-        <line class="grid" x1="0" x2={width} y1={y(top)} y2={y(top)} />
-        <line class="grid" x1="0" x2={width} y1={y(0)} y2={y(0)} />
+        <!-- Styled inline, not by class: Copy as image re-renders the chart
+             from its elements and would miss class-scoped SVG styles. -->
+        <line x1="0" x2={width} y1={y(top)} y2={y(top)} style:stroke="var(--line)" style:stroke-width="1" />
+        <line x1="0" x2={width} y1={y(0)} y2={y(0)} style:stroke="var(--line)" style:stroke-width="1" />
         {#each resets as r, i (i)}
-          <line class="reset" x1={r.x} x2={r.x} y1="0" y2={height} />
+          <line x1={r.x} x2={r.x} y1="0" y2={height} style:stroke="var(--muted)" style:stroke-width="1" style:stroke-dasharray="3 3" />
         {/each}
         {#if hover !== null}
-          <line class="cross" x1={x(hover)} x2={x(hover)} y1="0" y2={height} />
+          <line x1={x(hover)} x2={x(hover)} y1="0" y2={height} style:stroke="var(--muted)" style:stroke-width="1" />
         {/if}
         {#each series as s (s.key)}
-          <path d={path(s.values)} class:third={s.thirdParty} style:stroke={color(s.model, s.thirdParty, s.gateway)} />
+          <path
+            d={path(s.values)}
+            style:fill="none"
+            style:stroke={color(s.model, s.thirdParty, s.gateway)}
+            style:stroke-width="2"
+            style:stroke-linejoin="round"
+            style:stroke-linecap="round"
+            style:stroke-dasharray={s.thirdParty ? '4 3' : null}
+          />
         {/each}
       </svg>
     {/if}
@@ -212,9 +222,6 @@
   /* Positioned so the drawn width never holds the card open when the
      popup narrows; the width comes from the plot, not the other way. */
   svg { position: absolute; inset: 0; display: block; overflow: visible; touch-action: none; }
-  .grid { stroke: var(--line); stroke-width: 1; }
-  .cross { stroke: var(--muted); stroke-width: 1; }
-  .reset { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
   .reset-label {
     position: absolute;
     top: 2px;
@@ -225,7 +232,6 @@
     white-space: nowrap;
   }
   .reset-label.right { transform: translateX(4px); }
-  path { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
   .axis { font-size: 10.5px; color: var(--muted); margin-bottom: -4px; }
   .ticks { display: flex; justify-content: space-between; font-size: 10.5px; }
   .tip {
@@ -251,6 +257,5 @@
   .tip-row i { width: 10px; height: 2px; border-radius: 1px; flex: none; background: currentColor; }
   /* Third-party models never count against the quota: dashed, like their
      list's swatches. */
-  path.third { stroke-dasharray: 4 3; }
   .tip-row i.third { background: repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 5px); }
 </style>
