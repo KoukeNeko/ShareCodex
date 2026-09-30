@@ -93,6 +93,14 @@ stays in view after a reset; with it off, the tokens used in each span. Switch i
 a single member, and hover to read the values. **Full chart detail** in Settings draws every minute
 (every half hour on the weekly chart) instead.
 
+### Third-party models
+
+Claude Code and Claude Desktop can be pointed at other vendors' models through a gateway. Those
+requests are recorded against the account the client used and shown as dashed lines on its chart and
+in a separate **Third-party models** list, with bars on the same scale as its own models, but they
+never count toward the quota, the estimates or the allotments. Models used through OpenCodex or
+Ollama (`ollama launch claude`) are tagged **OCX** or **Ollama**.
+
 ### Joining takes one link
 
 An admin creates a single-use join link in the web console; a member who has joined can create
