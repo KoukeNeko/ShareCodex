@@ -150,8 +150,8 @@ func (s *Store) IngestFile(ctx context.Context, path string, st scan.FileState, 
 			}
 			res, err := tx.ExecContext(ctx, `
 				INSERT INTO events (dedupe_key, account_ref_hash, provider, product, originator, session_id, model,
-					occurred_at, input, cached_input, cache_write, output, reasoning_output)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					occurred_at, input, cached_input, cache_write, output, reasoning_output, third_party)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT (dedupe_key) DO UPDATE SET
 					account_ref_hash = excluded.account_ref_hash, output = max(events.output, excluded.output),
 					reasoning_output = max(events.reasoning_output, excluded.reasoning_output)
@@ -160,7 +160,7 @@ func (s *Store) IngestFile(ctx context.Context, path string, st scan.FileState, 
 					 excluded.session_id = events.session_id AND excluded.originator = events.originator)`,
 				e.DedupeKey, e.AccountRefHash, e.Provider, e.Product, e.Originator, e.SessionID, e.Model,
 				e.OccurredAt.UnixMilli(), e.Tokens.Input, e.Tokens.CachedInput, e.Tokens.CacheWrite,
-				e.Tokens.Output, e.Tokens.ReasoningOutput)
+				e.Tokens.Output, e.Tokens.ReasoningOutput, e.ThirdParty)
 			if err != nil {
 				return fmt.Errorf("save event %s: %w", e.DedupeKey, err)
 			}
@@ -287,7 +287,8 @@ func (s *Store) SessionOriginatorAt(ctx context.Context, sessionID string, at ti
 }
 
 // LastUse returns the account and time of a provider's latest recorded event
-// from any of the given entrypoints, or a zero time when there is none.
+// from any of the given entrypoints, or a zero time when there is none. A
+// third-party request says nothing about the Claude account in use.
 func (s *Store) LastUse(ctx context.Context, provider account.Provider, originators []string) (string, time.Time, error) {
 	if len(originators) == 0 {
 		return "", time.Time{}, nil
@@ -300,7 +301,7 @@ func (s *Store) LastUse(ctx context.Context, provider account.Provider, originat
 	var at int64
 	err := s.db.QueryRowContext(ctx,
 		`SELECT account_ref_hash, occurred_at FROM events
-		 WHERE provider = ? AND originator IN (?`+strings.Repeat(", ?", len(originators)-1)+`)
+		 WHERE provider = ? AND third_party = 0 AND originator IN (?`+strings.Repeat(", ?", len(originators)-1)+`)
 		 ORDER BY occurred_at DESC LIMIT 1`, args...).Scan(&ref, &at)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", time.Time{}, nil

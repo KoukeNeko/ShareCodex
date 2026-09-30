@@ -246,7 +246,14 @@ func (a *Agent) ingestFile(ctx context.Context, src source, path string, st scan
 
 	events := res.events[:0]
 	for _, e := range res.events {
-		if ref, ok := ac.resolve(e.SessionID, e.Originator, e.OccurredAt); ok {
+		entrypoint := e.Originator
+		// Claude Desktop set up for third-party inference has no Claude
+		// account, so its usage is third-party and goes with the device's
+		// Claude Code account.
+		if desktop.ThirdParty(entrypoint) {
+			e.ThirdParty, entrypoint = true, ""
+		}
+		if ref, ok := ac.resolve(e.SessionID, entrypoint, e.OccurredAt); ok {
 			e.AccountRefHash = ref
 			events = append(events, e)
 		}

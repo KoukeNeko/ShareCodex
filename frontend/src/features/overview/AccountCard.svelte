@@ -55,6 +55,16 @@
     return colors
   })
 
+  // Third-party models take the same hues in their own order; dashed marks
+  // keep them apart from the quota's models.
+  const thirdPartyColor = $derived.by(() => {
+    const colors = new Map<string, string>()
+    ;(bucket?.third_party_models ?? []).forEach((m, i) =>
+      colors.set(m.model, i < modelSlots ? `var(--model-${i + 1})` : 'var(--model-other)'),
+    )
+    return colors
+  })
+
   function segmentsFor(models: { model: string; used_percent: number }[] | null | undefined): Segment[] {
     return (models ?? []).map((m) => ({
       value: m.used_percent,
@@ -116,7 +126,8 @@
       <UsageChart
         timeline={bucket.timeline}
         models={(bucket.models ?? []).map((m) => m.model)}
-        color={(model) => modelColor.get(model) ?? 'var(--model-other)'}
+        thirdPartyModels={(bucket.third_party_models ?? []).map((m) => m.model)}
+        color={(model, thirdParty) => (thirdParty ? thirdPartyColor : modelColor).get(model) ?? 'var(--model-other)'}
         members={bucket.members ?? []}
         {now}
         fine={fineChart}
@@ -182,6 +193,20 @@
                 <span class="num usage"><span class="muted">{t('tokens', { count: tokens(model.tokens) })}</span>{t('estimated', { percent: percent(model.used_percent) })}</span>
               </div>
               <QuotaBar value={model.used_percent} segments={segmentsFor([model])} thin />
+            </li>
+          {/each}
+        </ul>
+      {/if}
+
+      {#if (bucket.third_party_models ?? []).length > 0}
+        <ul class="models">
+          <li class="muted small">{t('thirdPartyModels')}</li>
+          {#each bucket.third_party_models ?? [] as model (model.model)}
+            <li>
+              <div class="row">
+                <span class="model" title={model.model}><i class="swatch third" style:color={thirdPartyColor.get(model.model)}></i><span class="model-name">{model.model}</span></span>
+                <span class="num usage muted">{t('tokens', { count: tokens(model.tokens) })}</span>
+              </div>
             </li>
           {/each}
         </ul>
@@ -252,6 +277,7 @@
   /* The numbers keep their line; a long model name is cut instead. */
   .usage { flex: none; white-space: nowrap; }
   .swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  .swatch.third { border-radius: 0; height: 2px; width: 10px; background: repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 5px); }
   .name { display: flex; align-items: center; gap: 6px; }
   .you {
     font-size: 10.5px;

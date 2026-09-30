@@ -69,6 +69,9 @@ func Overview(ctx context.Context, st *storage.Store, viewerPersonID string, now
 				return syncapi.Overview{}, err
 			}
 			bo := bucketOverview(b, now, members, rows, viewerPersonID)
+			if bo.ThirdPartyModels, err = thirdPartyModels(ctx, st, a.ID, bo, start, end); err != nil {
+				return syncapi.Overview{}, err
+			}
 			if bo.Timeline, err = timeline(ctx, st, a.ID, b, snaps, now); err != nil {
 				return syncapi.Overview{}, err
 			}
@@ -198,9 +201,33 @@ func timeline(ctx context.Context, st *storage.Store, accountID string, b quota.
 	}
 	tl := &syncapi.Timeline{Start: start.UTC(), BinMinutes: bin, Bins: bins, Points: []syncapi.TimelinePoint{}, Resets: resets}
 	for _, r := range rows {
-		tl.Points = append(tl.Points, syncapi.TimelinePoint{Bin: r.Bin, PersonID: r.PersonID, Model: r.Model, Tokens: r.Tokens})
+		tl.Points = append(tl.Points, syncapi.TimelinePoint{Bin: r.Bin, PersonID: r.PersonID, Model: r.Model, ThirdParty: r.ThirdParty, Tokens: r.Tokens})
 	}
 	return tl, nil
+}
+
+// thirdPartyModels lists the window's third-party models, most tokens first;
+// like the quota's own breakdown, none after a reset.
+func thirdPartyModels(ctx context.Context, st *storage.Store, accountID string, bo syncapi.BucketOverview, start, end time.Time) ([]syncapi.ModelUsage, error) {
+	out := []syncapi.ModelUsage{}
+	if bo.Reset {
+		return out, nil
+	}
+	rows, err := st.ThirdPartyUsage(ctx, accountID, start, end)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		t := r.Tokens
+		out = append(out, syncapi.ModelUsage{Model: r.Model, Requests: r.Requests, Tokens: t.Input + t.CachedInput + t.CacheWrite + t.Output})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Tokens != out[j].Tokens {
+			return out[i].Tokens > out[j].Tokens
+		}
+		return out[i].Model < out[j].Model
+	})
+	return out, nil
 }
 
 func usedByViewer(a syncapi.AccountOverview) bool {

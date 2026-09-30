@@ -14,6 +14,7 @@ import (
 	"github.com/KoukeNeko/ShareCodex/internal/client/storage"
 	"github.com/KoukeNeko/ShareCodex/internal/quota"
 	"github.com/KoukeNeko/ShareCodex/internal/scan"
+	"github.com/KoukeNeko/ShareCodex/internal/syncapi"
 	"github.com/KoukeNeko/ShareCodex/internal/usage"
 )
 
@@ -312,5 +313,77 @@ func TestResolveSplitsClaudeDesktopFromTheCLI(t *testing.T) {
 	}
 	if ref, ok := desktopOnly.resolve("desk", "claude-desktop", later); !ok || ref != desk {
 		t.Errorf("Desktop-only resolve = %q, %v; want %q", ref, ok, desk)
+	}
+}
+
+// Requests from Claude clients to other vendors' models are recorded as
+// third-party, against the account the client used. Claude Desktop set up
+// for third-party inference has no Claude account, so its usage goes with
+// the device's Claude Code account.
+func TestIngestFileRecordsThirdPartyUsage(t *testing.T) {
+	ctx := context.Background()
+	store, err := storage.Open(ctx, filepath.Join(t.TempDir(), "local.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	a := &Agent{store: store, log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+
+	t0 := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
+	later := t0.Add(time.Hour)
+	events := []usage.Event{
+		{DedupeKey: "gateway", Provider: account.ProviderAnthropic, Originator: "cli", Model: "deepseek-v4-pro", ThirdParty: true, OccurredAt: later},
+		{DedupeKey: "desktop-3p", Provider: account.ProviderAnthropic, Originator: "claude-desktop-3p", Model: "claude-sonnet-5", OccurredAt: later},
+		{DedupeKey: "official", Provider: account.ProviderAnthropic, Originator: "cli", Model: "claude-opus-5-5", OccurredAt: later},
+	}
+	src := source{
+		provider: account.ProviderAnthropic,
+		parse:    func(*os.File) (parsed, error) { return parsed{events: events}, nil },
+	}
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ac := accounts{
+		provider: account.ProviderAnthropic,
+		cli:      []account.Observation{{Provider: account.ProviderAnthropic, ExternalRefHash: "max", ObservedAt: t0}},
+		since:    t0,
+	}
+	if n, err := a.ingestFile(ctx, src, path, scan.FileState{}, ac); err != nil || n != 3 {
+		t.Fatalf("ingested %d, %v; want all 3", n, err)
+	}
+	items, err := store.PendingOutbox(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := batchRequest(items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]syncapi.Event{}
+	for _, e := range req.Events {
+		got[e.DedupeKey] = e
+	}
+	for key, third := range map[string]bool{"gateway": true, "desktop-3p": true, "official": false} {
+		if e := got[key]; e.AccountRefHash != "max" || e.ThirdParty != third {
+			t.Errorf("%s = account %q, third party %v; want max, %v", key, e.AccountRefHash, e.ThirdParty, third)
+		}
+	}
+
+	// A third-party request says nothing about the account Claude Desktop
+	// is signed into.
+	if ref, at, err := store.LastUse(ctx, account.ProviderAnthropic, []string{"claude-desktop-3p", "cli"}); err != nil || ref != "max" || !at.Equal(later) {
+		t.Fatalf("LastUse = %q, %v, %v", ref, at, err)
+	}
+	third := []usage.Event{{DedupeKey: "desktop-gateway", Provider: account.ProviderAnthropic, Originator: "claude-desktop",
+		Model: "glm-5.3", ThirdParty: true, OccurredAt: later.Add(time.Minute)}}
+	src.parse = func(*os.File) (parsed, error) { return parsed{events: third}, nil }
+	desk := ac
+	desk.desktopSeen, desk.desktop = true, map[string]string{"": "org"}
+	if _, err := a.ingestFile(ctx, src, path, scan.FileState{Size: 1}, desk); err != nil {
+		t.Fatal(err)
+	}
+	if _, at, err := store.LastUse(ctx, account.ProviderAnthropic, []string{"claude-desktop"}); err != nil || !at.IsZero() {
+		t.Errorf("LastUse of Claude Desktop = %v, %v; want none from a third-party request", at, err)
 	}
 }

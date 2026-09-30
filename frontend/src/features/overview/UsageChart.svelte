@@ -13,11 +13,13 @@
   // where a window reset, or the amount in each point's span. Points group
   // the server's bins into about 60 (5 minutes on a 5-hour chart) unless
   // fine asks for every bin. Models keep the colors and order of the card's
-  // Models list, its legend.
-  let { timeline, models, color, members, now, fine = false }: {
+  // Models list, its legend; third-party models, which never count against
+  // the quota, are drawn dashed after them in their own list's order.
+  let { timeline, models, thirdPartyModels = [], color, members, now, fine = false }: {
     timeline: Timeline
     models: string[]
-    color: (model: string) => string
+    thirdPartyModels?: string[]
+    color: (model: string, thirdParty: boolean) => string
     members: MemberShare[]
     now: Date
     fine?: boolean
@@ -41,23 +43,31 @@
   // The bins in which a window starts again.
   const resetBins = $derived(new Set((timeline.resets ?? []).map((r) => Math.floor((new Date(r).getTime() - start) / binMs))))
 
+  const seriesKey = (model: string, thirdParty: boolean) => `${thirdParty ? 'third' : 'quota'}:${model}`
+
   const series = $derived.by(() => {
     const byModel = new Map<string, number[]>()
     for (const p of timeline.points ?? []) {
       if (person && p.person_id !== person) continue
       if (p.bin < 0 || p.bin > lastBin) continue
-      let values = byModel.get(p.model)
-      if (!values) byModel.set(p.model, (values = new Array(lastBin + 1).fill(0)))
+      const key = seriesKey(p.model, !!p.third_party)
+      let values = byModel.get(key)
+      if (!values) byModel.set(key, (values = new Array(lastBin + 1).fill(0)))
       values[p.bin] += p.tokens
     }
-    return models
-      .filter((m) => byModel.has(m))
-      .map((m) => {
-        const perBin = byModel.get(m)!
+    return [
+      ...models.map((model) => ({ model, thirdParty: false })),
+      ...thirdPartyModels.map((model) => ({ model, thirdParty: true })),
+    ]
+      .map((s) => ({ ...s, key: seriesKey(s.model, s.thirdParty) }))
+      .filter((s) => byModel.has(s.key))
+      .map(({ model, thirdParty, key }) => {
+        const m = { model, thirdParty, key }
+        const perBin = byModel.get(key)!
         const points = Array.from({ length: lastPoint + 1 }, (_, i) => binsOf(i))
         if (!cumulative) {
           // The tokens used within each point's span.
-          return { model: m, values: points.map(([from, to]) => perBin.slice(from, to).reduce((a, v) => a + v, 0)) }
+          return { ...m, values: points.map(([from, to]) => perBin.slice(from, to).reduce((a, v) => a + v, 0)) }
         }
         // The running total at the end of each point's span.
         let total = 0
@@ -65,7 +75,7 @@
           if (resetBins.has(bin)) total = 0
           return (total += v)
         })
-        return { model: m, values: points.map(([, to]) => totals[to - 1]) }
+        return { ...m, values: points.map(([, to]) => totals[to - 1]) }
       })
   })
 
@@ -157,8 +167,8 @@
         {#if hover !== null}
           <line class="cross" x1={x(hover)} x2={x(hover)} y1="0" y2={height} />
         {/if}
-        {#each series as s (s.model)}
-          <path d={path(s.values)} style:stroke={color(s.model)} />
+        {#each series as s (s.key)}
+          <path d={path(s.values)} class:third={s.thirdParty} style:stroke={color(s.model, s.thirdParty)} />
         {/each}
       </svg>
     {/if}
@@ -169,9 +179,9 @@
     {#if hover !== null}
       <div class="tip" class:flip={x(hover) > width / 2} style:left="{x(hover)}px">
         <div class="muted">{slot(hover)}</div>
-        {#each series.filter((s) => s.values[hover!] > 0) as s (s.model)}
+        {#each series.filter((s) => s.values[hover!] > 0) as s (s.key)}
           <div class="tip-row">
-            <i style:background={color(s.model)}></i>
+            <i class:third={s.thirdParty} style:color={color(s.model, s.thirdParty)}></i>
             <strong class="num">{tokens(s.values[hover])}</strong>
             <span class="muted">{s.model}</span>
           </div>
@@ -235,5 +245,9 @@
   }
   .tip.flip { transform: translateX(calc(-100% - 8px)); }
   .tip-row { display: flex; align-items: center; gap: 6px; }
-  .tip-row i { width: 10px; height: 2px; border-radius: 1px; flex: none; }
+  .tip-row i { width: 10px; height: 2px; border-radius: 1px; flex: none; background: currentColor; }
+  /* Third-party models never count against the quota: dashed, like their
+     list's swatches. */
+  path.third { stroke-dasharray: 4 3; }
+  .tip-row i.third { background: repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 5px); }
 </style>

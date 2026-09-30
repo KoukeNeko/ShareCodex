@@ -79,10 +79,9 @@ func Parse(r io.Reader) (Result, error) {
 		if l.Type != "assistant" || l.Message == nil || l.Message.Usage == nil {
 			continue
 		}
-		// Claude Code can be pointed at other vendors' models through a
-		// gateway; only Anthropic models draw on a Claude subscription. This
-		// also drops "<synthetic>" messages, which never reach the API.
-		if !anthropicModel.MatchString(l.Message.Model) || l.Message.ID == "" {
+		// "<synthetic>" messages are made up by Claude Code and never reach
+		// any API.
+		if l.Message.ID == "" || l.Message.Model == "" || l.Message.Model == "<synthetic>" {
 			continue
 		}
 
@@ -103,6 +102,9 @@ func Parse(r io.Reader) (Result, error) {
 			SessionID:  l.SessionID,
 			Model:      l.Message.Model,
 			OccurredAt: l.Timestamp,
+			// Claude Code can be pointed at other vendors' models through a
+			// gateway; only Anthropic models draw on a Claude subscription.
+			ThirdParty: !anthropicModel.MatchString(l.Message.Model),
 			Tokens: usage.Tokens{
 				Input:       u.InputTokens,
 				CachedInput: u.CacheReadInputTokens,

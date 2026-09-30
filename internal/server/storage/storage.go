@@ -290,8 +290,8 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 			reported = append(reported, e)
 			res, err := tx.ExecContext(ctx, `
 				INSERT INTO usage_events (dedupe_key, account_id, person_id, device_id, product, originator, session_id,
-					model, occurred_at, input, cached_input, cache_write, output, reasoning_output)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+					model, occurred_at, input, cached_input, cache_write, output, reasoning_output, third_party)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $17)
 				ON CONFLICT (dedupe_key) DO UPDATE SET
 					account_id = excluded.account_id,
 					output = GREATEST(usage_events.output, excluded.output),
@@ -301,7 +301,7 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 					 usage_events.account_id != excluded.account_id AND $16 != '' AND
 					 usage_events.account_id = (SELECT id FROM accounts WHERE provider = $15 AND ref_hash = $16))`,
 				e.DedupeKey, id, d.PersonID, d.ID, e.Product, e.Originator, e.SessionID, e.Model, e.OccurredAt,
-				e.Input, e.CachedInput, e.CacheWrite, e.Output, e.ReasoningOutput, e.Provider, e.PreviousAccountRefHash)
+				e.Input, e.CachedInput, e.CacheWrite, e.Output, e.ReasoningOutput, e.Provider, e.PreviousAccountRefHash, e.ThirdParty)
 			if err != nil {
 				return fmt.Errorf("save event %s: %w", e.DedupeKey, err)
 			}
@@ -540,7 +540,7 @@ func (s *Store) Usage(ctx context.Context, accountID string, from, to time.Time)
 		SELECT e.person_id, d.name, e.model, sum(e.input), sum(e.cached_input), sum(e.cache_write), sum(e.output),
 			sum(e.reasoning_output), count(*)
 		FROM usage_events e JOIN devices d ON d.id = e.device_id
-		WHERE e.account_id = $1 AND e.occurred_at >= $2 AND e.occurred_at <= $3
+		WHERE e.account_id = $1 AND e.occurred_at >= $2 AND e.occurred_at <= $3 AND NOT e.third_party
 		GROUP BY e.person_id, d.name, e.model`, accountID, from, to)
 	if err != nil {
 		return nil, err
@@ -560,20 +560,21 @@ func (s *Store) Usage(ctx context.Context, accountID string, from, to time.Time)
 
 // TimelineRow is one person's tokens on one model within one bin.
 type TimelineRow struct {
-	Bin      int
-	PersonID string
-	Model    string
-	Tokens   int64
+	Bin        int
+	PersonID   string
+	Model      string
+	ThirdParty bool
+	Tokens     int64
 }
 
 // UsageTimeline sums an account's tokens per bin of binMinutes from start,
 // for events before end.
 func (s *Store) UsageTimeline(ctx context.Context, accountID string, start, end time.Time, binMinutes int) ([]TimelineRow, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT floor(extract(epoch FROM occurred_at - $2) / ($4 * 60))::int AS bin, person_id, model,
+		SELECT floor(extract(epoch FROM occurred_at - $2) / ($4 * 60))::int AS bin, person_id, model, third_party,
 			sum(input + cached_input + cache_write + output)
 		FROM usage_events WHERE account_id = $1 AND occurred_at >= $2 AND occurred_at < $3
-		GROUP BY bin, person_id, model`, accountID, start, end, binMinutes)
+		GROUP BY bin, person_id, model, third_party`, accountID, start, end, binMinutes)
 	if err != nil {
 		return nil, err
 	}
@@ -581,12 +582,25 @@ func (s *Store) UsageTimeline(ctx context.Context, accountID string, start, end 
 	var out []TimelineRow
 	for rows.Next() {
 		var r TimelineRow
-		if err := rows.Scan(&r.Bin, &r.PersonID, &r.Model, &r.Tokens); err != nil {
+		if err := rows.Scan(&r.Bin, &r.PersonID, &r.Model, &r.ThirdParty, &r.Tokens); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// ThirdPartyUsage sums an account's third-party requests per model within
+// [from, to]; they are shown apart from the quota.
+func (s *Store) ThirdPartyUsage(ctx context.Context, accountID string, from, to time.Time) ([]PersonUsage, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT model, sum(input), sum(cached_input), sum(cache_write), sum(output), sum(reasoning_output), count(*)
+		FROM usage_events WHERE account_id = $1 AND occurred_at >= $2 AND occurred_at <= $3 AND third_party
+		GROUP BY model`, accountID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	return scanPersonUsage(rows)
 }
 
 // PersonUsage is one person's token totals on one model, across accounts.
@@ -599,11 +613,15 @@ type PersonUsage struct {
 func (s *Store) PersonUsage(ctx context.Context, personID string, since time.Time) ([]PersonUsage, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT model, sum(input), sum(cached_input), sum(cache_write), sum(output), sum(reasoning_output), count(*)
-		FROM usage_events WHERE person_id = $1 AND occurred_at >= $2
+		FROM usage_events WHERE person_id = $1 AND occurred_at >= $2 AND NOT third_party
 		GROUP BY model`, personID, since)
 	if err != nil {
 		return nil, err
 	}
+	return scanPersonUsage(rows)
+}
+
+func scanPersonUsage(rows *sql.Rows) ([]PersonUsage, error) {
 	defer rows.Close()
 	var out []PersonUsage
 	for rows.Next() {

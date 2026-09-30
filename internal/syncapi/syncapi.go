@@ -39,11 +39,14 @@ type Event struct {
 	SessionID              string    `json:"session_id"`
 	Model                  string    `json:"model"`
 	OccurredAt             time.Time `json:"occurred_at"`
-	Input                  int64     `json:"input"`
-	CachedInput            int64     `json:"cached_input"`
-	CacheWrite             int64     `json:"cache_write"`
-	Output                 int64     `json:"output"`
-	ReasoningOutput        int64     `json:"reasoning_output"`
+	// ThirdParty events are shown but never count against an account's
+	// quota; see usage.Event.
+	ThirdParty      bool  `json:"third_party,omitempty"`
+	Input           int64 `json:"input"`
+	CachedInput     int64 `json:"cached_input"`
+	CacheWrite      int64 `json:"cache_write"`
+	Output          int64 `json:"output"`
+	ReasoningOutput int64 `json:"reasoning_output"`
 }
 
 type Bucket struct {
@@ -178,6 +181,10 @@ type BucketOverview struct {
 	UnattributedPercent float64       `json:"unattributed_percent"`
 	Members             []MemberShare `json:"members"`
 	Models              []ModelUsage  `json:"models"`
+	// ThirdPartyModels are other vendors' models used from Claude clients
+	// on this account within the window. They never count against the
+	// quota, so they have no share: UsedPercent is always 0.
+	ThirdPartyModels []ModelUsage `json:"third_party_models"`
 	// Timeline is the tokens over the last window length, up to now.
 	Timeline *Timeline `json:"timeline,omitempty"`
 }
@@ -197,9 +204,10 @@ type Timeline struct {
 }
 
 type TimelinePoint struct {
-	Bin      int    `json:"bin"`
-	PersonID string `json:"person_id"`
-	Model    string `json:"model"`
+	Bin        int    `json:"bin"`
+	PersonID   string `json:"person_id"`
+	Model      string `json:"model"`
+	ThirdParty bool   `json:"third_party,omitempty"`
 	// Tokens counts input, cached input, cache writes and output together.
 	Tokens int64 `json:"tokens"`
 }
@@ -252,6 +260,7 @@ func FromEvent(e usage.Event) Event {
 		SessionID:       e.SessionID,
 		Model:           e.Model,
 		OccurredAt:      e.OccurredAt.UTC(),
+		ThirdParty:      e.ThirdParty,
 		Input:           e.Tokens.Input,
 		CachedInput:     e.Tokens.CachedInput,
 		CacheWrite:      e.Tokens.CacheWrite,
@@ -270,6 +279,7 @@ func (e Event) ToDomain() usage.Event {
 		SessionID:      e.SessionID,
 		Model:          e.Model,
 		OccurredAt:     e.OccurredAt,
+		ThirdParty:     e.ThirdParty,
 		Tokens: usage.Tokens{
 			Input:           e.Input,
 			CachedInput:     e.CachedInput,

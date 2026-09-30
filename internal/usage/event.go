@@ -53,6 +53,10 @@ type Event struct {
 	SessionID  string
 	Model      string
 	OccurredAt time.Time
+	// ThirdParty marks a request to another vendor's model, or through a
+	// third-party gateway, from a Claude client. It is recorded against the
+	// account the client was signed into but never draws on its quota.
+	ThirdParty bool
 
 	Tokens Tokens
 }

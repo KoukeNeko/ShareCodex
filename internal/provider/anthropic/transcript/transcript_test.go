@@ -19,8 +19,15 @@ func TestParseFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(res.Events) != 2 {
-		t.Fatalf("got %d events, want 2 (split lines deduped, synthetic and gateway models skipped)", len(res.Events))
+	if len(res.Events) != 3 {
+		t.Fatalf("got %d events, want 3 (split lines deduped, synthetic skipped)", len(res.Events))
+	}
+	for _, e := range res.Events {
+		// Only another vendor's model, reached through a gateway, is
+		// third-party.
+		if want := e.DedupeKey == "claude:msg_9:req_9"; e.ThirdParty != want {
+			t.Errorf("%s (%s): third party = %v, want %v", e.DedupeKey, e.Model, e.ThirdParty, want)
+		}
 	}
 	first := res.Events[0]
 	if first.DedupeKey != "claude:msg_1:req_1" || first.Model != "claude-opus-5-5" || first.Originator != "cli" {

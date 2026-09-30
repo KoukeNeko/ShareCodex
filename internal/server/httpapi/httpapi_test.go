@@ -731,3 +731,79 @@ func TestPersonalUsageAndTimeline(t *testing.T) {
 		}
 	}
 }
+
+// Third-party requests are recorded against the account the client used and
+// shown on its chart and in their own list, but never count against the
+// quota: not in the models, the members' estimates or personal totals.
+func TestThirdPartyUsageStaysOutOfTheQuota(t *testing.T) {
+	store := storagetest.New(t)
+	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	defer srv.Close()
+	alice := pair(t, store, srv.URL, "alice")
+	bob := pair(t, store, srv.URL, "bob")
+
+	now := time.Now().UTC().Truncate(time.Second)
+	resets := now.Add(time.Hour)
+	obs := syncapi.Observation{Provider: "anthropic", AccountRefHash: "max", Hint: "max", ObservedAt: now.Add(-24 * time.Hour)}
+	event := func(key, model string, third bool) syncapi.Event {
+		return syncapi.Event{DedupeKey: key, AccountRefHash: "max", Provider: "anthropic", Product: "claude-code", Originator: "cli",
+			Model: model, ThirdParty: third, OccurredAt: now.Add(-30 * time.Minute), Input: 1000, Output: 100}
+	}
+	snap := syncapi.Snapshot{Provider: "anthropic", AccountRefHash: "max", Source: "claude-oauth-usage", ObservedAt: now,
+		Buckets: []syncapi.Bucket{{Key: "five_hour", UsedPercent: ptr(20.0), ResetsAt: &resets, WindowMinutes: ptr(300)}}}
+	for _, batch := range []struct {
+		c      client
+		events []syncapi.Event
+		snaps  []syncapi.Snapshot
+	}{
+		{alice, []syncapi.Event{event("claude:a1", "claude-opus-5-5", false), event("claude:a2", "gpt-6-sol", true)}, []syncapi.Snapshot{snap}},
+		// Bob only used a third-party model on the account.
+		{bob, []syncapi.Event{event("claude:b1", "deepseek-v4-pro", true)}, nil},
+	} {
+		req := syncapi.SyncRequest{Version: syncapi.Version, Observations: []syncapi.Observation{obs}, Events: batch.events, Snapshots: batch.snaps}
+		if st := batch.c.do("POST", syncapi.PathSync, req, nil); st != http.StatusOK {
+			t.Fatalf("sync = %d", st)
+		}
+	}
+
+	var ov syncapi.Overview
+	path := syncapi.PathOverview + "?" + url.Values{syncapi.QueryToday: {now.Add(-time.Hour).Format(time.RFC3339)}}.Encode()
+	if st := alice.do("GET", path, nil, &ov); st != http.StatusOK || len(ov.Accounts) != 1 || len(ov.Accounts[0].Buckets) != 1 {
+		t.Fatalf("overview = %d, %+v", st, ov)
+	}
+	b := ov.Accounts[0].Buckets[0]
+	if len(b.Models) != 1 || b.Models[0].Model != "claude-opus-5-5" {
+		t.Errorf("models = %+v, want only the Claude model", b.Models)
+	}
+	var third []string
+	for _, m := range b.ThirdPartyModels {
+		third = append(third, m.Model)
+		if m.UsedPercent != 0 || m.Tokens != 1100 || m.Requests != 1 {
+			t.Errorf("third-party model %+v, want 1 request of 1,100 tokens and no share", m)
+		}
+	}
+	if !slices.Equal(third, []string{"deepseek-v4-pro", "gpt-6-sol"}) {
+		t.Errorf("third-party models = %v", third)
+	}
+	for _, m := range b.Members {
+		want := map[string]float64{"alice": 20, "bob": 0}[m.Name]
+		if math.Abs(m.UsedPercent-want) > 1e-9 {
+			t.Errorf("%s used %v, want %v: third-party usage must not take a share", m.Name, m.UsedPercent, want)
+		}
+	}
+	thirdPoints := 0
+	for _, p := range b.Timeline.Points {
+		if p.ThirdParty != (p.Model != "claude-opus-5-5") {
+			t.Errorf("timeline point %+v flagged wrong", p)
+		}
+		if p.ThirdParty {
+			thirdPoints++
+		}
+	}
+	if thirdPoints != 2 {
+		t.Errorf("timeline has %d third-party points, want 2", thirdPoints)
+	}
+	if ov.You == nil || ov.You.Today.Requests != 1 {
+		t.Errorf("personal totals = %+v, want only the official request", ov.You)
+	}
+}
