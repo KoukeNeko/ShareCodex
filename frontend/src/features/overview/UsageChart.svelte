@@ -46,7 +46,12 @@
 
   const x = (bin: number) => ((bin + 0.5) / timeline.bins) * width
   // Where an earlier window reset, on the same time axis as the bins.
-  const resetX = $derived((timeline.resets ?? []).map((r) => ((new Date(r).getTime() - start) / (timeline.bins * binMs)) * width))
+  const resets = $derived(
+    (timeline.resets ?? []).map((r) => {
+      const ms = new Date(r).getTime()
+      return { x: ((ms - start) / (timeline.bins * binMs)) * width, text: resetLabel(ms) }
+    }),
+  )
   const y = (v: number) => height - (v / top) * (height - 4) - 1
 
   function path(values: number[]): string {
@@ -58,6 +63,12 @@
     return timeline.bins * timeline.bin_minutes > 1440
       ? d.toLocaleDateString(locale(), { month: 'numeric', day: 'numeric' })
       : d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', hour12: false })
+  }
+
+  // A reset is a moment, so it keeps its time even on a chart of days.
+  function resetLabel(ms: number): string {
+    const time = new Date(ms).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', hour12: false })
+    return timeline.bins * timeline.bin_minutes > 1440 ? `${label(ms)} ${time}` : time
   }
 
   const ticks = $derived([0, 0.5, 1].map((f) => ({ f, text: label(start + f * timeline.bins * binMs) })))
@@ -87,8 +98,8 @@
       <svg {width} {height} role="img" aria-label={t('usageOverTime')} onpointermove={onMove} onpointerleave={() => (hover = null)}>
         <line class="grid" x1="0" x2={width} y1={y(top)} y2={y(top)} />
         <line class="grid" x1="0" x2={width} y1={y(0)} y2={y(0)} />
-        {#each resetX as rx, i (i)}
-          <line class="reset" x1={rx} x2={rx} y1="0" y2={height} />
+        {#each resets as r, i (i)}
+          <line class="reset" x1={r.x} x2={r.x} y1="0" y2={height} />
         {/each}
         {#if hover !== null}
           <line class="cross" x1={x(hover)} x2={x(hover)} y1="0" y2={height} />
@@ -98,6 +109,10 @@
         {/each}
       </svg>
     {/if}
+    {#each resets as r, i (i)}
+      <!-- Left of its line, unless too close to the chart's left edge. -->
+      <span class="reset-label num" class:right={r.x < 40} style:left="{r.x}px">{r.text}</span>
+    {/each}
     {#if hover !== null}
       <div class="tip" class:flip={x(hover) > width / 2} style:left="{x(hover)}px">
         <div class="muted">{label(start + hover * binMs)}</div>
@@ -133,6 +148,16 @@
   .grid { stroke: var(--line); stroke-width: 1; }
   .cross { stroke: var(--muted); stroke-width: 1; }
   .reset { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+  .reset-label {
+    position: absolute;
+    top: 2px;
+    transform: translateX(calc(-100% - 4px));
+    font-size: 10.5px;
+    color: var(--muted);
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .reset-label.right { transform: translateX(4px); }
   path { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
   .axis { font-size: 10.5px; color: var(--muted); margin-bottom: -4px; }
   .ticks { display: flex; justify-content: space-between; font-size: 10.5px; }
