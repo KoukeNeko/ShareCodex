@@ -43,7 +43,10 @@ type line struct {
 	} `json:"message"`
 }
 
-var anthropicModel = regexp.MustCompile(`^claude-(opus|sonnet|haiku)-`)
+// anthropicModel matches Anthropic's own models, whatever the family (opus,
+// sonnet, haiku, fable, …): claude-<family>-<version>. OpenCodex's
+// claude-ocx-<service>--<model> names are not Anthropic's.
+var anthropicModel = regexp.MustCompile(`^claude-[a-z]+-\d`)
 
 // Claude Code logs neither the API address nor how it was launched, but
 // gateways answer with their own message IDs and no request ID: OpenCodex
@@ -135,7 +138,7 @@ func Parse(r io.Reader) (Result, error) {
 			OccurredAt: l.Timestamp,
 			// Claude Code can be pointed at other vendors' models through a
 			// gateway; only Anthropic models draw on a Claude subscription.
-			ThirdParty: !anthropicModel.MatchString(l.Message.Model),
+			ThirdParty: !anthropicModel.MatchString(l.Message.Model) || openCodexModel.MatchString(l.Message.Model),
 			Gateway:    gateway(l.Message.Model, l.Message.ID, l.RequestID),
 			Tokens: usage.Tokens{
 				Input:       u.InputTokens,

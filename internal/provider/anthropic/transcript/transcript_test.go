@@ -81,3 +81,24 @@ func TestParseOpenCodexNativeIsChatGPTUsage(t *testing.T) {
 		t.Errorf("routed = %+v, want third-party usage on the Claude account", routed)
 	}
 }
+
+// Every Anthropic model family draws on a Claude subscription; OpenCodex's
+// claude-ocx- names and other vendors' models do not.
+func TestAnthropicModel(t *testing.T) {
+	for model, official := range map[string]bool{
+		"claude-opus-5-5":                              true,
+		"claude-sonnet-5":                              true,
+		"claude-haiku-4-5-20251001":                    true,
+		"claude-fable-5-1":                             true,
+		"claude-opus-4-8-p05d":                         true,
+		"claude-ocx-ollama-cloud--deepseek-v4.1-flash": false,
+		"ocx-claude-native--gpt-6-sol":                 false,
+		"deepseek-v4.1-flash":                          false,
+		"<synthetic>":                                  false,
+	} {
+		third := !anthropicModel.MatchString(model) || openCodexModel.MatchString(model)
+		if third == official {
+			t.Errorf("%s: third party = %v, want %v", model, third, !official)
+		}
+	}
+}
