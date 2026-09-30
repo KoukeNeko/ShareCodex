@@ -178,18 +178,21 @@ type BucketOverview struct {
 	UnattributedPercent float64       `json:"unattributed_percent"`
 	Members             []MemberShare `json:"members"`
 	Models              []ModelUsage  `json:"models"`
-	// Timeline is the window's tokens over time; absent after a reset.
+	// Timeline is the tokens over the last window length, up to now.
 	Timeline *Timeline `json:"timeline,omitempty"`
 }
 
-// Timeline splits a quota window into equal bins, from the window's start
-// to its full length, so the chart's time axis is the whole window.
+// Timeline splits the last window length before now into equal bins. It
+// is not the quota window itself, so a reset does not empty the chart: the
+// previous window's usage stays in view, marked off by Resets.
 type Timeline struct {
 	Start      time.Time `json:"start"`
 	BinMinutes int       `json:"bin_minutes"`
 	Bins       int       `json:"bins"`
 	// Points holds only bins with usage.
 	Points []TimelinePoint `json:"points"`
+	// Resets are the times a window reset inside the timeline.
+	Resets []time.Time `json:"resets"`
 }
 
 type TimelinePoint struct {

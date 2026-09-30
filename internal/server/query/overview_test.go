@@ -144,3 +144,28 @@ func TestGroupActiveUsers(t *testing.T) {
 		t.Errorf("plus = %+v, want alice only", plus)
 	}
 }
+
+// Once a window ends and the provider has not started the next one, the
+// timeline covers the last window length and marks where the old one reset.
+func TestPastResetsMarksEarlierWindowsInsideTheTimeline(t *testing.T) {
+	now := time.Date(2026, 9, 30, 8, 25, 0, 0, time.UTC)
+	start := now.Add(-5 * time.Hour)
+	at := func(h, m, ms int) *time.Time {
+		v := time.Date(2026, 9, 30, h, m, 0, ms*int(time.Millisecond), time.UTC)
+		return &v
+	}
+	snap := func(resets *time.Time, key quota.BucketKey) quota.Snapshot {
+		return quota.Snapshot{Buckets: []quota.Bucket{{Key: key, ResetsAt: resets}}}
+	}
+	snaps := []quota.Snapshot{
+		snap(at(8, 20, 647), quota.BucketFiveHour),
+		snap(at(8, 20, 142), quota.BucketFiveHour), // the same window, read again
+		snap(nil, quota.BucketFiveHour),            // after the reset, before a new window
+		snap(at(3, 20, 0), quota.BucketFiveHour),   // before the timeline starts
+		snap(at(9, 0, 0), quota.BucketWeekly),      // another bucket
+	}
+	got := pastResets(snaps, quota.BucketFiveHour, start, now)
+	if want := []time.Time{*at(8, 20, 0)}; !slices.EqualFunc(got, want, time.Time.Equal) {
+		t.Errorf("pastResets = %v, want %v", got, want)
+	}
+}

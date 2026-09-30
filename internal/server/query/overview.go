@@ -69,10 +69,8 @@ func Overview(ctx context.Context, st *storage.Store, viewerPersonID string, now
 				return syncapi.Overview{}, err
 			}
 			bo := bucketOverview(b, now, members, rows, viewerPersonID)
-			if !bo.Reset {
-				if bo.Timeline, err = timeline(ctx, st, a.ID, b, start, end); err != nil {
-					return syncapi.Overview{}, err
-				}
+			if bo.Timeline, err = timeline(ctx, st, a.ID, b, snaps, now); err != nil {
+				return syncapi.Overview{}, err
 			}
 			ao.Buckets = append(ao.Buckets, bo)
 		}
@@ -127,17 +125,51 @@ func timelineBinMinutes(windowMinutes int) int {
 	}
 }
 
-func timeline(ctx context.Context, st *storage.Store, accountID string, b quota.Observed, start, end time.Time) (*syncapi.Timeline, error) {
+// pastResets lists the reset times readings of one bucket reported within
+// (start, end], to the nearest minute: readings of one window differ in their
+// sub-second reset times, and a window starts about when the last one reset.
+func pastResets(snaps []quota.Snapshot, key quota.BucketKey, start, end time.Time) []time.Time {
+	out := []time.Time{}
+	for _, s := range snaps {
+		for _, b := range s.Buckets {
+			if b.Key != key || b.ResetsAt == nil {
+				continue
+			}
+			at := b.ResetsAt.UTC().Round(time.Minute)
+			if at.After(start) && !at.After(end) && !slices.ContainsFunc(out, at.Equal) {
+				out = append(out, at)
+			}
+		}
+	}
+	slices.SortFunc(out, time.Time.Compare)
+	return out
+}
+
+// timeline covers the last window length before now rather than the current
+// window, so the previous window's usage stays in view after a reset.
+func timeline(ctx context.Context, st *storage.Store, accountID string, b quota.Observed, snaps []quota.Snapshot, now time.Time) (*syncapi.Timeline, error) {
 	if b.WindowMinutes == nil || *b.WindowMinutes <= 0 {
 		return nil, nil
 	}
 	window := *b.WindowMinutes
 	bin := timelineBinMinutes(window)
-	rows, err := st.UsageTimeline(ctx, accountID, start, end, bin)
+	bins := (window + bin - 1) / bin
+	start := now.Add(-time.Duration(bins*bin) * time.Minute)
+	rows, err := st.UsageTimeline(ctx, accountID, start, now, bin)
 	if err != nil {
 		return nil, err
 	}
-	tl := &syncapi.Timeline{Start: start.UTC(), BinMinutes: bin, Bins: (window + bin - 1) / bin, Points: []syncapi.TimelinePoint{}}
+	resets := pastResets(snaps, b.Key, start, now)
+	// The current window's start is a reset too, though only its end is
+	// ever reported.
+	if b.ResetsAt != nil {
+		at := b.ResetsAt.Add(-time.Duration(window) * time.Minute).UTC().Round(time.Minute)
+		if at.After(start) && !at.After(now) && !slices.ContainsFunc(resets, at.Equal) {
+			resets = append(resets, at)
+			slices.SortFunc(resets, time.Time.Compare)
+		}
+	}
+	tl := &syncapi.Timeline{Start: start.UTC(), BinMinutes: bin, Bins: bins, Points: []syncapi.TimelinePoint{}, Resets: resets}
 	for _, r := range rows {
 		tl.Points = append(tl.Points, syncapi.TimelinePoint{Bin: r.Bin, PersonID: r.PersonID, Model: r.Model, Tokens: r.Tokens})
 	}

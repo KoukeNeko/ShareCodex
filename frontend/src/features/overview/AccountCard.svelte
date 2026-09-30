@@ -111,7 +111,7 @@
       </div>
     {/if}
 
-    {#if !local && !expired && bucket.timeline && (bucket.timeline.points ?? []).length > 0}
+    {#if !local && bucket.timeline && (bucket.timeline.points ?? []).length > 0}
       <UsageChart
         timeline={bucket.timeline}
         models={(bucket.models ?? []).map((m) => m.model)}

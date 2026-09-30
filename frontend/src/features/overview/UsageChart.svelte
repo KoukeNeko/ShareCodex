@@ -45,6 +45,8 @@
   })
 
   const x = (bin: number) => ((bin + 0.5) / timeline.bins) * width
+  // Where an earlier window reset, on the same time axis as the bins.
+  const resetX = $derived((timeline.resets ?? []).map((r) => ((new Date(r).getTime() - start) / (timeline.bins * binMs)) * width))
   const y = (v: number) => height - (v / top) * (height - 4) - 1
 
   function path(values: number[]): string {
@@ -85,6 +87,9 @@
       <svg {width} {height} role="img" aria-label={t('usageOverTime')} onpointermove={onMove} onpointerleave={() => (hover = null)}>
         <line class="grid" x1="0" x2={width} y1={y(top)} y2={y(top)} />
         <line class="grid" x1="0" x2={width} y1={y(0)} y2={y(0)} />
+        {#each resetX as rx, i (i)}
+          <line class="reset" x1={rx} x2={rx} y1="0" y2={height} />
+        {/each}
         {#if hover !== null}
           <line class="cross" x1={x(hover)} x2={x(hover)} y1="0" y2={height} />
         {/if}
@@ -127,6 +132,7 @@
   svg { position: absolute; inset: 0; display: block; overflow: visible; touch-action: none; }
   .grid { stroke: var(--line); stroke-width: 1; }
   .cross { stroke: var(--muted); stroke-width: 1; }
+  .reset { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
   path { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
   .axis { font-size: 10.5px; color: var(--muted); margin-bottom: -4px; }
   .ticks { display: flex; justify-content: space-between; font-size: 10.5px; }
