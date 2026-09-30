@@ -138,3 +138,30 @@ func TestBucketsOmitWhatTheAccountDoesNotReport(t *testing.T) {
 		t.Error("an unparseable reset time must leave the bucket without one")
 	}
 }
+
+// A throttled or refused read says how long to wait, from Retry-After or an
+// hour when Anthropic names none.
+func TestGetUsageReportsHowLongToWait(t *testing.T) {
+	for _, tc := range []struct {
+		status     int
+		retryAfter string
+		want       time.Duration
+	}{
+		{http.StatusTooManyRequests, "3588", 3588 * time.Second},
+		{http.StatusTooManyRequests, "", time.Hour},
+		{http.StatusForbidden, "", time.Hour},
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if tc.retryAfter != "" {
+				w.Header().Set("Retry-After", tc.retryAfter)
+			}
+			w.WriteHeader(tc.status)
+		}))
+		_, err := getUsage(context.Background(), srv.URL, "tok")
+		srv.Close()
+		var throttled *ThrottledError
+		if !errors.As(err, &throttled) || throttled.RetryAfter != tc.want {
+			t.Errorf("%d with Retry-After %q: err = %v, want a wait of %s", tc.status, tc.retryAfter, err, tc.want)
+		}
+	}
+}

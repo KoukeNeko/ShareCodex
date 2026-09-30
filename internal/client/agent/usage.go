@@ -27,11 +27,12 @@ func (a *Agent) probeUsage(ctx context.Context) {
 		a.log.Error("load Claude sign-ins", "err", err)
 	}
 	for _, l := range logins {
-		if l.RefHash == covered {
+		if l.RefHash == covered || a.usagePaused("login:"+l.RefHash) {
 			continue
 		}
 		buckets, err := a.probeLogin(ctx, l)
 		if err != nil {
+			a.pauseUsage("login:"+l.RefHash, err)
 			a.log.Warn("read Claude usage", "account", l.Hint, "err", err)
 			continue
 		}
@@ -71,8 +72,12 @@ func (a *Agent) probeClaudeCode(ctx context.Context) (string, bool) {
 	if !ok {
 		return "", false
 	}
+	if a.usagePaused("cli:" + ref) {
+		return "", false
+	}
 	buckets, token, err := oauthusage.Probe(ctx, now)
 	if err != nil {
+		a.pauseUsage("cli:"+ref, err)
 		a.log.Warn("read Claude usage", "err", err)
 		return "", false
 	}
@@ -92,6 +97,28 @@ func (a *Agent) probeClaudeCode(ctx context.Context) (string, bool) {
 		return "", false
 	}
 	return ref, true
+}
+
+// usagePaused reports whether Anthropic asked for a sign-in's usage not to be
+// read yet.
+func (a *Agent) usagePaused(key string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return time.Now().Before(a.usageRetryAt[key])
+}
+
+// pauseUsage stops reading a sign-in's usage for as long as Anthropic asked.
+func (a *Agent) pauseUsage(key string, err error) {
+	var throttled *oauthusage.ThrottledError
+	if !errors.As(err, &throttled) {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.usageRetryAt == nil {
+		a.usageRetryAt = map[string]time.Time{}
+	}
+	a.usageRetryAt[key] = time.Now().Add(throttled.RetryAfter)
 }
 
 // probeLogin reads one ShareCodex sign-in, keeping its tokens current.

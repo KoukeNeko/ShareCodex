@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -72,6 +73,30 @@ func PlanWithTier(plan, tier string) string {
 		}
 	}
 	return plan
+}
+
+// ThrottledError is Anthropic refusing to report usage for now: rate limited
+// (429) or refused (403). RetryAfter is how long to wait before reading the
+// same sign-in again.
+type ThrottledError struct {
+	Status     string
+	RetryAfter time.Duration
+}
+
+func (e *ThrottledError) Error() string {
+	return fmt.Sprintf("read Claude usage: %s; next try in %s", e.Status, e.RetryAfter.Round(time.Minute))
+}
+
+// defaultRetryAfter is the wait when Anthropic names none; it has asked for
+// about an hour.
+const defaultRetryAfter = time.Hour
+
+// retryAfter reads a Retry-After header given in seconds.
+func retryAfter(header string) time.Duration {
+	if s, err := strconv.Atoi(strings.TrimSpace(header)); err == nil && s > 0 {
+		return time.Duration(s) * time.Second
+	}
+	return defaultRetryAfter
 }
 
 // Probe returns the account's current rate-limit buckets, and the token it
@@ -183,9 +208,12 @@ func getUsage(ctx context.Context, url, token string) ([]quota.Bucket, error) {
 		return nil, fmt.Errorf("read Claude usage: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusForbidden {
+		// The account keeps the reading already recorded. Reading again
+		// before Anthropic allows it only keeps the limit in place.
+		return nil, &ThrottledError{Status: resp.Status, RetryAfter: retryAfter(resp.Header.Get("Retry-After"))}
+	}
 	if resp.StatusCode != http.StatusOK {
-		// Throttled or refused: the account keeps the reading already
-		// recorded, and the next probe tries again.
 		return nil, fmt.Errorf("read Claude usage: %s", resp.Status)
 	}
 	var u usage

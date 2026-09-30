@@ -127,6 +127,9 @@ type Agent struct {
 	overviewErr string
 	overview    *syncapi.Overview
 	update      *update.Release
+	// usageRetryAt holds when Anthropic allows a sign-in's usage to be read
+	// again, keyed "cli:<account>" or "login:<account>".
+	usageRetryAt map[string]time.Time
 }
 
 func New(ctx context.Context, version string, log *slog.Logger) (*Agent, error) {
