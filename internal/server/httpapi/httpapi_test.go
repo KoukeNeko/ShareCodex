@@ -643,6 +643,12 @@ func TestPersonalUsageAndTimeline(t *testing.T) {
 	}
 	snap := syncapi.Snapshot{Provider: "openai", AccountRefHash: "plus", Source: "codex-rollout", ObservedAt: now,
 		Buckets: []syncapi.Bucket{{Key: "five_hour", UsedPercent: ptr(10.0), ResetsAt: &resets, WindowMinutes: ptr(300)}}}
+	// An idle window: its reset is a full window from the reading, so it has
+	// not started and its start is no reset.
+	idleAt := now.Add(-30 * time.Minute)
+	idleResets := idleAt.Add(5 * time.Hour)
+	idle := syncapi.Snapshot{Provider: "openai", AccountRefHash: "team", Source: "codex-rollout", ObservedAt: idleAt,
+		Buckets: []syncapi.Bucket{{Key: "five_hour", UsedPercent: ptr(0.0), ResetsAt: &idleResets, WindowMinutes: ptr(300)}}}
 	req := syncapi.SyncRequest{Version: syncapi.Version,
 		Observations: []syncapi.Observation{obs("plus"), obs("team")},
 		Events: []syncapi.Event{
@@ -652,7 +658,7 @@ func TestPersonalUsageAndTimeline(t *testing.T) {
 			event("codex:4", "plus", now.Add(-10*24*time.Hour)), // within 30 days only
 			event("codex:5", "plus", now.Add(-35*24*time.Hour)), // older than 30 days
 		},
-		Snapshots: []syncapi.Snapshot{snap}}
+		Snapshots: []syncapi.Snapshot{snap, idle}}
 	if st := alice.do("POST", syncapi.PathSync, req, nil); st != http.StatusOK {
 		t.Fatalf("sync = %d", st)
 	}
@@ -676,11 +682,17 @@ func TestPersonalUsageAndTimeline(t *testing.T) {
 		t.Errorf("30 days = %+v, want 4 requests of alice's across both accounts", got)
 	}
 
-	var plus *syncapi.AccountOverview
+	var plus, team *syncapi.AccountOverview
 	for i := range ov.Accounts {
-		if ov.Accounts[i].Label == "plus" {
+		switch ov.Accounts[i].Label {
+		case "plus":
 			plus = &ov.Accounts[i]
+		case "team":
+			team = &ov.Accounts[i]
 		}
+	}
+	if team == nil || len(team.Buckets) != 1 || team.Buckets[0].Timeline == nil || len(team.Buckets[0].Timeline.Resets) != 0 {
+		t.Errorf("idle team account = %+v, want a timeline with no resets", team)
 	}
 	if plus == nil || len(plus.Buckets) != 1 || plus.Buckets[0].Timeline == nil {
 		t.Fatalf("plus account = %+v", plus)
