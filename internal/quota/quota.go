@@ -65,19 +65,49 @@ type Observed struct {
 	ObservedAt time.Time
 }
 
-// Latest merges snapshots reported by any device for one account, keeping the
-// most recently observed value of each bucket.
+// Latest merges snapshots reported by any device for one account into each
+// bucket's current value.
+//
+// Readings of one window can disagree: a statusLine reading carries the
+// percentage of its session's last response, which can be long out of date,
+// while it is observed now. Usage within a window only rises, so among
+// readings of the current window the highest percentage is the most recent
+// truth. A reading of a later window replaces the earlier window's (a reset).
+// Readings belong to one window when their reset times are less than half a
+// window apart, which absorbs jitter in the reported reset time. A bucket
+// without a reset time or percentage falls back to the newest reading.
 func Latest(snapshots []Snapshot) map[BucketKey]Observed {
 	latest := make(map[BucketKey]Observed)
 	for _, s := range snapshots {
 		for _, b := range s.Buckets {
-			if cur, ok := latest[b.Key]; ok && !s.ObservedAt.After(cur.ObservedAt) {
-				continue
+			next := Observed{Bucket: b, ObservedAt: s.ObservedAt}
+			cur, ok := latest[b.Key]
+			if !ok || replaces(next, cur) {
+				latest[b.Key] = next
 			}
-			latest[b.Key] = Observed{Bucket: b, ObservedAt: s.ObservedAt}
 		}
 	}
 	return latest
+}
+
+// replaces reports whether a reading should replace the current value.
+func replaces(next, cur Observed) bool {
+	comparable := next.ResetsAt != nil && cur.ResetsAt != nil && next.WindowMinutes != nil &&
+		next.UsedPercent != nil && cur.UsedPercent != nil
+	if !comparable {
+		return next.ObservedAt.After(cur.ObservedAt)
+	}
+	half := time.Duration(*next.WindowMinutes) * time.Minute / 2
+	switch d := next.ResetsAt.Sub(*cur.ResetsAt); {
+	case d > half:
+		return true // a later window
+	case d < -half:
+		return false // an earlier window
+	}
+	if *next.UsedPercent != *cur.UsedPercent {
+		return *next.UsedPercent > *cur.UsedPercent
+	}
+	return next.ObservedAt.After(cur.ObservedAt)
 }
 
 // HasReset reports whether the window closed after the observation, in which

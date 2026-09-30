@@ -54,3 +54,27 @@ func TestWindow(t *testing.T) {
 		t.Errorf("Window = %v..%v", start, end)
 	}
 }
+
+// Within one window usage only rises, so a stale statusLine reading observed
+// later cannot pull the value back down; a later window replaces it.
+func TestLatestKeepsTheHighestReadingOfTheCurrentWindow(t *testing.T) {
+	t0 := time.Date(2026, 9, 30, 15, 0, 0, 0, time.UTC)
+	five := 300
+	resets := t0.Add(3 * time.Hour)
+	reading := func(at time.Time, used float64, resets time.Time) Snapshot {
+		return Snapshot{ObservedAt: at, Buckets: []Bucket{{Key: BucketFiveHour, UsedPercent: &used, ResetsAt: &resets, WindowMinutes: &five}}}
+	}
+	fresh := reading(t0, 90, resets.Add(-400*time.Millisecond))
+	stale := reading(t0.Add(time.Second), 41, resets) // statusLine, from an idle session
+	if got := *Latest([]Snapshot{fresh, stale})[BucketFiveHour].UsedPercent; got != 90 {
+		t.Errorf("five_hour = %v, want 90: a stale lower reading of the same window must not win", got)
+	}
+	next := reading(t0.Add(4*time.Hour), 3, resets.Add(5*time.Hour))
+	if got := *Latest([]Snapshot{fresh, stale, next})[BucketFiveHour].UsedPercent; got != 3 {
+		t.Errorf("five_hour = %v, want 3 from the next window", got)
+	}
+	old := reading(t0.Add(5*time.Hour), 99, resets) // a late reading of the ended window
+	if got := *Latest([]Snapshot{next, old})[BucketFiveHour].UsedPercent; got != 3 {
+		t.Errorf("five_hour = %v, want 3: a late reading of an earlier window must not win", got)
+	}
+}
