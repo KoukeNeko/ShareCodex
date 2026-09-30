@@ -114,6 +114,9 @@ type Agent struct {
 	// the ledger; a scan started before the reset would skip every file.
 	ledgerMu gosync.Mutex
 
+	// openCodex caches OpenCodex's request log between scans.
+	openCodex openCodexLog
+
 	mu          gosync.Mutex
 	settings    settings.Settings
 	providers   map[account.Provider]*ProviderState

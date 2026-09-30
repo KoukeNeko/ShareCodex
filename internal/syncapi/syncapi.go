@@ -218,8 +218,9 @@ type TimelinePoint struct {
 // ModelUsage is one model's usage within a quota window, across members.
 type ModelUsage struct {
 	Model string `json:"model"`
-	// Gateway is the service a third-party model was used through, when
-	// known; always empty for the quota's own models.
+	// Gateway is the service the model was used through, when known: for a
+	// third-party model, or for the quota's own model reached from another
+	// client, such as ChatGPT from Claude Code through OpenCodex.
 	Gateway  string `json:"gateway,omitempty"`
 	Requests int    `json:"requests"`
 	// Tokens counts input, cached input, cache writes and output together.
@@ -253,6 +254,7 @@ type MemberDevice struct {
 
 type MemberModel struct {
 	Model       string  `json:"model"`
+	Gateway     string  `json:"gateway,omitempty"`
 	UsedPercent float64 `json:"used_percent"`
 }
 

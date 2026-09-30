@@ -52,7 +52,10 @@ var anthropicModel = regexp.MustCompile(`^claude-(opus|sonnet|haiku)-`)
 // `claude-ocx-…`). Anthropic's own IDs look like msg_011C… with a req_…
 // request ID.
 var (
-	openCodexModel     = regexp.MustCompile(`^(ocx-claude|claude-ocx)-.+--.+`)
+	openCodexModel = regexp.MustCompile(`^(ocx-claude|claude-ocx)-.+--.+`)
+	// OpenCodex's "native" service is the ChatGPT subscription Codex is
+	// signed into, so those requests draw on a ChatGPT account's quota.
+	openCodexNative    = regexp.MustCompile(`^(?:ocx-claude|claude-ocx)-native--(.+)$`)
 	openCodexMessageID = regexp.MustCompile(`^msg_[0-9a-f]{32}$`)
 	ollamaMessageID    = regexp.MustCompile(`^msg_[0-9a-f]{24}$`)
 )
@@ -122,7 +125,7 @@ func Parse(r io.Reader) (Result, error) {
 			continue
 		}
 		index[key] = len(res.Events)
-		res.Events = append(res.Events, usage.Event{
+		e := usage.Event{
 			DedupeKey:  key,
 			Provider:   account.ProviderAnthropic,
 			Product:    usage.ProductClaudeCode,
@@ -140,7 +143,13 @@ func Parse(r io.Reader) (Result, error) {
 				CacheWrite:  u.CacheCreationInputTokens,
 				Output:      u.OutputTokens,
 			},
-		})
+		}
+		if m := openCodexNative.FindStringSubmatch(l.Message.Model); m != nil {
+			// Counted on the ChatGPT account under the model's own name,
+			// like the same model used from Codex.
+			e.Provider, e.Model, e.ThirdParty = account.ProviderOpenAI, m[1], false
+		}
+		res.Events = append(res.Events, e)
 	}
 	return res, nil
 }

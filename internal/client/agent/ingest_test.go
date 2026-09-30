@@ -387,3 +387,62 @@ func TestIngestFileRecordsThirdPartyUsage(t *testing.T) {
 		t.Errorf("LastUse of Claude Desktop = %v, %v; want none from a third-party request", at, err)
 	}
 }
+
+// A Claude client's request that drew on a ChatGPT subscription through a
+// gateway goes with the Codex CLI's account at the time.
+func TestIngestFileBooksOtherProvidersUsageToTheirAccount(t *testing.T) {
+	ctx := context.Background()
+	store, err := storage.Open(ctx, filepath.Join(t.TempDir(), "local.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	a := &Agent{store: store, log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+
+	t0 := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
+	if err := store.AddObservation(ctx, account.Observation{Provider: account.ProviderOpenAI, ExternalRefHash: "plus", ObservedAt: t0}); err != nil {
+		t.Fatal(err)
+	}
+	events := []usage.Event{
+		{DedupeKey: "chatgpt", Provider: account.ProviderOpenAI, Originator: "claude-desktop", Model: "gpt-6-sol", Gateway: usage.GatewayOpenCodex, OccurredAt: t0.Add(time.Hour)},
+		{DedupeKey: "before", Provider: account.ProviderOpenAI, Originator: "claude-desktop", Model: "gpt-6-sol", OccurredAt: t0.Add(-time.Hour)},
+		{DedupeKey: "claude", Provider: account.ProviderAnthropic, Originator: "cli", Model: "claude-opus-5-5", OccurredAt: t0.Add(time.Hour)},
+	}
+	src := source{
+		provider: account.ProviderAnthropic,
+		parse:    func(*os.File) (parsed, error) { return parsed{events: events}, nil },
+	}
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ac := accounts{
+		provider: account.ProviderAnthropic,
+		cli:      []account.Observation{{Provider: account.ProviderAnthropic, ExternalRefHash: "max", ObservedAt: t0}},
+		since:    t0,
+	}
+	if _, err := a.ingestFile(ctx, src, path, scan.FileState{}, ac); err != nil {
+		t.Fatal(err)
+	}
+	items, err := store.PendingOutbox(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := batchRequest(items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]syncapi.Event{}
+	for _, e := range req.Events {
+		got[e.DedupeKey] = e
+	}
+	if e := got["chatgpt"]; e.Provider != "openai" || e.AccountRefHash != "plus" || e.ThirdParty {
+		t.Errorf("chatgpt = %+v, want the Codex account's usage", e)
+	}
+	if _, ok := got["before"]; ok {
+		t.Error("usage before the Codex CLI was first seen must not be uploaded")
+	}
+	if e := got["claude"]; e.AccountRefHash != "max" {
+		t.Errorf("claude = %+v, want the Claude account", e)
+	}
+}

@@ -844,4 +844,37 @@ func TestThirdPartyUsageStaysOutOfTheQuota(t *testing.T) {
 	if b := ov.Accounts[0].Buckets[0]; len(b.Models) != 0 || len(b.ThirdPartyModels) != 3 {
 		t.Errorf("after reclassifying: models %+v, third-party %+v", b.Models, b.ThirdPartyModels)
 	}
+
+	// Bob's gpt-6-sol turns out to have drawn on a ChatGPT account through
+	// OpenCodex: his own resync moves it there, and Alice cannot move it.
+	moved := syncapi.Event{DedupeKey: "claude:b1", AccountRefHash: "plus", Provider: "openai", Product: "claude-code",
+		Originator: "claude-desktop", Model: "gpt-6-sol", Gateway: "opencodex", OccurredAt: now.Add(-30 * time.Minute), Input: 1000, Output: 100}
+	plusObs := syncapi.Observation{Provider: "openai", AccountRefHash: "plus", Hint: "plus", ObservedAt: now.Add(-24 * time.Hour)}
+	if st := alice.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version, Observations: []syncapi.Observation{plusObs},
+		Events: []syncapi.Event{moved}}, nil); st != http.StatusOK {
+		t.Fatalf("alice sync = %d", st)
+	}
+	thirdParty := func() int {
+		t.Helper()
+		ov = syncapi.Overview{}
+		if st := alice.do("GET", path, nil, &ov); st != http.StatusOK {
+			t.Fatalf("overview = %d", st)
+		}
+		for _, a := range ov.Accounts {
+			if a.Label == "max" {
+				return len(a.Buckets[0].ThirdPartyModels)
+			}
+		}
+		return -1
+	}
+	if n := thirdParty(); n != 3 {
+		t.Errorf("another device moved the request: max has %d third-party models, want 3", n)
+	}
+	if st := bob.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version, Observations: []syncapi.Observation{plusObs},
+		Events: []syncapi.Event{moved}}, nil); st != http.StatusOK {
+		t.Fatalf("bob sync = %d", st)
+	}
+	if n := thirdParty(); n != 2 {
+		t.Errorf("after bob's resync max has %d third-party models, want 2", n)
+	}
 }

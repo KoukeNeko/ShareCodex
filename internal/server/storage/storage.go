@@ -307,6 +307,19 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 				return fmt.Errorf("save event %s: %w", e.DedupeKey, err)
 			}
 			accepted += rowsAffected(res)
+			// A request uploaded as third-party can turn out to belong with
+			// another provider's account, such as Claude Code using ChatGPT
+			// through OpenCodex: counted there when it drew on that
+			// subscription, third-party there when OpenCodex sent it to an
+			// account outside the pool. Its own device's resync moves it.
+			if e.Gateway != "" {
+				if _, err := tx.ExecContext(ctx, `
+					UPDATE usage_events SET account_id = $2, model = $3, gateway = $4, third_party = $6
+					WHERE dedupe_key = $1 AND device_id = $5 AND third_party AND account_id != $2`,
+					e.DedupeKey, id, e.Model, e.Gateway, d.ID, e.ThirdParty); err != nil {
+					return fmt.Errorf("move %s: %w", e.DedupeKey, err)
+				}
+			}
 			// A resync marks requests uploaded before clients could tell
 			// they were third-party, and names their gateway; a request never
 			// goes back to counting against the quota, and a named gateway
@@ -545,17 +558,21 @@ type UsageRow struct {
 	PersonID   string
 	DeviceName string
 	Model      string
-	Tokens     usage.Tokens
-	Requests   int
+	// Gateway keeps a model reached through a gateway, such as ChatGPT
+	// from Claude Code through OpenCodex, apart from the same model used
+	// directly.
+	Gateway  string
+	Tokens   usage.Tokens
+	Requests int
 }
 
 func (s *Store) Usage(ctx context.Context, accountID string, from, to time.Time) ([]UsageRow, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT e.person_id, d.name, e.model, sum(e.input), sum(e.cached_input), sum(e.cache_write), sum(e.output),
+		SELECT e.person_id, d.name, e.model, e.gateway, sum(e.input), sum(e.cached_input), sum(e.cache_write), sum(e.output),
 			sum(e.reasoning_output), count(*)
 		FROM usage_events e JOIN devices d ON d.id = e.device_id
 		WHERE e.account_id = $1 AND e.occurred_at >= $2 AND e.occurred_at <= $3 AND NOT e.third_party
-		GROUP BY e.person_id, d.name, e.model`, accountID, from, to)
+		GROUP BY e.person_id, d.name, e.model, e.gateway`, accountID, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -564,7 +581,7 @@ func (s *Store) Usage(ctx context.Context, accountID string, from, to time.Time)
 	for rows.Next() {
 		var r UsageRow
 		t := &r.Tokens
-		if err := rows.Scan(&r.PersonID, &r.DeviceName, &r.Model, &t.Input, &t.CachedInput, &t.CacheWrite, &t.Output, &t.ReasoningOutput, &r.Requests); err != nil {
+		if err := rows.Scan(&r.PersonID, &r.DeviceName, &r.Model, &r.Gateway, &t.Input, &t.CachedInput, &t.CacheWrite, &t.Output, &t.ReasoningOutput, &r.Requests); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

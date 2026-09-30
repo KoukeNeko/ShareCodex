@@ -300,27 +300,28 @@ func bucketOverview(b quota.Observed, now time.Time, members []storage.Member, r
 			requests[r.PersonID] += r.Requests
 			totalCost += cost
 
-			m, ok := models[r.Model]
+			key := modelKey(r.Model, r.Gateway)
+			m, ok := models[key]
 			if !ok {
-				m = &syncapi.ModelUsage{Model: r.Model}
-				models[r.Model] = m
+				m = &syncapi.ModelUsage{Model: r.Model, Gateway: r.Gateway}
+				models[key] = m
 			}
 			m.Requests += r.Requests
 			m.Tokens += r.Tokens.Input + r.Tokens.CachedInput + r.Tokens.CacheWrite + r.Tokens.Output
-			modelCosts[r.Model] += cost
+			modelCosts[key] += cost
 			if personModelCosts[r.PersonID] == nil {
 				personModelCosts[r.PersonID] = map[string]float64{}
 			}
-			personModelCosts[r.PersonID][r.Model] += cost
+			personModelCosts[r.PersonID][key] += cost
 			if personDeviceCosts[r.PersonID] == nil {
 				personDeviceCosts[r.PersonID] = map[string]float64{}
 			}
 			personDeviceCosts[r.PersonID][r.DeviceName] += cost
 		}
 	}
-	for name, m := range models {
+	for key, m := range models {
 		if totalCost > 0 {
-			m.UsedPercent = bo.UsedPercent * modelCosts[name] / totalCost
+			m.UsedPercent = bo.UsedPercent * modelCosts[key] / totalCost
 		}
 		bo.Models = append(bo.Models, *m)
 	}
@@ -328,7 +329,10 @@ func bucketOverview(b quota.Observed, now time.Time, members []storage.Member, r
 		if bo.Models[i].UsedPercent != bo.Models[j].UsedPercent {
 			return bo.Models[i].UsedPercent > bo.Models[j].UsedPercent
 		}
-		return bo.Models[i].Model < bo.Models[j].Model
+		if bo.Models[i].Model != bo.Models[j].Model {
+			return bo.Models[i].Model < bo.Models[j].Model
+		}
+		return bo.Models[i].Gateway < bo.Models[j].Gateway
 	})
 
 	weights := map[string]float64{}
@@ -354,8 +358,8 @@ func bucketOverview(b quota.Observed, now time.Time, members []storage.Member, r
 		}
 		// Same order as bo.Models so the popup can color segments by model.
 		for _, m := range bo.Models {
-			if c := personModelCosts[person][m.Model]; c > 0 && totalCost > 0 {
-				ms.Models = append(ms.Models, syncapi.MemberModel{Model: m.Model, UsedPercent: bo.UsedPercent * c / totalCost})
+			if c := personModelCosts[person][modelKey(m.Model, m.Gateway)]; c > 0 && totalCost > 0 {
+				ms.Models = append(ms.Models, syncapi.MemberModel{Model: m.Model, Gateway: m.Gateway, UsedPercent: bo.UsedPercent * c / totalCost})
 			}
 		}
 		for name, c := range personDeviceCosts[person] {
@@ -379,6 +383,10 @@ func bucketOverview(b quota.Observed, now time.Time, members []storage.Member, r
 	})
 	return bo
 }
+
+// modelKey tells a model reached through a gateway apart from the same model
+// used directly.
+func modelKey(model, gateway string) string { return gateway + "\x00" + model }
 
 // groupActiveUsers turns active devices into each account's people, one
 // entry per person with their device names, the viewer first and then by

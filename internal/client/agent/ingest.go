@@ -12,6 +12,7 @@ import (
 	"github.com/KoukeNeko/ShareCodex/internal/provider/anthropic/statusline"
 	"github.com/KoukeNeko/ShareCodex/internal/provider/anthropic/transcript"
 	"github.com/KoukeNeko/ShareCodex/internal/provider/openai/codex/rollout"
+	"github.com/KoukeNeko/ShareCodex/internal/provider/opencodex"
 	"github.com/KoukeNeko/ShareCodex/internal/quota"
 	"github.com/KoukeNeko/ShareCodex/internal/scan"
 	"github.com/KoukeNeko/ShareCodex/internal/usage"
@@ -244,8 +245,33 @@ func (a *Agent) ingestFile(ctx context.Context, src source, path string, st scan
 		a.log.Warn("skipped unreadable lines", "file", path, "count", res.badLines)
 	}
 
+	// A client can reach another provider's subscription through a gateway,
+	// such as Claude Code using ChatGPT through OpenCodex. Those requests go
+	// with that provider's CLI account at the time.
+	others := map[account.Provider]accounts{}
 	events := res.events[:0]
 	for _, e := range res.events {
+		if e.Provider == account.ProviderOpenAI && e.Gateway == usage.GatewayOpenCodex {
+			// OpenCodex may have sent it to a ChatGPT account other than
+			// Codex's own; that usage is not this account's quota.
+			if r, ok := opencodex.Match(a.openCodex.records(a.log), e.OccurredAt, e.Tokens); ok && r.Provider != opencodex.MainChatGPT {
+				e.ThirdParty = true
+			}
+		}
+		if e.Provider != src.provider {
+			other, ok := others[e.Provider]
+			if !ok {
+				if other, err = a.loadAccounts(ctx, e.Provider); err != nil {
+					return 0, err
+				}
+				others[e.Provider] = other
+			}
+			if ref, ok := other.resolve("", "", e.OccurredAt); ok {
+				e.AccountRefHash = ref
+				events = append(events, e)
+			}
+			continue
+		}
 		entrypoint := e.Originator
 		// Claude Desktop set up for third-party inference has no Claude
 		// account, so its usage is third-party and goes with the device's

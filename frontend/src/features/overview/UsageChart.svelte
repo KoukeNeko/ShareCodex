@@ -17,7 +17,7 @@
   // the quota, are drawn dashed after them in their own list's order.
   let { timeline, models, thirdPartyModels = [], color, members, now, fine = false }: {
     timeline: Timeline
-    models: string[]
+    models: { model: string; gateway: string }[]
     thirdPartyModels?: { model: string; gateway: string }[]
     color: (model: string, thirdParty: boolean, gateway: string) => string
     members: MemberShare[]
@@ -43,7 +43,7 @@
   // The bins in which a window starts again.
   const resetBins = $derived(new Set((timeline.resets ?? []).map((r) => Math.floor((new Date(r).getTime() - start) / binMs))))
 
-  const seriesKey = (model: string, thirdParty: boolean, gateway = '') => `${thirdParty ? `third:${gateway}` : 'quota'}:${model}`
+  const seriesKey = (model: string, thirdParty: boolean, gateway = '') => `${thirdParty ? 'third' : 'quota'}:${gateway}:${model}`
 
   const series = $derived.by(() => {
     const byModel = new Map<string, number[]>()
@@ -56,7 +56,7 @@
       values[p.bin] += p.tokens
     }
     return [
-      ...models.map((model) => ({ model, thirdParty: false, gateway: '' })),
+      ...models.map((m) => ({ ...m, thirdParty: false })),
       ...thirdPartyModels.map((m) => ({ ...m, thirdParty: true })),
     ]
       .map((s) => ({ ...s, key: seriesKey(s.model, s.thirdParty, s.gateway) }))

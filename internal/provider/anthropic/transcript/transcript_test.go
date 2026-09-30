@@ -2,8 +2,10 @@ package transcript
 
 import (
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/KoukeNeko/ShareCodex/internal/account"
 	"github.com/KoukeNeko/ShareCodex/internal/usage"
 )
 
@@ -54,5 +56,28 @@ func TestGateway(t *testing.T) {
 		if got := gateway(tc.model, tc.messageID, tc.requestID); got != tc.want {
 			t.Errorf("%s: gateway = %q, want %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+// OpenCodex's "native" service is the ChatGPT subscription, so a Claude
+// client's request to it is ChatGPT usage under the model's own name; its
+// other services stay third-party.
+func TestParseOpenCodexNativeIsChatGPTUsage(t *testing.T) {
+	line := func(id, model string) string {
+		return `{"type":"assistant","sessionId":"s","requestId":"","timestamp":"2026-09-30T10:00:00Z","entrypoint":"claude-desktop",` +
+			`"message":{"id":"` + id + `","model":"` + model + `","usage":{"input_tokens":10,"output_tokens":5}}}` + "\n"
+	}
+	res, err := Parse(strings.NewReader(
+		line("msg_e84c4c53aab747968be1ca8434691de9", "ocx-claude-native--gpt-6-sol") +
+			line("msg_04d13bbb22d4432e9ea9d2c167e3e775", "ocx-claude-ollama-cloud--deepseek-v4.1-flash")))
+	if err != nil || len(res.Events) != 2 {
+		t.Fatalf("Parse = %+v, %v", res, err)
+	}
+	native, routed := res.Events[0], res.Events[1]
+	if native.Provider != account.ProviderOpenAI || native.Model != "gpt-6-sol" || native.ThirdParty || native.Gateway != usage.GatewayOpenCodex {
+		t.Errorf("native = %+v, want ChatGPT usage of gpt-6-sol through OpenCodex", native)
+	}
+	if routed.Provider != account.ProviderAnthropic || !routed.ThirdParty || routed.Gateway != usage.GatewayOpenCodex {
+		t.Errorf("routed = %+v, want third-party usage on the Claude account", routed)
 	}
 }

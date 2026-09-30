@@ -44,20 +44,25 @@
     return used >= 90 ? 'danger' : used >= 70 ? 'warn' : 'accent'
   }
 
+  // A model is keyed with the gateway it came through, so a model reached
+  // from another client (gpt-6-sol from Claude Code through OpenCodex) is
+  // kept apart from the same model used directly.
+  const modelKey = (model: string, gateway = '') => `${gateway}:${model}`
+
   // Colors follow the model's rank in this window; past the fourth, models
   // share the "other" color so hues are never generated.
   const modelSlots = 4
   const modelColor = $derived.by(() => {
     const colors = new Map<string, string>()
     ;(bucket?.models ?? []).forEach((m, i) =>
-      colors.set(m.model, i < modelSlots ? `var(--model-${i + 1})` : 'var(--model-other)'),
+      colors.set(modelKey(m.model, m.gateway), i < modelSlots ? `var(--model-${i + 1})` : 'var(--model-other)'),
     )
     return colors
   })
 
   // Third-party models take the same hues in their own order; dashed marks
   // keep them apart from the quota's models.
-  const thirdPartyKey = (model: string, gateway = '') => `${gateway}:${model}`
+  const thirdPartyKey = modelKey
   const thirdPartyColor = $derived.by(() => {
     const colors = new Map<string, string>()
     ;(bucket?.third_party_models ?? []).forEach((m, i) =>
@@ -79,10 +84,10 @@
     return thirdPartyTokens ? (tokensUsed / thirdPartyTokens) * 100 : 0
   }
 
-  function segmentsFor(models: { model: string; used_percent: number }[] | null | undefined): Segment[] {
+  function segmentsFor(models: { model: string; gateway?: string; used_percent: number }[] | null | undefined): Segment[] {
     return (models ?? []).map((m) => ({
       value: m.used_percent,
-      color: modelColor.get(m.model) ?? 'var(--model-other)',
+      color: modelColor.get(modelKey(m.model, m.gateway)) ?? 'var(--model-other)',
       label: `${m.model} ${percent(m.used_percent)}`,
     }))
   }
@@ -139,10 +144,10 @@
     {#if !local && bucket.timeline && (bucket.timeline.points ?? []).length > 0}
       <UsageChart
         timeline={bucket.timeline}
-        models={(bucket.models ?? []).map((m) => m.model)}
+        models={(bucket.models ?? []).map((m) => ({ model: m.model, gateway: m.gateway ?? '' }))}
         thirdPartyModels={(bucket.third_party_models ?? []).map((m) => ({ model: m.model, gateway: m.gateway ?? '' }))}
         color={(model, thirdParty, gateway) =>
-          (thirdParty ? thirdPartyColor.get(thirdPartyKey(model, gateway)) : modelColor.get(model)) ?? 'var(--model-other)'}
+          (thirdParty ? thirdPartyColor : modelColor).get(modelKey(model, gateway)) ?? 'var(--model-other)'}
         members={bucket.members ?? []}
         {now}
         fine={fineChart}
@@ -201,10 +206,11 @@
       {#if (bucket.models ?? []).length > 0}
         <ul class="models">
           <li class="muted small">{t('models')}</li>
-          {#each bucket.models ?? [] as model (model.model)}
+          {#each bucket.models ?? [] as model (modelKey(model.model, model.gateway))}
+            {@const shown = modelName(model.model, model.gateway)}
             <li>
               <div class="row">
-                <span class="model" title={model.model}><i class="swatch" style:background={modelColor.get(model.model)}></i><span class="model-name">{model.model}</span></span>
+                <span class="model" title={shown.title}><i class="swatch" style:background={modelColor.get(modelKey(model.model, model.gateway))}></i><span class="model-name">{shown.name}</span>{#if shown.via}<span class="via">{shown.via}</span>{/if}</span>
                 <span class="num usage"><span class="muted">{t('tokens', { count: tokens(model.tokens) })}</span>{t('estimated', { percent: percent(model.used_percent) })}</span>
               </div>
               <QuotaBar value={model.used_percent} segments={segmentsFor([model])} thin />
