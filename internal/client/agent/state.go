@@ -34,6 +34,10 @@ func (a *Agent) State(ctx context.Context) State {
 		AccountOrder:  slices.Clone(a.settings.AccountOrder),
 		Update:        a.update,
 	}
+	st.Pinned = []string{}
+	for _, w := range a.settings.Widgets {
+		st.Pinned = append(st.Pinned, w.AccountID)
+	}
 	for _, p := range []account.Provider{account.ProviderAnthropic, account.ProviderOpenAI} {
 		st.Providers = append(st.Providers, *a.providers[p])
 	}

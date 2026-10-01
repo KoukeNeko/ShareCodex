@@ -7,13 +7,17 @@ import (
 	"context"
 	_ "embed"
 	"io/fs"
+	"net/url"
 	"runtime"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 
 	"github.com/KoukeNeko/ShareCodex/internal/client/agent"
+	"github.com/KoukeNeko/ShareCodex/internal/client/settings"
 	"github.com/KoukeNeko/ShareCodex/internal/provider/anthropic/oauthusage"
 )
 
@@ -25,6 +29,11 @@ const (
 	defaultPopupHeight = 560
 	minPopupHeight     = 360
 	popupCornerRadius  = 12
+
+	// A widget starts this tall; its page then sizes it to its card.
+	defaultWidgetHeight = 420
+	minWidgetHeight     = 120
+	maxWidgetHeight     = 1200
 )
 
 //go:embed tray-template.png
@@ -47,6 +56,10 @@ func Run(ag *agent.Agent, assets fs.FS, executable string) error {
 		Mac:         application.MacOptions{ActivationPolicy: application.ActivationPolicyAccessory},
 	})
 	svc.app = app
+	acceptFirstMouse()
+	// However the app ends, Wails runs this before closing its windows:
+	// widgets closed by quitting stay pinned for the next launch.
+	app.OnShutdown(func() { svc.quitting.Store(true) })
 
 	height := ag.PopupHeight()
 	if height < minPopupHeight {
@@ -54,48 +67,20 @@ func Run(ag *agent.Agent, assets fs.FS, executable string) error {
 	}
 	// Windows 11 draws the popup on Acrylic, like the system's own tray
 	// flyouts; the query tells the page to go translucent over it.
-	background, url := application.BackgroundTypeTransparent, "/"
+	svc.background, svc.backdrop = application.BackgroundTypeTransparent, ""
 	if acrylicSupported() {
-		background, url = application.BackgroundTypeTranslucent, "/?backdrop=acrylic"
+		svc.background, svc.backdrop = application.BackgroundTypeTranslucent, "acrylic"
+	}
+	popupURL := "/"
+	if svc.backdrop != "" {
+		popupURL += "?backdrop=" + svc.backdrop
 	}
 	// Only the height is adjustable; the layout is designed for one width.
-	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:            "popup",
-		Width:           popupWidth,
-		Height:          height,
-		MinWidth:        popupWidth,
-		MaxWidth:        popupWidth,
-		MinHeight:       minPopupHeight,
-		Frameless:       true,
-		AlwaysOnTop:     true,
-		Hidden:          true,
-		HideOnEscape:    true,
-		HideOnFocusLost: true,
-		// DWM draws caption buttons behind a translucent page unless the
-		// system menu is gone; the popup closes via Escape or focus loss.
-		MinimiseButtonState: application.ButtonHidden,
-		MaximiseButtonState: application.ButtonHidden,
-		CloseButtonState:    application.ButtonHidden,
-		Windows: application.WindowsWindow{
-			HiddenOnTaskbar: true,
-			BackdropType:    application.Acrylic,
-		},
-		// The popup draws on AppKit's Liquid Glass (NSGlassEffectView on
-		// macOS 26+, a visual effect view before that); the page itself is
-		// transparent on macOS so the material shows through.
-		BackgroundType:   background,
-		BackgroundColour: application.NewRGBA(0, 0, 0, 0),
-		Mac: application.MacWindow{
-			Backdrop:     application.MacBackdropLiquidGlass,
-			CornerRadius: popupCornerRadius,
-			LiquidGlass: application.MacLiquidGlass{
-				Style:        application.LiquidGlassStyleAutomatic,
-				Material:     application.NSVisualEffectMaterialAuto,
-				CornerRadius: popupCornerRadius,
-			},
-		},
-		URL: url,
-	})
+	opts := svc.floatingWindow("popup", height, minPopupHeight, popupURL)
+	opts.Hidden = true
+	opts.HideOnEscape = true
+	opts.HideOnFocusLost = true
+	window := app.Window.NewWithOptions(opts)
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
 		window.Hide()
 		e.Cancel()
@@ -132,6 +117,10 @@ func Run(ag *agent.Agent, assets fs.FS, executable string) error {
 	}
 	tray.AttachWindow(window).WindowOffset(offset)
 
+	for _, w := range ag.Widgets() {
+		svc.openWidget(w)
+	}
+
 	var pending = make(chan struct{}, 1)
 	ag.OnChange = func() {
 		select {
@@ -161,6 +150,114 @@ type Service struct {
 	refreshItem *application.MenuItem
 	quitItem    *application.MenuItem
 	cancel      context.CancelFunc
+
+	// background and backdrop are how this system draws the popup, which
+	// widgets share.
+	background application.BackgroundType
+	backdrop   string
+
+	mu sync.Mutex
+	// widgets are the open widget windows by account ID.
+	widgets map[string]*application.WebviewWindow
+	// quitting tells a widget closed by the app ending from one the user
+	// closed, which unpins its account.
+	quitting atomic.Bool
+}
+
+// floatingWindow is the frameless, always-on-top window the popup and the
+// widgets are drawn in.
+func (s *Service) floatingWindow(name string, height, minHeight int, url string) application.WebviewWindowOptions {
+	return application.WebviewWindowOptions{
+		Name:        name,
+		Width:       popupWidth,
+		Height:      height,
+		MinWidth:    popupWidth,
+		MaxWidth:    popupWidth,
+		MinHeight:   minHeight,
+		Frameless:   true,
+		AlwaysOnTop: true,
+		// DWM draws caption buttons behind a translucent page unless the
+		// system menu is gone; the windows close from their own pages.
+		MinimiseButtonState: application.ButtonHidden,
+		MaximiseButtonState: application.ButtonHidden,
+		CloseButtonState:    application.ButtonHidden,
+		Windows: application.WindowsWindow{
+			HiddenOnTaskbar: true,
+			BackdropType:    application.Acrylic,
+		},
+		// The windows draw on AppKit's Liquid Glass (NSGlassEffectView on
+		// macOS 26+, a visual effect view before that); the page itself is
+		// transparent on macOS so the material shows through.
+		BackgroundType:   s.background,
+		BackgroundColour: application.NewRGBA(0, 0, 0, 0),
+		Mac: application.MacWindow{
+			Backdrop:     application.MacBackdropLiquidGlass,
+			CornerRadius: popupCornerRadius,
+			LiquidGlass: application.MacLiquidGlass{
+				Style:        application.LiquidGlassStyleAutomatic,
+				Material:     application.NSVisualEffectMaterialAuto,
+				CornerRadius: popupCornerRadius,
+			},
+		},
+		URL: url,
+	}
+}
+
+// openWidget shows a pinned account in a window of its own, where it was
+// last moved to, or brings the open one forward.
+func (s *Service) openWidget(w settings.Widget) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if win, ok := s.widgets[w.AccountID]; ok {
+		win.Focus()
+		return
+	}
+	q := url.Values{"widget": {w.AccountID}}
+	if s.backdrop != "" {
+		q.Set("backdrop", s.backdrop)
+	}
+	opts := s.floatingWindow("widget:"+w.AccountID, defaultWidgetHeight, minWidgetHeight, "/?"+q.Encode())
+	if w.Placed {
+		opts.InitialPosition, opts.X, opts.Y = application.WindowXY, w.X, w.Y
+	}
+	// On macOS a widget is a floating panel that does not activate the
+	// app: the first click on it takes effect, and the app in front stays
+	// in front.
+	opts.Mac.WindowClass = application.MacWindowClassPanel
+	opts.Mac.PanelPreferences = application.MacPanelPreferences{FloatingPanel: true, NonActivating: true}
+	win := s.app.Window.NewWithOptions(opts)
+	id := w.AccountID
+	// A drag moves the window many times a second; its position is saved
+	// once it comes to rest.
+	var settle *time.Timer
+	win.OnWindowEvent(events.Common.WindowDidMove, func(*application.WindowEvent) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if settle != nil {
+			settle.Stop()
+		}
+		settle = time.AfterFunc(500*time.Millisecond, func() {
+			x, y := win.Position()
+			if err := s.agent.SetWidgetPosition(id, x, y); err != nil {
+				s.app.Logger.Error("save widget position", "err", err)
+			}
+		})
+	})
+	win.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
+		s.mu.Lock()
+		delete(s.widgets, id)
+		s.mu.Unlock()
+		if s.quitting.Load() {
+			return
+		}
+		if err := s.agent.UnpinAccount(id); err != nil {
+			s.app.Logger.Error("unpin account", "err", err)
+		}
+	})
+	if s.widgets == nil {
+		s.widgets = map[string]*application.WebviewWindow{}
+	}
+	s.widgets[id] = win
 }
 
 func (s *Service) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
@@ -305,6 +402,37 @@ func (s *Service) labelMenu(lang string) {
 	s.refreshItem.SetLabel(labels.refresh)
 	s.quitItem.SetLabel(labels.quit)
 	s.menu.Update()
+}
+
+// PinAccount pins an account to the screen in a widget of its own.
+func (s *Service) PinAccount(accountID string) error {
+	if err := s.agent.PinAccount(accountID); err != nil {
+		return err
+	}
+	s.openWidget(settings.Widget{AccountID: accountID})
+	return nil
+}
+
+// UnpinAccount closes an account's widget, which unpins it.
+func (s *Service) UnpinAccount(accountID string) error {
+	s.mu.Lock()
+	win := s.widgets[accountID]
+	s.mu.Unlock()
+	if win == nil {
+		return s.agent.UnpinAccount(accountID)
+	}
+	win.Close()
+	return nil
+}
+
+// SetWidgetHeight fits a widget's window to its card.
+func (s *Service) SetWidgetHeight(accountID string, height int) {
+	s.mu.Lock()
+	win := s.widgets[accountID]
+	s.mu.Unlock()
+	if win != nil {
+		win.SetSize(popupWidth, max(minWidgetHeight, min(maxWidgetHeight, height)))
+	}
 }
 
 func (s *Service) Quit() {

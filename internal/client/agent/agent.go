@@ -81,6 +81,8 @@ type State struct {
 	AccountSort   string          `json:"account_sort"`
 	AccountOrder  []string        `json:"account_order"`
 	Update        *update.Release `json:"update,omitempty"`
+	// Pinned are the IDs of the accounts pinned to the screen.
+	Pinned []string `json:"pinned"`
 }
 
 // ClaudeLogin is a Claude account signed in to ShareCodex, named as the

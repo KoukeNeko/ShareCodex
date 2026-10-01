@@ -70,6 +70,27 @@ func TestStateCarriesLanguageAndUpdate(t *testing.T) {
 	if saved, err := settings.Load(); err != nil || saved.AccountSort != "custom" || !slices.Equal(saved.AccountOrder, []string{"b", "a"}) {
 		t.Fatalf("saved order = %q %v, %v; want custom b, a", saved.AccountSort, saved.AccountOrder, err)
 	}
+
+	// Pinned accounts reopen where they were moved to; pinning twice keeps
+	// one widget.
+	for _, id := range []string{"a", "b", "a"} {
+		if err := a.PinAccount(id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := a.SetWidgetPosition("b", 40, 60); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.UnpinAccount("a"); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.State(ctx).Pinned; !slices.Equal(got, []string{"b"}) {
+		t.Fatalf("pinned = %v, want b", got)
+	}
+	saved, err = settings.Load()
+	if err != nil || len(saved.Widgets) != 1 || saved.Widgets[0] != (settings.Widget{AccountID: "b", Placed: true, X: 40, Y: 60}) {
+		t.Fatalf("saved widgets = %+v, %v; want b placed at 40, 60", saved.Widgets, err)
+	}
 }
 
 func TestLocalAccountExpiredReadingIsUnknown(t *testing.T) {

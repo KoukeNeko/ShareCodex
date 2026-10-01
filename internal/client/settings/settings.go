@@ -36,6 +36,19 @@ type Settings struct {
 	// AccountOrder, the account IDs in the order they were dragged into.
 	AccountSort  string   `json:"account_sort,omitempty"`
 	AccountOrder []string `json:"account_order,omitempty"`
+	// Widgets are the accounts pinned to the screen, each in an always-on-top
+	// window of its own, reopened at launch.
+	Widgets []Widget `json:"widgets,omitempty"`
+}
+
+// Widget is one pinned account and where its window was last moved to.
+type Widget struct {
+	AccountID string `json:"account_id"`
+	// Placed is false until the window is moved; X and Y are then its
+	// position.
+	Placed bool `json:"placed,omitempty"`
+	X      int  `json:"x,omitempty"`
+	Y      int  `json:"y,omitempty"`
 }
 
 type SavedStatusLine struct {

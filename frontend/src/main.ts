@@ -1,6 +1,7 @@
 import { mount } from 'svelte'
 import { System } from '@wailsio/runtime'
 import App from './App.svelte'
+import Widget from './features/widget/Widget.svelte'
 
 // macOS draws the popup on Liquid Glass; the stylesheet makes the page
 // translucent there so the material shows through.
@@ -13,4 +14,8 @@ if (new URLSearchParams(location.search).get('backdrop') === 'acrylic') {
   document.documentElement.classList.add('acrylic')
 }
 
-mount(App, { target: document.getElementById('app')! })
+// A pinned account's window loads the same page with ?widget=<account ID>.
+const widget = new URLSearchParams(location.search).get('widget')
+const target = document.getElementById('app')!
+if (widget) mount(Widget, { target, props: { accountId: widget } })
+else mount(App, { target })

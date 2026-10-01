@@ -1,11 +1,11 @@
 <script lang="ts">
   import QuotaBar, { type Segment } from '../../components/QuotaBar.svelte'
   import UsageChart from './UsageChart.svelte'
-  import { Desktop, errorMessage, type ActiveUser, type BucketOverview } from '../../lib/api'
+  import type { ActiveUser, BucketOverview } from '../../lib/api'
   import { bucketName, bucketTab, modelName, percent, providerName, resetsIn, tokens } from '../../lib/format'
   import { t } from '../../lib/i18n.svelte'
 
-  let { id = '', provider, label, planType, buckets, activeUsers, now, local = false, fineChart = false, onGrip }: {
+  let { id = '', provider, label, planType, buckets, activeUsers, now, local = false, fineChart = false, onGrip, pinned = false, onPin, onClose }: {
     id?: string
     provider: string
     label: string
@@ -18,26 +18,17 @@
     // Starts dragging the card to reorder the list; without it the card
     // has no grip.
     onGrip?: (e: PointerEvent) => void
+    // The popup's card pins its account to the screen, showing whether it
+    // is; the widget's card closes the widget instead, and its header moves
+    // the window.
+    pinned?: boolean
+    onPin?: () => void
+    onClose?: () => void
   } = $props()
 
   // The viewer's own computer is signed into this account.
   const current = $derived(activeUsers.some((u) => u.is_you))
-
-  let confirmingLeave = $state(false)
-  let leaving = $state(false)
-  let leaveError = $state('')
-
-  async function leave() {
-    leaving = true
-    leaveError = ''
-    try {
-      await Desktop.LeaveAccount(id)
-    } catch (err) {
-      leaveError = errorMessage(err)
-    } finally {
-      leaving = false
-    }
-  }
+  const widget = $derived(!!onClose)
 
   let selected = $state(0)
   const bucket = $derived(buckets[Math.min(selected, buckets.length - 1)])
@@ -96,7 +87,7 @@
   }
 </script>
 
-<section class="card" class:current>
+<section class="card" class:current class:widget>
   <header>
     {#if onGrip}
       <button class="grip" title={t('reorder')} aria-label={t('reorder')} onpointerdown={onGrip}>
@@ -106,21 +97,16 @@
     <span class="provider">{providerName(provider)}</span>
     <span class="label">{label}</span>
     {#if planType}<span class="plan">{planType}</span>{/if}
-    {#if !local && !confirmingLeave}
-      <button class="leave" onclick={() => (confirmingLeave = true)}>{t('leave')}</button>
+    {#if onClose}
+      <button class="corner" title={t('close')} aria-label={t('close')} onclick={onClose}>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" /></svg>
+      </button>
+    {:else if onPin}
+      <button class="corner" class:on={pinned} aria-pressed={pinned} title={pinned ? t('unpin') : t('pin')} aria-label={t('pin')} onclick={onPin}>
+        <svg width="13" height="13" viewBox="0 0 16 16" fill={pinned ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M10.2 1.8l4 4-2.1 1.1-2.6 2.6.4 3.3-1.3 1.3-2.8-2.8L2.3 14.8l-1.1-1.1 3.5-3.5-2.8-2.8 1.3-1.3 3.3.4 2.6-2.6z" /></svg>
+      </button>
     {/if}
   </header>
-
-  {#if confirmingLeave}
-    <div class="confirm">
-      <p><strong>{t('leaveAccountConfirm')}</strong><br /><span class="muted">{t('leaveAccountBody')}</span></p>
-      {#if leaveError}<p class="error">{leaveError}</p>{/if}
-      <div class="actions">
-        <button onclick={() => (confirmingLeave = false)} disabled={leaving}>{t('cancel')}</button>
-        <button class="danger" onclick={leave} disabled={leaving}>{t('leave')}</button>
-      </div>
-    </div>
-  {/if}
 
   {#if activeUsers.length > 0}
     <div class="active">
@@ -276,10 +262,13 @@
   }
   .grip { flex: none; align-self: center; border: none; background: none; padding: 0 2px; margin-left: -4px; color: var(--muted); cursor: grab; touch-action: none; display: flex; }
   .grip:hover { color: var(--text); }
-  .leave { flex: none; padding: 1px 6px; font-size: 11px; color: var(--muted); }
-  .confirm { display: grid; gap: 8px; }
-  .confirm p { margin: 0; }
-  .actions { display: flex; gap: 6px; justify-content: flex-end; }
+  .corner { flex: none; align-self: center; display: flex; padding: 3px; border: none; background: none; color: var(--muted); }
+  .corner:hover:not(:disabled) { color: var(--text); }
+  .corner.on { color: var(--accent); }
+  /* A widget is its window: no frame of its own, and its header moves it. */
+  .card.widget { border: none; border-radius: 0; background: none; }
+  .widget header { --wails-draggable: drag; cursor: default; }
+  .widget header button { --wails-draggable: no-drag; }
   .active { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 11.5px; }
   .active .muted { margin-right: 2px; }
   .user { background: var(--track); border-radius: 4px; padding: 0 5px; }

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Desktop, errorMessage, type Invite, type State } from '../../lib/api'
-  import { dateTime } from '../../lib/format'
+  import { dateTime, providerName } from '../../lib/format'
   import { locales, t } from '../../lib/i18n.svelte'
 
   let { app }: { app: State } = $props()
@@ -13,6 +13,8 @@
   let signingIn = $state(false)
 
   let resyncing = $state(false)
+  // The account whose leaving is being confirmed.
+  let leavingAccount = $state('')
 
   function resync() {
     resyncing = true
@@ -80,6 +82,28 @@
       <p class="muted">{t('notJoined')}</p>
     {/if}
   </section>
+
+  {#if app.paired && (app.overview?.accounts ?? []).length > 0}
+    <section>
+      <h2>{t('accounts')}</h2>
+      {#each app.overview?.accounts ?? [] as a (a.id)}
+        {#if leavingAccount === a.id}
+          <div class="confirm">
+            <p><strong>{t('leaveAccountConfirm')}</strong><br /><span class="muted">{t('leaveAccountBody')}</span></p>
+            <div class="actions">
+              <button onclick={() => (leavingAccount = '')} disabled={busy}>{t('cancel')}</button>
+              <button class="danger" onclick={() => run(async () => { await Desktop.LeaveAccount(a.id); leavingAccount = '' })} disabled={busy}>{t('leave')}</button>
+            </div>
+          </div>
+        {:else}
+          <div class="row">
+            <span class="account-name">{providerName(a.provider)} <span class="muted">{a.label}</span></span>
+            <button onclick={() => (leavingAccount = a.id)} disabled={busy}>{t('leave')}</button>
+          </div>
+        {/if}
+      {/each}
+    </section>
+  {/if}
 
   <section>
     <h2>{t('claudeQuota')}</h2>
@@ -159,4 +183,5 @@
   .actions { display: flex; gap: 6px; justify-content: flex-end; }
   .buttons { display: flex; gap: 6px; }
   .invite { display: grid; gap: 4px; width: 100%; }
+  .account-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 </style>

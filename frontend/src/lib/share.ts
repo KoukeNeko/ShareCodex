@@ -12,7 +12,7 @@ const emailPattern = /[^\s@<>()]+@[^\s@<>()]+\.[^\s@<>()]+/g
 export async function renderShareImage(main: HTMLElement, placeholder: (n: number) => string): Promise<string> {
   const clone = main.cloneNode(true) as HTMLElement
   clone.querySelector('header .tools')?.remove()
-  clone.querySelectorAll('.tip, .grip').forEach((el) => el.remove())
+  clone.querySelectorAll('.tip, .grip, .corner').forEach((el) => el.remove())
   clone.querySelectorAll('[title]').forEach((el) => el.removeAttribute('title'))
   anonymize(clone, placeholder)
 

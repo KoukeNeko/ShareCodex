@@ -60,6 +60,16 @@
     dragOrder ? dragOrder.map((id) => accounts.find((a) => a.id === id)!).filter(Boolean) : accounts,
   )
 
+  let pinError = $state('')
+  async function togglePin(id: string) {
+    pinError = ''
+    try {
+      await ((app?.pinned ?? []).includes(id) ? Desktop.UnpinAccount(id) : Desktop.PinAccount(id))
+    } catch (err) {
+      pinError = errorMessage(err)
+    }
+  }
+
   function startDrag(e: PointerEvent, id: string) {
     e.preventDefault()
     const before = accounts.map((a) => a.id)
@@ -180,11 +190,16 @@
       {#if orderError}
         <p class="banner error">{t('saveOrderFailed', { error: orderError })}</p>
       {/if}
+      {#if pinError}
+        <p class="banner error">{t('pinFailed', { error: pinError })}</p>
+      {/if}
       {#if app.paired && accounts.length > 0}
         {#each shown as a (a.id)}
           <div class="account" class:dragging={dragging === a.id} data-account={a.id} animate:flip={{ duration: 150 }}>
             <AccountCard id={a.id} provider={a.provider} label={a.label} planType={a.plan_type} buckets={a.buckets ?? []} activeUsers={a.active_users ?? []} {now} fineChart={app.fine_chart}
-              onGrip={accounts.length > 1 ? (e) => startDrag(e, a.id) : undefined} />
+              onGrip={accounts.length > 1 ? (e) => startDrag(e, a.id) : undefined}
+              pinned={(app.pinned ?? []).includes(a.id)}
+              onPin={() => togglePin(a.id)} />
           </div>
         {/each}
       {:else}
