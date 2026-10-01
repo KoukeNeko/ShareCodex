@@ -136,8 +136,9 @@ model.
 An admin can publish a read-only dashboard at `/dashboard`: each account's windows, usage chart,
 members' estimated usage and models, side by side on a wide screen and refreshed every minute. Like
 the popup's, its charts switch between tokens per span and running totals with **Cumulative**. Accounts
-follow the order set in the console, or put the most used 5-hour or weekly window first. Below them,
-everyone's usage by member, account and model over 24 hours, 7 days or 30 days. It leaves out email addresses and
+follow the order set in the console, or put the most used 5-hour or weekly window first. Its Usage
+page, at `/dashboard/usage`, has everyone's usage by member, account and model over 24 hours, 7 days
+or 30 days. It leaves out email addresses and
 device names; an account still named by its email shows as Account 1, Account 2 and so on. It is off
 until turned on under **Settings**.
 
@@ -203,7 +204,7 @@ Then open `PUBLIC_URL/admin/` and sign in with `ADMIN_PASSWORD`:
 | Members | Add members, create single-use join links, see each member's last sync and 30-day usage, and delete members along with their devices and usage |
 | Accounts | Rename accounts, drag them into the order the console, dashboard and popup list them in, set each member's allotment weight, and delete accounts along with their usage |
 | Devices | See which account each device is signed into, its 30-day usage and last sync, and revoke devices |
-| Settings | Publish the dashboard at `PUBLIC_URL/dashboard`, or preview it first |
+| Settings | Publish the dashboard at `PUBLIC_URL/dashboard`, or preview it first; a signed-in admin sees it before it is published |
 
 Admin sessions are kept in memory, so restarting the server signs the admin out. Once the dashboard
 is published, `PUBLIC_URL` itself opens it instead of the console.
