@@ -6,8 +6,7 @@
 <title>{{.Title}} · {{if .Public}}ShareCodex{{else}}{{.T.appTitle}}{{end}}</title>
 <link rel="icon" href="/icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-{{if .Public}}<meta http-equiv="refresh" content="60">
-<link rel="manifest" href="/manifest.webmanifest">
+{{if .Public}}<link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#fafaf9" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0c0c0d" media="(prefers-color-scheme: dark)">{{end}}
 <style>
@@ -266,16 +265,17 @@ try { if (localStorage.getItem('sharecodex.cumulative') === '1') document.docume
     day: day,
     dayclock: function (d) { return day(d) + ' ' + clock(d) },
   }
-  document.querySelectorAll('[data-dt]').forEach(function (el) {
-    var format = formats[el.getAttribute('data-f')]
-    var d = new Date(el.getAttribute('data-dt'))
-    if (!format || isNaN(d)) return
-    // A chart's hover tip holds its time on the first line.
-    var lines = el.textContent.split('\n')
-    var until = el.getAttribute('data-dt-until')
-    lines[0] = format(d) + (until ? '–' + format(new Date(until)) : '')
-    el.textContent = lines.join('\n')
-  })
+  var localize = function (root) {
+    root.querySelectorAll('[data-dt]').forEach(function (el) {
+      var format = formats[el.getAttribute('data-f')]
+      var d = new Date(el.getAttribute('data-dt'))
+      if (!format || isNaN(d)) return
+      var until = el.getAttribute('data-dt-until')
+      el.textContent = format(d) + (until ? '–' + format(new Date(until)) : '')
+    })
+  }
+  localize(document)
+  document.addEventListener('sharecodex:refresh', function () { localize(document.querySelector('main')) })
 })();
 
 // A chart's tip for the point under the pointer; a tap shows it on a phone,
@@ -309,6 +309,7 @@ try { if (localStorage.getItem('sharecodex.cumulative') === '1') document.docume
   }
   document.addEventListener('pointermove', track)
   document.addEventListener('pointerdown', track)
+  document.addEventListener('sharecodex:refresh', hide)
 })();
 
 // One chart mode for every chart, remembered in this browser when it can be.
@@ -319,6 +320,7 @@ try { if (localStorage.getItem('sharecodex.cumulative') === '1') document.docume
     document.querySelectorAll('[data-cumulative]').forEach(function (b) { b.setAttribute('aria-pressed', on) })
   }
   show()
+  document.addEventListener('sharecodex:refresh', show)
   document.addEventListener('click', function (e) {
     if (!e.target.closest('[data-cumulative]')) return
     var on = root.classList.toggle('cumulative')
@@ -329,14 +331,15 @@ try { if (localStorage.getItem('sharecodex.cumulative') === '1') document.docume
 
 // Account cards in the arranged order, or the most used window first.
 (function () {
-  var lists = document.querySelectorAll('[data-sort-list]')
-  if (!lists.length) return
   var modes = ['custom', 'fiveHour', 'weekly']
-  lists.forEach(function (list) {
-    Array.prototype.forEach.call(list.children, function (el, i) { el.dataset.pos = i })
-  })
+  // Remembers the server's order, which the arranged order is.
+  var mark = function () {
+    document.querySelectorAll('[data-sort-list]').forEach(function (list) {
+      Array.prototype.forEach.call(list.children, function (el, i) { el.dataset.pos = i })
+    })
+  }
   var apply = function (mode) {
-    lists.forEach(function (list) {
+    document.querySelectorAll('[data-sort-list]').forEach(function (list) {
       var items = Array.prototype.slice.call(list.children)
       items.sort(function (a, b) {
         var d = mode === 'custom' ? 0 : parseFloat(b.dataset[mode]) - parseFloat(a.dataset[mode])
@@ -351,11 +354,18 @@ try { if (localStorage.getItem('sharecodex.cumulative') === '1') document.docume
   var key = 'sharecodex.accountSort:' + location.pathname
   var mode = 'custom'
   try { mode = localStorage.getItem(key) || mode } catch (e) { /* storage blocked: the arranged order */ }
-  apply(modes.indexOf(mode) < 0 ? 'custom' : mode)
+  if (modes.indexOf(mode) < 0) mode = 'custom'
+  mark()
+  apply(mode)
+  document.addEventListener('sharecodex:refresh', function () {
+    mark()
+    apply(mode)
+  })
   document.addEventListener('click', function (e) {
     var b = e.target.closest('[data-sort]')
     if (!b) return
-    apply(b.dataset.sort)
+    mode = b.dataset.sort
+    apply(mode)
     try { localStorage.setItem(key, b.dataset.sort) } catch (err) { /* not remembered; the page still sorts */ }
   })
 })();
@@ -404,6 +414,41 @@ try { if (localStorage.getItem('sharecodex.cumulative') === '1') document.docume
     })
   })
 })();
+{{if .Public}}
+// New figures every minute without reloading: only the page's content is
+// replaced, so the scroll position and the viewer's choices stay. A hidden
+// page waits until it is seen again.
+(function () {
+  var every = 60000
+  var last = Date.now()
+  var refresh = function () {
+    last = Date.now()
+    fetch(location.href, { cache: 'no-store' }).then(function (res) {
+      // Unpublished, or signed out: let the browser go where the server says.
+      if (!res.ok || res.redirected) {
+        location.reload()
+        return
+      }
+      return res.text().then(function (html) {
+        var next = new DOMParser().parseFromString(html, 'text/html').querySelector('main')
+        var old = document.querySelector('main')
+        if (!next || !old) return
+        old.replaceWith(next)
+        document.dispatchEvent(new CustomEvent('sharecodex:refresh'))
+      })
+    }).catch(function (err) {
+      // Offline for now: the figures stay as they were until the next try.
+      console.warn('ShareCodex: refresh failed', err)
+    })
+  }
+  setInterval(function () {
+    if (document.visibilityState === 'visible' && Date.now() - last >= every) refresh()
+  }, 5000)
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && Date.now() - last >= every) refresh()
+  })
+})();
+{{end}}
 </script>
 </body>
 </html>
