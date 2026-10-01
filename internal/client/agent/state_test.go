@@ -81,6 +81,9 @@ func TestStateCarriesLanguageAndUpdate(t *testing.T) {
 	if err := a.SetWidgetPosition("b", 40, 60); err != nil {
 		t.Fatal(err)
 	}
+	if err := a.SetWidgetHeight("b", 300); err != nil {
+		t.Fatal(err)
+	}
 	if err := a.UnpinAccount("a"); err != nil {
 		t.Fatal(err)
 	}
@@ -88,8 +91,8 @@ func TestStateCarriesLanguageAndUpdate(t *testing.T) {
 		t.Fatalf("pinned = %v, want b", got)
 	}
 	saved, err = settings.Load()
-	if err != nil || len(saved.Widgets) != 1 || saved.Widgets[0] != (settings.Widget{AccountID: "b", Placed: true, X: 40, Y: 60}) {
-		t.Fatalf("saved widgets = %+v, %v; want b placed at 40, 60", saved.Widgets, err)
+	if err != nil || len(saved.Widgets) != 1 || saved.Widgets[0] != (settings.Widget{AccountID: "b", Placed: true, X: 40, Y: 60, Height: 300}) {
+		t.Fatalf("saved widgets = %+v, %v; want b placed at 40, 60, 300 tall", saved.Widgets, err)
 	}
 }
 

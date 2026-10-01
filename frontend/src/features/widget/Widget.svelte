@@ -6,7 +6,9 @@
   import { setLocale, t } from '../../lib/i18n.svelte'
 
   // One pinned account in an always-on-top window of its own. It follows
-  // the same state as the popup and sizes its window to its card.
+  // the same state as the popup and sizes its window to its card whenever
+  // the card's height changes; a window too short for the card, on a small
+  // screen or made shorter by hand, scrolls.
   let { accountId }: { accountId: string } = $props()
 
   let app = $state<State | null>(null)
@@ -38,7 +40,8 @@
   })
 </script>
 
-<main bind:this={box}>
+<main>
+<div bind:this={box}>
   {#if account}
     <AccountCard id={account.id} provider={account.provider} label={account.label} planType={account.plan_type}
       buckets={account.buckets ?? []} activeUsers={account.active_users ?? []} {now} fineChart={app?.fine_chart}
@@ -51,11 +54,11 @@
       </button>
     </section>
   {/if}
+</div>
 </main>
 
 <style>
-  /* The window takes the card's height, so nothing here stretches. */
-  main { display: block; height: auto; }
+  main { height: 100%; overflow-y: auto; overscroll-behavior: contain; }
   .gone {
     display: flex;
     justify-content: space-between;

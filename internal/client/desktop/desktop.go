@@ -36,6 +36,8 @@ const (
 	defaultWidgetHeight = 420
 	minWidgetHeight     = 120
 	maxWidgetHeight     = 1200
+	// fitSettle is how long a widget's own resizes keep reporting.
+	fitSettle = 500 * time.Millisecond
 )
 
 //go:embed tray-template.png
@@ -159,11 +161,28 @@ type Service struct {
 	backdrop   string
 
 	mu sync.Mutex
-	// widgets are the open widget windows by account ID.
-	widgets map[string]*application.WebviewWindow
+	// widgets are the open widgets by account ID.
+	widgets map[string]*widget
 	// quitting tells a widget closed by the app ending from one the user
 	// closed, which unpins its account.
 	quitting atomic.Bool
+}
+
+// widget is an open widget window.
+type widget struct {
+	win *application.WebviewWindow
+	// fitted is the height the app last gave the window to fit its card,
+	// at fittedAt. A resize the app made reports late, possibly after the
+	// next one, so any other height is the user's only once the app's
+	// resizes have settled.
+	fitted   int
+	fittedAt time.Time
+	// sized is set once the user chose a height, which the window then
+	// keeps instead of fitting its card.
+	sized bool
+	// settle and resized save the position and height once a drag or a
+	// resize comes to rest.
+	settle, resized *time.Timer
 }
 
 // floatingWindow is the frameless, always-on-top window the popup and the
@@ -206,19 +225,24 @@ func (s *Service) floatingWindow(name string, height, minHeight int, url string)
 }
 
 // openWidget shows a pinned account in a window of its own, where it was
-// last moved to, or brings the open one forward.
+// last moved to and as tall as it was last made, or brings the open one
+// forward.
 func (s *Service) openWidget(w settings.Widget) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if win, ok := s.widgets[w.AccountID]; ok {
-		win.Focus()
+	if open, ok := s.widgets[w.AccountID]; ok {
+		open.win.Focus()
 		return
 	}
 	q := url.Values{"widget": {w.AccountID}}
 	if s.backdrop != "" {
 		q.Set("backdrop", s.backdrop)
 	}
-	opts := s.floatingWindow("widget:"+w.AccountID, defaultWidgetHeight, minWidgetHeight, "/?"+q.Encode())
+	height := defaultWidgetHeight
+	if w.Height > 0 {
+		height = w.Height
+	}
+	opts := s.floatingWindow("widget:"+w.AccountID, height, minWidgetHeight, "/?"+q.Encode())
 	if w.Placed {
 		opts.InitialPosition, opts.X, opts.Y = application.WindowXY, w.X, w.Y
 	}
@@ -228,20 +252,38 @@ func (s *Service) openWidget(w settings.Widget) {
 	opts.Mac.WindowClass = application.MacWindowClassPanel
 	opts.Mac.PanelPreferences = application.MacPanelPreferences{FloatingPanel: true, NonActivating: true}
 	win := s.app.Window.NewWithOptions(opts)
+	wg := &widget{win: win, fitted: height, fittedAt: time.Now(), sized: w.Height > 0}
 	id := w.AccountID
 	// A drag moves the window many times a second; its position is saved
 	// once it comes to rest.
-	var settle *time.Timer
 	win.OnWindowEvent(events.Common.WindowDidMove, func(*application.WindowEvent) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if settle != nil {
-			settle.Stop()
+		if wg.settle != nil {
+			wg.settle.Stop()
 		}
-		settle = time.AfterFunc(500*time.Millisecond, func() {
+		wg.settle = time.AfterFunc(500*time.Millisecond, func() {
 			x, y := win.Position()
 			if err := s.agent.SetWidgetPosition(id, x, y); err != nil {
 				s.app.Logger.Error("save widget position", "err", err)
+			}
+		})
+	})
+	win.OnWindowEvent(events.Common.WindowDidResize, func(*application.WindowEvent) {
+		_, h := win.Size()
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if !wg.sized && (h == wg.fitted || time.Since(wg.fittedAt) < fitSettle) {
+			return
+		}
+		wg.sized = true
+		if wg.resized != nil {
+			wg.resized.Stop()
+		}
+		wg.resized = time.AfterFunc(500*time.Millisecond, func() {
+			_, h := win.Size()
+			if err := s.agent.SetWidgetHeight(id, h); err != nil {
+				s.app.Logger.Error("save widget height", "err", err)
 			}
 		})
 	})
@@ -257,9 +299,9 @@ func (s *Service) openWidget(w settings.Widget) {
 		}
 	})
 	if s.widgets == nil {
-		s.widgets = map[string]*application.WebviewWindow{}
+		s.widgets = map[string]*widget{}
 	}
-	s.widgets[id] = win
+	s.widgets[id] = wg
 }
 
 func (s *Service) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
@@ -428,23 +470,38 @@ func (s *Service) PinAccount(accountID string) error {
 // UnpinAccount closes an account's widget, which unpins it.
 func (s *Service) UnpinAccount(accountID string) error {
 	s.mu.Lock()
-	win := s.widgets[accountID]
+	wg := s.widgets[accountID]
 	s.mu.Unlock()
-	if win == nil {
+	if wg == nil {
 		return s.agent.UnpinAccount(accountID)
 	}
-	win.Close()
+	wg.win.Close()
 	return nil
 }
 
-// SetWidgetHeight fits a widget's window to its card.
+// SetWidgetHeight fits a widget's window to its card, but no taller than
+// the screen it is on leaves room for; the widget scrolls past that. A
+// widget the user resized keeps their height.
 func (s *Service) SetWidgetHeight(accountID string, height int) {
 	s.mu.Lock()
-	win := s.widgets[accountID]
+	wg := s.widgets[accountID]
 	s.mu.Unlock()
-	if win != nil {
-		win.SetSize(popupWidth, max(minWidgetHeight, min(maxWidgetHeight, height)))
+	if wg == nil {
+		return
 	}
+	limit := maxWidgetHeight
+	if screen, err := wg.win.GetScreen(); err == nil && screen != nil && screen.WorkArea.Height > 0 {
+		limit = min(limit, screen.WorkArea.Height)
+	}
+	height = max(minWidgetHeight, min(limit, height))
+	s.mu.Lock()
+	if wg.sized {
+		s.mu.Unlock()
+		return
+	}
+	wg.fitted, wg.fittedAt = height, time.Now()
+	s.mu.Unlock()
+	wg.win.SetSize(popupWidth, height)
 }
 
 func (s *Service) Quit() {

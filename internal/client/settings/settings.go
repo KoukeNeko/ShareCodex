@@ -49,6 +49,9 @@ type Widget struct {
 	Placed bool `json:"placed,omitempty"`
 	X      int  `json:"x,omitempty"`
 	Y      int  `json:"y,omitempty"`
+	// Height is what the user resized the window to; 0 fits it to its
+	// card.
+	Height int `json:"height,omitempty"`
 }
 
 type SavedStatusLine struct {

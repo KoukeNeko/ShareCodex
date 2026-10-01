@@ -112,6 +112,17 @@ func (a *Agent) SetWidgetPosition(id string, x, y int) error {
 	}, false)
 }
 
+// SetWidgetHeight remembers the height a widget was resized to, so it
+// keeps it.
+func (a *Agent) SetWidgetHeight(id string, height int) error {
+	return a.updateWidgets(func(ws []settings.Widget) []settings.Widget {
+		if i := slices.IndexFunc(ws, func(w settings.Widget) bool { return w.AccountID == id }); i >= 0 {
+			ws[i].Height = height
+		}
+		return ws
+	}, false)
+}
+
 // updateWidgets saves a change to the pinned accounts; notify is false for
 // changes the popup does not show.
 func (a *Agent) updateWidgets(change func([]settings.Widget) []settings.Widget, notify bool) error {
