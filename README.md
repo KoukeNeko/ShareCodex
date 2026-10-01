@@ -119,6 +119,13 @@ more for their other computers. The member pastes it into the app, signs
 in to the shared account in Claude Code or Codex as usual, and is added to that account
 automatically.
 
+### Pin an account to the screen
+
+The pin in an account's corner puts that account in a small window of its own that stays on top of
+other windows. Drag it by its title row to move it; it reopens where you left it the next time the
+app starts. Its × closes it and unpins the account. Leaving an account is under **Accounts** in
+Settings.
+
 ### Share it as an image
 
 The button to the left of Refresh copies the whole popup, full length, as an image ready to paste.
