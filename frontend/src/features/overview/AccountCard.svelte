@@ -34,9 +34,6 @@
 
   let selected = $state(0)
   const noQuota = $derived(buckets.length === 0)
-  // Antigravity's quotas are pools of models rather than time windows; its
-  // switch sits beside the provider's name.
-  const poolSwitch = $derived(provider === 'google' && buckets.length > 1)
   const bucket = $derived(noQuota ? usage : buckets[Math.min(selected, buckets.length - 1)])
   const expired = $derived(bucket?.reset || (bucket?.resets_at && new Date(bucket.resets_at) <= now))
 
@@ -108,15 +105,6 @@
       </button>
     {/if}
     <span class="provider">{providerName(provider)}</span>
-    {#if poolSwitch}
-      <div class="tabs pools" role="tablist">
-        {#each buckets as b, i (b.key)}
-          <button role="tab" aria-selected={i === selected} class:active={i === selected} onclick={() => (selected = i)}>
-            {bucketTab(b.key, b.window_minutes)}
-          </button>
-        {/each}
-      </div>
-    {/if}
     <span class="label">{label}</span>
     {#if planType}<span class="plan">{planType}</span>{/if}
     {#if onClose}
@@ -145,7 +133,7 @@
 
   {#if noQuota}<p class="muted empty">{t('noQuota')}</p>{/if}
   {#if bucket}
-    {#if buckets.length > 1 && !poolSwitch}
+    {#if buckets.length > 1}
       <div class="tabs" role="tablist">
         {#each buckets as b, i (b.key)}
           <button role="tab" aria-selected={i === selected} class:active={i === selected} onclick={() => (selected = i)}>
@@ -172,7 +160,7 @@
     {#if !noQuota}
     <div class="total">
       <div class="row">
-        <span>{buckets.length === 1 || poolSwitch ? bucketName(bucket.key, bucket.window_minutes) : t('account')}</span>
+        <span>{buckets.length === 1 ? bucketName(bucket.key, bucket.window_minutes) : t('account')}</span>
         <span class="num strong">{expired ? '—' : percent(bucket.used_percent)}</span>
       </div>
       {#if !expired}<QuotaBar value={bucket.used_percent} tone={tone(bucket.used_percent)} />{/if}
@@ -314,8 +302,6 @@
     gap: 6px;
     white-space: nowrap;
   }
-  .tabs.pools { flex: none; align-self: center; border-radius: 6px; }
-  .tabs.pools button { flex: none; padding: 1px 8px; border-radius: 4px; font-size: 11.5px; }
   .tabs button.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
   .total { display: grid; gap: 5px; }
   .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }

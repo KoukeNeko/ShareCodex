@@ -200,3 +200,14 @@ func TestPastResetsIgnoresOutvotedReadings(t *testing.T) {
 		t.Errorf("pastResets = %v, want only the real reset %v", got, want)
 	}
 }
+
+func TestSortedBucketsPutsGeminiBeforeClaude(t *testing.T) {
+	latest := map[quota.BucketKey]quota.Observed{}
+	for _, k := range []quota.BucketKey{quota.FiveHourModelBucket("claude"), quota.FiveHourModelBucket("gemini")} {
+		latest[k] = quota.Observed{Bucket: quota.Bucket{Key: k}}
+	}
+	got := sortedBuckets(latest)
+	if got[0].Key != "five_hour_gemini" || got[1].Key != "five_hour_claude" {
+		t.Errorf("order = %s, %s, want Gemini then Claude", got[0].Key, got[1].Key)
+	}
+}

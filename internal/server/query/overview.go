@@ -463,10 +463,13 @@ func groupActiveUsers(devices []storage.ActiveDevice, viewer string) map[string]
 	return byAccount
 }
 
-var bucketOrder = map[quota.BucketKey]int{quota.BucketFiveHour: 0, quota.BucketWeekly: 1}
+var bucketOrder = map[quota.BucketKey]int{
+	quota.BucketFiveHour: 0, quota.BucketWeekly: 1,
+	quota.FiveHourModelBucket("gemini"): 2, quota.FiveHourModelBucket("claude"): 3,
+}
 
-// sortedBuckets puts the known windows first (5h, then weekly), then any
-// others by key.
+// sortedBuckets puts the known windows first (5h, then weekly, then
+// Antigravity's Gemini and Claude pools), then any others by key.
 func sortedBuckets(latest map[quota.BucketKey]quota.Observed) []quota.Observed {
 	out := make([]quota.Observed, 0, len(latest))
 	for _, b := range latest {
