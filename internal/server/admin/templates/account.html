@@ -38,11 +38,16 @@
           {{range .Resets}}<line class="reset" x1="{{svgX .X}}" x2="{{svgX .X}}" y1="0" y2="100"></line>{{end}}
           {{$tip := .TimeFormat}}
           {{range $name, $m := modes .}}<g class="mode-{{$name}}">
-            {{range $m.Points}}<rect class="hit" x="{{svgX .X}}" y="0" width="{{svgX .W}}" height="100"><title data-dt="{{iso .At}}"{{with .Until}} data-dt-until="{{iso .}}"{{end}} data-f="{{$tip}}">{{timeText $tip .At}}{{with .Until}}–{{timeText $tip .}}{{end}}{{range .Lines}}
-{{.}}{{end}}</title></rect>{{end}}
+            {{range $i, $p := $m.Points}}<rect class="hit" data-i="{{$i}}" x="{{svgX $p.X}}" y="0" width="{{svgX $p.W}}" height="100"></rect>{{end}}
             {{range $m.Lines}}<path class="line c{{.Slot}}{{if .Dashed}} dashed{{end}}" d="{{.Path}}"></path>{{end}}
           </g>{{end}}
         </svg>
+        {{range $name, $m := modes .}}<div class="tips mode-{{$name}}">{{range $m.Points}}
+          <div class="tip{{if gt .Mid 50.0}} flip{{end}}" style="left:{{width .Mid}}" hidden>
+            <span class="muted" data-dt="{{iso .At}}"{{with .Until}} data-dt-until="{{iso .}}"{{end}} data-f="{{$tip}}">{{timeText $tip .At}}{{with .Until}}–{{timeText $tip .}}{{end}}</span>
+            {{range .Rows}}<span class="tip-row"><i class="c{{.Slot}}{{if .Dashed}} dashed{{end}}"></i><strong>{{.Tokens}}</strong><span class="muted">{{.Name}}</span>{{with .Via}}<span class="via">{{.}}</span>{{end}}</span>{{end}}
+          </div>{{end}}
+        </div>{{end}}
         {{range .Resets}}<span class="reset-label num{{if lt .X 8.0}} right{{end}}" style="left:{{width .X}}">{{timeAs $tip .At}}</span>{{end}}
       </div>
       <div class="ticks muted small num">{{$f := .TickFormat}}{{range .Ticks}}<span>{{timeAs $f .}}</span>{{end}}</div>

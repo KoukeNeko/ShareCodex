@@ -287,12 +287,18 @@ type chartMark struct {
 
 // chartPoint is one point's hover area, with the time its values are as of
 // (a running total) or the span they cover (an amount), and each model's
-// value.
+// value. Mid is where its tip points: the lines' point.
 type chartPoint struct {
-	X, W  float64
-	At    time.Time
-	Until *time.Time
-	Lines []string
+	X, W, Mid float64
+	At        time.Time
+	Until     *time.Time
+	Rows      []chartTipRow
+}
+
+// chartTipRow is one model's value in a point's tip, marked like its line.
+type chartTipRow struct {
+	Tokens, Name, Via, Slot string
+	Dashed                  bool
 }
 
 const (
@@ -418,7 +424,7 @@ func newChart(tl syncapi.Timeline, quotaKeys, thirdKeys []string, now time.Time)
 			m.Lines = append(m.Lines, chartLine{Path: d.String(), Slot: slotFor(s.rank), Dashed: s.third})
 		}
 		for p := range lastPoint + 1 {
-			pt := chartPoint{X: x(float64(from(p))), W: x(float64(end(p) - from(p))), At: at(end(p))}
+			pt := chartPoint{X: x(float64(from(p))), W: x(float64(end(p) - from(p))), Mid: px(p), At: at(end(p))}
 			// An amount names its span, when it covers more than a bin.
 			if !cumulative {
 				pt.At = at(from(p))
@@ -429,10 +435,7 @@ func newChart(tl syncapi.Timeline, quotaKeys, thirdKeys []string, now time.Time)
 			for i, s := range all {
 				if v := values[i][p]; v > 0 {
 					name, via, _ := modelName(s.model, s.gateway)
-					if via != "" {
-						name += " (" + via + ")"
-					}
-					pt.Lines = append(pt.Lines, compactTokens(v)+"  "+name)
+					pt.Rows = append(pt.Rows, chartTipRow{Tokens: compactTokens(v), Name: name, Via: via, Slot: slotFor(s.rank), Dashed: s.third})
 				}
 			}
 			m.Points = append(m.Points, pt)

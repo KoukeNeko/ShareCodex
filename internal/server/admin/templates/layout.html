@@ -151,7 +151,14 @@ tr.sub td { border-bottom: none; padding-top: 2px; padding-bottom: 2px; font-siz
 .plot path.line { fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .plot path.dashed { stroke-dasharray: 4 3; }
 .plot rect.hit { fill: transparent; }
-.plot rect.hit:hover { fill: var(--track); }
+.plot rect.hit.on { fill: var(--track); }
+.tip { position: absolute; top: 0; z-index: 1; transform: translateX(8px); display: grid; gap: 2px; padding: 6px 8px;
+  background: var(--bg); border: 1px solid var(--line); font: 11px var(--mono); white-space: nowrap; pointer-events: none; }
+.tip[hidden] { display: none; }
+.tip.flip { transform: translateX(calc(-100% - 8px)); }
+.tip-row { display: flex; align-items: center; gap: 6px; }
+.tip-row i { flex: none; width: 10px; height: 2px; background: currentColor; }
+.tip-row i.dashed { background: repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 5px); }
 .reset-label { position: absolute; top: 0; transform: translateX(calc(-100% - 4px)); font: 10.5px var(--mono); color: var(--muted); pointer-events: none; white-space: nowrap; }
 .reset-label.right { transform: translateX(4px); }
 .ticks { display: flex; justify-content: space-between; }
@@ -254,6 +261,39 @@ try { if (localStorage.getItem('sharecodex.cumulative') === '1') document.docume
     lines[0] = format(d) + (until ? '–' + format(new Date(until)) : '')
     el.textContent = lines.join('\n')
   })
+})();
+
+// A chart's tip for the point under the pointer; a tap shows it on a phone,
+// and a tap elsewhere hides it.
+(function () {
+  var shown = null
+  var hide = function () {
+    if (!shown) return
+    shown.tip.hidden = true
+    shown.hit.classList.remove('on')
+    shown = null
+  }
+  var show = function (hit) {
+    var tips = hit.closest('.plot').querySelector('.tips.' + hit.parentNode.getAttribute('class'))
+    var tip = tips && tips.children[+hit.getAttribute('data-i')]
+    if (!tip || (shown && shown.tip === tip)) return
+    hide()
+    tip.hidden = false
+    // Kept inside the chart where the screen is too narrow for it.
+    tip.style.marginLeft = ''
+    var plot = tip.parentNode.parentNode.getBoundingClientRect(), box = tip.getBoundingClientRect()
+    var shift = Math.max(plot.left - box.left, Math.min(0, plot.right - box.right))
+    if (shift) tip.style.marginLeft = shift + 'px'
+    hit.classList.add('on')
+    shown = { tip: tip, hit: hit }
+  }
+  var track = function (e) {
+    var hit = e.target.closest && e.target.closest('rect.hit')
+    if (hit) show(hit)
+    else if (e.type === 'pointerdown' || e.pointerType === 'mouse') hide()
+  }
+  document.addEventListener('pointermove', track)
+  document.addEventListener('pointerdown', track)
 })();
 
 // One chart mode for every chart, remembered in this browser when it can be.

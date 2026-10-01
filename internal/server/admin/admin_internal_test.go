@@ -95,17 +95,17 @@ func TestChartModes(t *testing.T) {
 	if c.Amount.Top != 200 || c.Cumulative.Top != 200 {
 		t.Errorf("tops = %d, %d; want 200 for both", c.Amount.Top, c.Cumulative.Top)
 	}
-	if got := c.Amount.Points[4]; got.Lines[0] != "120  opus" || !got.At.Equal(start.Add(20*time.Minute)) || got.Until == nil {
+	if got := c.Amount.Points[4]; got.Rows[0] != (chartTipRow{Tokens: "120", Name: "opus", Slot: "1"}) || !got.At.Equal(start.Add(20*time.Minute)) || got.Until == nil {
 		t.Errorf("amount at 07:20 = %+v, want opus 120 over 07:20 to 07:25", got)
 	}
-	if got := c.Amount.Points[40].Lines; len(got) != 0 {
-		t.Errorf("last amount = %q, want nothing used in the last span", got)
+	if got := c.Amount.Points[40].Rows; len(got) != 0 {
+		t.Errorf("last amount = %+v, want nothing used in the last span", got)
 	}
-	if got := c.Cumulative.Points[40].Lines; len(got) != 1 || got[0] != "30  opus" {
-		t.Errorf("last running total = %q, want only opus, at 30 after the reset", got)
+	if got := c.Cumulative.Points[40].Rows; len(got) != 1 || got[0].Tokens != "30" || got[0].Name != "opus" {
+		t.Errorf("last running total = %+v, want only opus, at 30 after the reset", got)
 	}
-	if got := c.Cumulative.Points[3].Lines; len(got) != 2 || got[1] != "7  gpt-6-sol (OCX)" {
-		t.Errorf("running total at 07:15 = %q, want sonnet and the third-party model", got)
+	if got := c.Cumulative.Points[3].Rows; len(got) != 2 || got[1] != (chartTipRow{Tokens: "7", Name: "gpt-6-sol", Via: "OCX", Slot: "1", Dashed: true}) {
+		t.Errorf("running total at 07:15 = %+v, want sonnet and the dashed third-party model", got)
 	}
 	if len(c.Resets) != 1 || c.Resets[0].X < 33.3 || c.Resets[0].X > 33.4 {
 		t.Errorf("resets = %+v, want one a third of the way across", c.Resets)
