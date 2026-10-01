@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -19,6 +20,13 @@ import (
 const (
 	maxPairBody = 64 << 10
 	maxSyncBody = 32 << 20
+
+	// maxFieldLen bounds every text field of a synced record; real values
+	// are identifiers, hashes and masked emails.
+	maxFieldLen = 512
+	// maxEventTokens bounds each token count of one request, far past any
+	// context window, so the sums of counts the server reads cannot overflow.
+	maxEventTokens = 1 << 31
 )
 
 type Server struct {
@@ -118,12 +126,44 @@ func (s *Server) sync(w http.ResponseWriter, r *http.Request) {
 			req.Snapshots[i].PreviousAccountRefHash = ""
 		}
 	}
-	res, err := s.store.Ingest(r.Context(), deviceFrom(r), req)
+	d := deviceFrom(r)
+	if n := dropInvalid(&req); n > 0 {
+		s.log.Warn("dropped out-of-range sync records", "person", d.Person.DisplayName, "device", d.Name, "records", n)
+	}
+	res, err := s.store.Ingest(r.Context(), d, req)
 	if err != nil {
 		s.internalError(w, "ingest batch", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// dropInvalid removes the records a real client cannot produce, with a
+// negative or absurd token count or an overlong text field, and returns how
+// many it removed. Rejecting the batch instead would leave one bad record
+// blocking everything the device has queued behind it.
+func dropInvalid(req *syncapi.SyncRequest) int {
+	before := len(req.Observations) + len(req.Events) + len(req.Snapshots)
+	req.Observations = slices.DeleteFunc(req.Observations, func(o syncapi.Observation) bool {
+		return tooLong(o.Provider, o.Source, o.AccountRefHash, o.Hint, o.PlanType)
+	})
+	req.Events = slices.DeleteFunc(req.Events, func(e syncapi.Event) bool {
+		for _, n := range []int64{e.Input, e.CachedInput, e.CacheWrite, e.Output, e.ReasoningOutput} {
+			if n < 0 || n > maxEventTokens {
+				return true
+			}
+		}
+		return tooLong(e.DedupeKey, e.AccountRefHash, e.PreviousAccountRefHash, e.Provider, e.Product,
+			e.Originator, e.SessionID, e.Model, e.Gateway)
+	})
+	req.Snapshots = slices.DeleteFunc(req.Snapshots, func(sn syncapi.Snapshot) bool {
+		return tooLong(sn.AccountRefHash, sn.PreviousAccountRefHash, sn.AccountHint, sn.PlanType, sn.Provider, sn.Source)
+	})
+	return before - len(req.Observations) - len(req.Events) - len(req.Snapshots)
+}
+
+func tooLong(fields ...string) bool {
+	return slices.ContainsFunc(fields, func(f string) bool { return len(f) > maxFieldLen })
 }
 
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {

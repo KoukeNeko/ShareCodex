@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -160,6 +161,49 @@ func TestPairSyncOverview(t *testing.T) {
 	}
 	if st := alice.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event("codex:a1", 10)}}, &res); st != http.StatusOK || res.Accepted != 1 {
 		t.Fatalf("larger output accepted %d; want 1", res.Accepted)
+	}
+}
+
+// A record a real client cannot produce is dropped without failing the rest of
+// the batch, which would otherwise stay at the head of the device's queue.
+func TestSyncDropsOutOfRangeRecords(t *testing.T) {
+	ctx := context.Background()
+	store := storagetest.New(t)
+	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	defer srv.Close()
+	alice := pair(t, store, srv.URL, "alice")
+
+	now := time.Now().UTC().Truncate(time.Second)
+	event := func(key string, edit func(*syncapi.Event)) syncapi.Event {
+		e := syncapi.Event{DedupeKey: key, AccountRefHash: "acct", Provider: "anthropic", Product: "claude-code",
+			Model: "claude-opus-5-5", OccurredAt: now, Input: 100}
+		if edit != nil {
+			edit(&e)
+		}
+		return e
+	}
+	req := syncapi.SyncRequest{Version: syncapi.Version,
+		Observations: []syncapi.Observation{{Provider: "anthropic", AccountRefHash: "acct", Hint: strings.Repeat("h", 600), ObservedAt: now}},
+		Events: []syncapi.Event{
+			event("claude:ok", nil),
+			event("claude:negative", func(e *syncapi.Event) { e.Input = -1_000_000 }),
+			event("claude:huge", func(e *syncapi.Event) { e.Output = math.MaxInt64 }),
+			event("claude:long", func(e *syncapi.Event) { e.Model = strings.Repeat("m", 600) }),
+		}}
+	var res syncapi.SyncResponse
+	if st := alice.do("POST", syncapi.PathSync, req, &res); st != http.StatusOK || res.Accepted != 1 {
+		t.Fatalf("sync = %d, accepted %d; want 200, 1 (only the valid event)", st, res.Accepted)
+	}
+	accounts, err := store.Accounts(ctx)
+	if err != nil || len(accounts) != 1 {
+		t.Fatalf("accounts = %+v, %v; want the one the valid event created", accounts, err)
+	}
+	if accounts[0].Hint != "" {
+		t.Errorf("account hint = %q; the overlong observation should have been dropped", accounts[0].Hint)
+	}
+	rows, err := store.Usage(ctx, accounts[0].ID, now.Add(-time.Minute), now.Add(time.Minute))
+	if err != nil || len(rows) != 1 || rows[0].Tokens.Input != 100 {
+		t.Errorf("usage = %+v, %v; want only the valid event", rows, err)
 	}
 }
 
