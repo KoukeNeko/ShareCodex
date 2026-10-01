@@ -46,24 +46,27 @@
   const seriesKey = (model: string, thirdParty: boolean, gateway = '') => `${thirdParty ? 'third' : 'quota'}:${gateway}:${model}`
 
   const series = $derived.by(() => {
-    const byModel = new Map<string, number[]>()
+    const byKey = new Map<string, { model: string; thirdParty: boolean; gateway: string; perBin: number[] }>()
     for (const p of timeline.points ?? []) {
       if (person && p.person_id !== person) continue
       if (p.bin < 0 || p.bin > lastBin) continue
       const key = seriesKey(p.model, !!p.third_party, p.gateway ?? '')
-      let values = byModel.get(key)
-      if (!values) byModel.set(key, (values = new Array(lastBin + 1).fill(0)))
-      values[p.bin] += p.tokens
+      let s = byKey.get(key)
+      if (!s) byKey.set(key, (s = { model: p.model, thirdParty: !!p.third_party, gateway: p.gateway ?? '', perBin: new Array(lastBin + 1).fill(0) }))
+      s.perBin[p.bin] += p.tokens
     }
-    return [
-      ...models.map((m) => ({ ...m, thirdParty: false })),
-      ...thirdPartyModels.map((m) => ({ ...m, thirdParty: true })),
+    // The chart reaches back before the current window, so it can hold
+    // models the window's lists lack: the lists' models come first, in their
+    // order, and those used only earlier follow.
+    const listed = [
+      ...models.map((m) => seriesKey(m.model, false, m.gateway)),
+      ...thirdPartyModels.map((m) => seriesKey(m.model, true, m.gateway)),
     ]
-      .map((s) => ({ ...s, key: seriesKey(s.model, s.thirdParty, s.gateway) }))
-      .filter((s) => byModel.has(s.key))
-      .map(({ model, thirdParty, gateway, key }) => {
+    const rank = (key: string) => (listed.includes(key) ? listed.indexOf(key) : listed.length)
+    return [...byKey.entries()]
+      .sort(([a], [b]) => rank(a) - rank(b))
+      .map(([key, { model, thirdParty, gateway, perBin }]) => {
         const m = { model, thirdParty, gateway, key }
-        const perBin = byModel.get(key)!
         const points = Array.from({ length: lastPoint + 1 }, (_, i) => binsOf(i))
         if (!cumulative) {
           // The tokens used within each point's span.
