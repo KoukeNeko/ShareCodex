@@ -139,7 +139,8 @@ model.
 ### A dashboard anyone can open
 
 An admin can publish a read-only dashboard at `/dashboard`: each account's windows, usage chart,
-members' estimated usage and models, side by side on a wide screen and refreshed every minute. Like
+members' estimated usage and models, refreshed every minute; on a wide screen each window's chart sits
+beside its lists. Like
 the popup's, its charts switch between tokens per span and running totals with **Cumulative**. Accounts
 follow the order set in the console, or put the most used 5-hour or weekly window first. Its Usage
 page, at `/dashboard/usage`, has everyone's usage by member, account and model over 24 hours, 7 days
