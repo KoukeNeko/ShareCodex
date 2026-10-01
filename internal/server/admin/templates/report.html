@@ -17,10 +17,10 @@
 <section class="card">
   <h2>{{$.T.navPeople}}</h2>
   <div class="table-wrap"><table>
-    <thead><tr><th>{{$.T.member}}</th><th class="num">{{$.T.totalTokens}}</th><th class="num">{{$.T.input}}</th><th class="num">{{$.T.output}}</th><th class="num">{{$.T.requests}}</th><th class="num">{{$.T.estCost}}</th></tr></thead>
+    <thead><tr><th>{{$.T.member}}</th><th class="num">{{$.T.totalTokens}}</th><th class="num detail">{{$.T.input}}</th><th class="num detail">{{$.T.output}}</th><th class="num">{{$.T.requests}}</th><th class="num">{{$.T.estCost}}</th></tr></thead>
     <tbody>
     {{range .Members}}
-      <tr><td>{{.Name}}</td><td class="num">{{tokensOf .UsageTotals}}</td><td class="num">{{inputOf .UsageTotals}}</td><td class="num">{{tokens .Output}}</td><td class="num">{{.Requests}}</td><td class="num">{{usd .CostUSD}}</td></tr>
+      <tr><td>{{.Name}}</td><td class="num">{{tokensOf .UsageTotals}}</td><td class="num detail">{{inputOf .UsageTotals}}</td><td class="num detail">{{tokens .Output}}</td><td class="num">{{.Requests}}</td><td class="num">{{usd .CostUSD}}</td></tr>
     {{else}}
       <tr><td colspan="6" class="muted">{{$.T.noUsage}}</td></tr>
     {{end}}
@@ -31,10 +31,10 @@
 <section class="card">
   <h2>{{$.T.navAccounts}}</h2>
   <div class="table-wrap"><table>
-    <thead><tr><th>{{$.T.account}}</th><th class="num">{{$.T.totalTokens}}</th><th class="num">{{$.T.input}}</th><th class="num">{{$.T.output}}</th><th class="num">{{$.T.requests}}</th><th class="num">{{$.T.estCost}}</th></tr></thead>
+    <thead><tr><th>{{$.T.account}}</th><th class="num">{{$.T.totalTokens}}</th><th class="num detail">{{$.T.input}}</th><th class="num detail">{{$.T.output}}</th><th class="num">{{$.T.requests}}</th><th class="num">{{$.T.estCost}}</th></tr></thead>
     <tbody>
     {{range .Accounts}}
-      <tr><td>{{provider .Provider}} <span class="muted">{{.Name}}</span></td><td class="num">{{tokensOf .UsageTotals}}</td><td class="num">{{inputOf .UsageTotals}}</td><td class="num">{{tokens .Output}}</td><td class="num">{{.Requests}}</td><td class="num">{{usd .CostUSD}}</td></tr>
+      <tr><td>{{provider .Provider}} <span class="muted">{{.Name}}</span></td><td class="num">{{tokensOf .UsageTotals}}</td><td class="num detail">{{inputOf .UsageTotals}}</td><td class="num detail">{{tokens .Output}}</td><td class="num">{{.Requests}}</td><td class="num">{{usd .CostUSD}}</td></tr>
     {{else}}
       <tr><td colspan="6" class="muted">{{$.T.noUsage}}</td></tr>
     {{end}}
@@ -45,10 +45,10 @@
 <section class="card">
   <h2>{{$.T.models}}</h2>
   <div class="table-wrap"><table>
-    <thead><tr><th>{{$.T.model}}</th><th class="num">{{$.T.totalTokens}}</th><th class="num">{{$.T.input}}</th><th class="num">{{$.T.output}}</th><th class="num">{{$.T.requests}}</th><th class="num">{{$.T.estCost}}</th></tr></thead>
+    <thead><tr><th>{{$.T.model}}</th><th class="num">{{$.T.totalTokens}}</th><th class="num detail">{{$.T.input}}</th><th class="num detail">{{$.T.output}}</th><th class="num">{{$.T.requests}}</th><th class="num">{{$.T.estCost}}</th></tr></thead>
     <tbody>
     {{range .Models}}{{$m := modelLabel .Model .Gateway}}
-      <tr><td title="{{$m.Title}}">{{$m.Name}}{{if $m.Via}} <span class="via">{{$m.Via}}</span>{{end}}</td><td class="num">{{tokensOf .UsageTotals}}</td><td class="num">{{inputOf .UsageTotals}}</td><td class="num">{{tokens .Output}}</td><td class="num">{{.Requests}}</td><td class="num">{{usd .CostUSD}}</td></tr>
+      <tr><td title="{{$m.Title}}">{{$m.Name}}{{if $m.Via}} <span class="via">{{$m.Via}}</span>{{end}}</td><td class="num">{{tokensOf .UsageTotals}}</td><td class="num detail">{{inputOf .UsageTotals}}</td><td class="num detail">{{tokens .Output}}</td><td class="num">{{.Requests}}</td><td class="num">{{usd .CostUSD}}</td></tr>
     {{else}}
       <tr><td colspan="6" class="muted">{{$.T.noUsage}}</td></tr>
     {{end}}
@@ -60,10 +60,10 @@
 <section class="card">
   <h2>{{$.T.thirdPartyModels}}</h2>
   <div class="table-wrap"><table>
-    <thead><tr><th>{{$.T.model}}</th><th class="num">{{$.T.totalTokens}}</th><th class="num">{{$.T.input}}</th><th class="num">{{$.T.output}}</th><th class="num">{{$.T.requests}}</th></tr></thead>
+    <thead><tr><th>{{$.T.model}}</th><th class="num">{{$.T.totalTokens}}</th><th class="num detail">{{$.T.input}}</th><th class="num detail">{{$.T.output}}</th><th class="num">{{$.T.requests}}</th></tr></thead>
     <tbody>
     {{range .ThirdParty}}{{$m := modelLabel .Model .Gateway}}
-      <tr><td title="{{$m.Title}}">{{$m.Name}}{{if $m.Via}} <span class="via">{{$m.Via}}</span>{{end}}</td><td class="num">{{tokensOf .UsageTotals}}</td><td class="num">{{inputOf .UsageTotals}}</td><td class="num">{{tokens .Output}}</td><td class="num">{{.Requests}}</td></tr>
+      <tr><td title="{{$m.Title}}">{{$m.Name}}{{if $m.Via}} <span class="via">{{$m.Via}}</span>{{end}}</td><td class="num">{{tokensOf .UsageTotals}}</td><td class="num detail">{{inputOf .UsageTotals}}</td><td class="num detail">{{tokens .Output}}</td><td class="num">{{.Requests}}</td></tr>
     {{end}}
     </tbody>
   </table></div>

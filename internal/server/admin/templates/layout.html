@@ -26,6 +26,9 @@
 }
 * { box-sizing: border-box; border-radius: 0; }
 html, body { min-height: 100%; }
+/* The header's corner marks stand 4px outside the frame; where the frame
+   meets the window's edge they must not make the page scroll sideways. */
+body { overflow-x: clip; }
 body { margin: 0; color: var(--text); background-color: var(--bg);
   background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
   background-size: 48px 48px;
@@ -41,11 +44,15 @@ header::before { left: -4px; }
 header::after { right: -4px; }
 .bar { padding: 0 24px; display: flex; align-items: stretch; gap: 16px; height: 52px; }
 .brand { font: 600 13px var(--mono); letter-spacing: .08em; text-transform: uppercase; display: flex; align-items: center; }
-nav { display: flex; gap: 0; flex: 1; min-width: 0; overflow-x: auto; }
+nav { display: flex; gap: 0; flex: 1; min-width: 0; }
+/* The page links scroll sideways when they run out of room, without a
+   scrollbar: Windows draws one even for a pixel of overflow. */
+.bar > nav:not(.langs) { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 nav a { color: var(--muted); text-decoration: none; padding: 0 12px; white-space: nowrap; display: flex; align-items: center;
-  font: 12.5px var(--mono); letter-spacing: .04em; border-bottom: 1px solid transparent; margin-bottom: -1px; }
+  font: 12.5px var(--mono); letter-spacing: .04em; }
 nav a:hover { color: var(--text); }
-nav a.active { color: var(--text); border-bottom-color: var(--text); }
+/* Drawn inside the link, so nothing overflows the header. */
+nav a.active { color: var(--text); box-shadow: inset 0 -1px 0 var(--text); }
 nav.langs { flex: none; }
 /* Too narrow for one row: the page links take a row of their own. */
 @media (max-width: 860px) {
@@ -115,7 +122,15 @@ td:has(> .swatch) { white-space: nowrap; }
 .bucket { padding-top: 14px; border-top: 1px solid var(--line); }
 td.barcol, th.barcol { width: 30%; min-width: 90px; }
 /* On a phone the numbers keep the width; the bars repeat them. */
-@media (max-width: 600px) { td.barcol, th.barcol { display: none; } }
+@media (max-width: 600px) {
+  td.barcol, th.barcol { display: none; }
+  /* Headings such as ESTIMATED USAGE take two lines rather than pushing
+     the table wider than the screen. */
+  th { white-space: normal; }
+  th, td { padding-left: 6px; padding-right: 6px; }
+  /* Total tokens stays; its input and output split waits for a wider screen. */
+  th.detail, td.detail { display: none; }
+}
 tr.sub td:first-child { padding-left: 20px; }
 tr.sub td { border-bottom: none; padding-top: 2px; padding-bottom: 2px; font-size: 12px; }
 .chart { display: grid; gap: 4px; }
@@ -139,9 +154,11 @@ button.toggle { padding: 2px 10px; font-size: 11.5px; color: var(--muted); }
 button.toggle[aria-pressed=true] { color: var(--bg); background: var(--text); border-color: var(--text); }
 table.stats tr.total td { font-size: 18px; font-weight: 600; }
 .cached { display: block; font-size: 11.5px; }
-/* Cells that share their rules: a 1px gap over the line color. */
-.cells { display: grid; gap: 1px; background: var(--line); padding: 0; }
-.cells > * { background: var(--bg); padding: 20px 24px; }
+/* Cells that share their rules: each draws its right and bottom one, and
+   the rules at the outer edges are clipped, so an empty spot in the last
+   row stays blank. */
+.cells { display: grid; gap: 0; padding: 0; overflow: clip; }
+.cells > * { padding: 20px 24px; box-shadow: 1px 0 0 var(--line), 0 1px 0 var(--line); }
 .tiles { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 .tile { display: grid; gap: 4px; align-content: start; }
 .tile .label { font: 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
