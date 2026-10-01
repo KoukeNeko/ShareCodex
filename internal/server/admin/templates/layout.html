@@ -47,6 +47,13 @@ nav a { color: var(--muted); text-decoration: none; padding: 0 12px; white-space
 nav a:hover { color: var(--text); }
 nav a.active { color: var(--text); border-bottom-color: var(--text); }
 nav.langs { flex: none; }
+/* Too narrow for one row: the page links take a row of their own. */
+@media (max-width: 860px) {
+  .bar { flex-wrap: wrap; height: auto; row-gap: 0; }
+  .bar > .brand, .bar > nav.langs, .bar > form.inline { height: 48px; }
+  .bar > .brand { flex: 1; }
+  .bar > nav:not(.langs) { order: 1; flex-basis: calc(100% + 48px); margin: 0 -24px; padding: 0 12px; height: 40px; border-top: 1px solid var(--line); }
+}
 .spacer { flex: 1; }
 .bar > form.inline { display: flex; align-items: center; }
 main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; }
