@@ -282,7 +282,7 @@ func TestLanguageSwitch(t *testing.T) {
 // seedUsage pairs alice's laptop, signs it into a Claude account and
 // uploads a 5-hour reading with two requests on it: one to the quota's own
 // model and one to a third-party model through OpenCodex.
-func seedUsage(t *testing.T, store *storage.Store) {
+func seedUsage(t *testing.T, store *storage.Store) storage.Device {
 	t.Helper()
 	ctx := context.Background()
 	person, err := store.AddPerson(ctx, "alice")
@@ -320,6 +320,30 @@ func seedUsage(t *testing.T, store *storage.Store) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	return device
+}
+
+// A later reading can report the account under another masked identifier
+// than the one its label was first taken from; the label is still the
+// masked email.
+func TestPublicDashboardHidesMaskedLabelAfterHintChanges(t *testing.T) {
+	store, admin := newServer(t)
+	device := seedUsage(t, store)
+	_, err := store.Ingest(context.Background(), device, syncapi.SyncRequest{Version: syncapi.Version,
+		Observations: []syncapi.Observation{{Provider: "anthropic", AccountRefHash: "acct", Hint: "or***", ObservedAt: time.Now()}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin.post("/admin/login", url.Values{"password": {password}})
+	admin.post("/admin/settings", url.Values{"public_dashboard": {"on"}})
+	jar, _ := cookiejar.New(nil)
+	visitor := browser{t: t, base: admin.base, c: &http.Client{Jar: jar, CheckRedirect: admin.c.CheckRedirect}}
+	for _, path := range []string{"/dashboard", "/dashboard/usage"} {
+		st, page := visitor.get(path)
+		if st != http.StatusOK || !strings.Contains(page, "Account 1") || strings.Contains(page, "al***@example.com") {
+			t.Errorf("%s returned %d without the numbered account, or with the masked email", path, st)
+		}
 	}
 }
 

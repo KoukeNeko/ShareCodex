@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/KoukeNeko/ShareCodex/internal/account"
 	"github.com/KoukeNeko/ShareCodex/internal/server/query"
 	"github.com/KoukeNeko/ShareCodex/internal/syncapi"
 )
@@ -210,7 +211,9 @@ func (c *Console) dashboardUsage(w http.ResponseWriter, r *http.Request) {
 
 // publicOverview is the overview without what the dashboard does not
 // publish: an account still named by its masked email is left unnamed, to
-// be numbered instead, as the desktop app's shared image does.
+// be numbered instead, as the desktop app's shared image does. A label that
+// is no longer the account's hint, because a later reading reported another
+// one, is still a masked email and stays unpublished.
 func (c *Console) publicOverview(ctx context.Context) (syncapi.Overview, error) {
 	now := time.Now()
 	o, err := query.Overview(ctx, c.store, "", now, now)
@@ -226,7 +229,7 @@ func (c *Console) publicOverview(ctx context.Context) (syncapi.Overview, error) 
 		hints[a.ID] = a.Hint
 	}
 	for i, a := range o.Accounts {
-		if a.Label == hints[a.ID] {
+		if a.Label == hints[a.ID] || account.IsMasked(a.Label) {
 			o.Accounts[i].Label = ""
 		}
 	}

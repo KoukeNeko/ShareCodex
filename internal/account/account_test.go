@@ -40,6 +40,19 @@ func TestHashExternalRefIsProviderScoped(t *testing.T) {
 	}
 }
 
+func TestIsMasked(t *testing.T) {
+	for _, masked := range []string{"so***@example.com", "a***@example.com", "or***", "***"} {
+		if !IsMasked(masked) {
+			t.Errorf("IsMasked(%q) = false, want true", masked)
+		}
+	}
+	for _, named := range []string{"", "Team Max", "someone@example.com", "work ***", "Lab ***@x"} {
+		if IsMasked(named) {
+			t.Errorf("IsMasked(%q) = true, want false", named)
+		}
+	}
+}
+
 func TestMaskRef(t *testing.T) {
 	tests := map[string]string{
 		"someone@example.com": "so***@example.com",

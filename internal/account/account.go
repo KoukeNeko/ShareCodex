@@ -59,6 +59,12 @@ func MaskRef(ref string) string {
 	return masked
 }
 
+// IsMasked reports whether s has the form MaskRef gives an identifier.
+func IsMasked(s string) bool {
+	local, _, _ := strings.Cut(s, "@")
+	return len(local) <= 5 && strings.HasSuffix(local, "***")
+}
+
 // Source is the app an observation came from. Claude Desktop signs in
 // separately from the claude CLI, so each keeps its own timeline. The CLI's
 // source is empty so observations recorded before Desktop was tracked keep
