@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"os"
+	"slices"
 	"sort"
 	"time"
 
@@ -29,6 +30,8 @@ func (a *Agent) State(ctx context.Context) State {
 		LaunchAtLogin: a.settings.LaunchAtLogin,
 		Language:      a.language(),
 		FineChart:     a.settings.FineChart,
+		AccountSort:   a.settings.AccountSort,
+		AccountOrder:  slices.Clone(a.settings.AccountOrder),
 		Update:        a.update,
 	}
 	for _, p := range []account.Provider{account.ProviderAnthropic, account.ProviderOpenAI} {

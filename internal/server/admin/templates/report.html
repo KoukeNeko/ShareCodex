@@ -1,0 +1,73 @@
+{{define "usagenav"}}
+<nav class="periods" aria-label="{{.T.navUsage}}">
+    {{range .U.Periods}}<a href="{{$.U.Path}}?period={{.ID}}#usage" class="{{if eq .ID $.U.Period}}active{{end}}">{{if .Days}}{{tf $.T.days .Days}}{{else}}{{tf $.T.hours .Hours}}{{end}}</a>{{end}}
+  </nav>
+{{end}}
+
+{{define "usagereport"}}
+{{with .U.Report}}
+<div class="cells tiles">
+  <div class="tile"><span class="label">{{$.T.totalTokens}}</span><strong class="num">{{tokensOf .Total}}</strong></div>
+  <div class="tile"><span class="label">{{$.T.input}}</span><strong class="num">{{inputOf .Total}}</strong><span class="muted small">{{tf $.T.cachedShare (pct (cachedOf .Total))}}</span></div>
+  <div class="tile"><span class="label">{{$.T.output}}</span><strong class="num">{{tokens .Total.Output}}</strong></div>
+  <div class="tile"><span class="label">{{$.T.estCost}}</span><strong class="num">{{usd .Total.CostUSD}}</strong></div>
+  <div class="tile"><span class="label">{{$.T.requests}}</span><strong class="num">{{.Total.Requests}}</strong></div>
+</div>
+
+<section class="card">
+  <h2>{{$.T.navPeople}}</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>{{$.T.member}}</th><th class="num">{{$.T.totalTokens}}</th><th class="num">{{$.T.input}}</th><th class="num">{{$.T.output}}</th><th class="num">{{$.T.requests}}</th><th class="num">{{$.T.estCost}}</th></tr></thead>
+    <tbody>
+    {{range .Members}}
+      <tr><td>{{.Name}}</td><td class="num">{{tokensOf .UsageTotals}}</td><td class="num">{{inputOf .UsageTotals}}</td><td class="num">{{tokens .Output}}</td><td class="num">{{.Requests}}</td><td class="num">{{usd .CostUSD}}</td></tr>
+    {{else}}
+      <tr><td colspan="6" class="muted">{{$.T.noUsage}}</td></tr>
+    {{end}}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="card">
+  <h2>{{$.T.navAccounts}}</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>{{$.T.account}}</th><th class="num">{{$.T.totalTokens}}</th><th class="num">{{$.T.input}}</th><th class="num">{{$.T.output}}</th><th class="num">{{$.T.requests}}</th><th class="num">{{$.T.estCost}}</th></tr></thead>
+    <tbody>
+    {{range .Accounts}}
+      <tr><td>{{provider .Provider}} <span class="muted">{{.Name}}</span></td><td class="num">{{tokensOf .UsageTotals}}</td><td class="num">{{inputOf .UsageTotals}}</td><td class="num">{{tokens .Output}}</td><td class="num">{{.Requests}}</td><td class="num">{{usd .CostUSD}}</td></tr>
+    {{else}}
+      <tr><td colspan="6" class="muted">{{$.T.noUsage}}</td></tr>
+    {{end}}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="card">
+  <h2>{{$.T.models}}</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>{{$.T.model}}</th><th class="num">{{$.T.totalTokens}}</th><th class="num">{{$.T.input}}</th><th class="num">{{$.T.output}}</th><th class="num">{{$.T.requests}}</th><th class="num">{{$.T.estCost}}</th></tr></thead>
+    <tbody>
+    {{range .Models}}{{$m := modelLabel .Model .Gateway}}
+      <tr><td title="{{$m.Title}}">{{$m.Name}}{{if $m.Via}} <span class="via">{{$m.Via}}</span>{{end}}</td><td class="num">{{tokensOf .UsageTotals}}</td><td class="num">{{inputOf .UsageTotals}}</td><td class="num">{{tokens .Output}}</td><td class="num">{{.Requests}}</td><td class="num">{{usd .CostUSD}}</td></tr>
+    {{else}}
+      <tr><td colspan="6" class="muted">{{$.T.noUsage}}</td></tr>
+    {{end}}
+    </tbody>
+  </table></div>
+</section>
+
+{{if .ThirdParty}}
+<section class="card">
+  <h2>{{$.T.thirdPartyModels}}</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>{{$.T.model}}</th><th class="num">{{$.T.totalTokens}}</th><th class="num">{{$.T.input}}</th><th class="num">{{$.T.output}}</th><th class="num">{{$.T.requests}}</th></tr></thead>
+    <tbody>
+    {{range .ThirdParty}}{{$m := modelLabel .Model .Gateway}}
+      <tr><td title="{{$m.Title}}">{{$m.Name}}{{if $m.Via}} <span class="via">{{$m.Via}}</span>{{end}}</td><td class="num">{{tokensOf .UsageTotals}}</td><td class="num">{{inputOf .UsageTotals}}</td><td class="num">{{tokens .Output}}</td><td class="num">{{.Requests}}</td></tr>
+    {{end}}
+    </tbody>
+  </table></div>
+</section>
+{{end}}
+{{end}}
+{{end}}

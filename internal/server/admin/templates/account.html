@@ -1,5 +1,5 @@
 {{define "account"}}{{$T := .T}}{{$admin := .Admin}}{{with .A}}
-<section class="card">
+<section class="card" data-five-hour="{{.FiveHour}}" data-weekly="{{.Weekly}}">
   <div class="row">
     <h2>{{provider .Provider}}</h2><span class="muted">{{.Label}}</span>
     {{if .PlanType}}<span class="tag">{{.PlanType}}</span>{{end}}
@@ -105,3 +105,11 @@
   {{end}}
 </section>
 {{end}}{{end}}
+
+{{define "sortnav"}}
+<nav class="periods" aria-label="{{.T.sortBy}}">
+  <button type="button" data-sort="custom" aria-pressed="true">{{.T.sortCustom}}</button>
+  <button type="button" data-sort="fiveHour" aria-pressed="false">{{.T.fiveHour}}</button>
+  <button type="button" data-sort="weekly" aria-pressed="false">{{.T.weekly}}</button>
+</nav>
+{{end}}

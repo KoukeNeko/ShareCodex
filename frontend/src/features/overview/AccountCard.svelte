@@ -5,7 +5,7 @@
   import { bucketName, bucketTab, modelName, percent, providerName, resetsIn, tokens } from '../../lib/format'
   import { t } from '../../lib/i18n.svelte'
 
-  let { id = '', provider, label, planType, buckets, activeUsers, now, local = false, fineChart = false }: {
+  let { id = '', provider, label, planType, buckets, activeUsers, now, local = false, fineChart = false, onGrip }: {
     id?: string
     provider: string
     label: string
@@ -15,6 +15,9 @@
     now: Date
     local?: boolean
     fineChart?: boolean
+    // Starts dragging the card to reorder the list; without it the card
+    // has no grip.
+    onGrip?: (e: PointerEvent) => void
   } = $props()
 
   // The viewer's own computer is signed into this account.
@@ -95,6 +98,11 @@
 
 <section class="card" class:current>
   <header>
+    {#if onGrip}
+      <button class="grip" title={t('reorder')} aria-label={t('reorder')} onpointerdown={onGrip}>
+        <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor"><circle cx="3" cy="3" r="1.2" /><circle cx="7" cy="3" r="1.2" /><circle cx="3" cy="7" r="1.2" /><circle cx="7" cy="7" r="1.2" /><circle cx="3" cy="11" r="1.2" /><circle cx="7" cy="11" r="1.2" /></svg>
+      </button>
+    {/if}
     <span class="provider">{providerName(provider)}</span>
     <span class="label">{label}</span>
     {#if planType}<span class="plan">{planType}</span>{/if}
@@ -266,6 +274,8 @@
     border-radius: 4px;
     padding: 1px 6px;
   }
+  .grip { flex: none; align-self: center; border: none; background: none; padding: 0 2px; margin-left: -4px; color: var(--muted); cursor: grab; touch-action: none; display: flex; }
+  .grip:hover { color: var(--text); }
   .leave { flex: none; padding: 1px 6px; font-size: 11px; color: var(--muted); }
   .confirm { display: grid; gap: 8px; }
   .confirm p { margin: 0; }

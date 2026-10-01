@@ -78,6 +78,8 @@ type State struct {
 	LaunchAtLogin bool            `json:"launch_at_login"`
 	Language      string          `json:"language"`
 	FineChart     bool            `json:"fine_chart"`
+	AccountSort   string          `json:"account_sort"`
+	AccountOrder  []string        `json:"account_order"`
 	Update        *update.Release `json:"update,omitempty"`
 }
 

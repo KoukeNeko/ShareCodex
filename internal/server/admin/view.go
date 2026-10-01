@@ -19,6 +19,9 @@ import (
 
 type accountView struct {
 	Provider, Label, PlanType string
+	// FiveHour and Weekly are the windows' use for sorting by them; -1
+	// when unknown.
+	FiveHour, Weekly float64
 	// Hint is the masked email, shown only in the console.
 	Hint        string
 	ActiveUsers []syncapi.ActiveUser
@@ -76,9 +79,19 @@ func modelKey(model, gateway string) string { return gateway + "\x00" + model }
 func accountViews(o syncapi.Overview, hints map[string]string, now time.Time, t map[string]string) []accountView {
 	out := make([]accountView, 0, len(o.Accounts))
 	for _, a := range o.Accounts {
-		av := accountView{Provider: a.Provider, Label: a.Label, PlanType: a.PlanType, Hint: hints[a.ID], ActiveUsers: a.ActiveUsers}
+		av := accountView{Provider: a.Provider, Label: a.Label, PlanType: a.PlanType, Hint: hints[a.ID], ActiveUsers: a.ActiveUsers,
+			FiveHour: -1, Weekly: -1}
 		for _, b := range a.Buckets {
-			av.Buckets = append(av.Buckets, newBucketView(b, now, t))
+			bv := newBucketView(b, now, t)
+			if !bv.Expired {
+				switch b.Key {
+				case string(quota.BucketFiveHour):
+					av.FiveHour = b.UsedPercent
+				case string(quota.BucketWeekly):
+					av.Weekly = b.UsedPercent
+				}
+			}
+			av.Buckets = append(av.Buckets, bv)
 		}
 		out = append(out, av)
 	}

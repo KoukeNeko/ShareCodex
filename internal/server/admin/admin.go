@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/KoukeNeko/ShareCodex/internal/account"
 	"github.com/KoukeNeko/ShareCodex/internal/identity"
 	"github.com/KoukeNeko/ShareCodex/internal/server/query"
 	"github.com/KoukeNeko/ShareCodex/internal/server/storage"
@@ -99,6 +100,7 @@ func New(store *storage.Store, log *slog.Logger, cfg Config) (http.Handler, erro
 	mux.HandleFunc("POST /admin/accounts/{id}/label", c.authed(c.setLabel))
 	mux.HandleFunc("POST /admin/accounts/{id}/shares", c.authed(c.setShares))
 	mux.HandleFunc("POST /admin/accounts/{id}/delete", c.authed(c.deleteAccount))
+	mux.HandleFunc("POST /admin/accounts/order", c.authed(c.setAccountOrder))
 	mux.HandleFunc("GET /admin/devices", c.authed(c.devices))
 	mux.HandleFunc("POST /admin/devices/{id}/revoke", c.authed(c.revoke))
 	mux.HandleFunc("GET /admin/usage", c.authed(c.usage))
@@ -131,10 +133,11 @@ func parsePages() (map[string]*template.Template, error) {
 			}
 			return 0
 		},
-		"usd":   usd,
-		"width": width,
-		"svgX":  func(pct float64) string { return strconv.FormatFloat(pct*chartWidth/100, 'f', 1, 64) },
-		"join":  strings.Join,
+		"usd":     usd,
+		"width":   width,
+		"svgX":    func(pct float64) string { return strconv.FormatFloat(pct*chartWidth/100, 'f', 1, 64) },
+		"join":    strings.Join,
+		"usageOf": func(u usageData, t map[string]string) usageArgs { return usageArgs{U: u, T: t} },
 		"card": func(a accountView, t map[string]string, admin bool) cardData {
 			return cardData{A: a, T: t, Admin: admin}
 		},
@@ -151,7 +154,7 @@ func parsePages() (map[string]*template.Template, error) {
 	pages := map[string]*template.Template{}
 	for _, name := range []string{"login", "overview", "people", "accounts", "devices", "usage", "settings", "dashboard"} {
 		t, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS,
-			"templates/layout.html", "templates/account.html", "templates/"+name+".html")
+			"templates/layout.html", "templates/account.html", "templates/report.html", "templates/"+name+".html")
 		if err != nil {
 			return nil, err
 		}
@@ -166,6 +169,12 @@ type cardData struct {
 	A     accountView
 	T     map[string]string
 	Admin bool
+}
+
+// usageArgs is what the shared usage report templates receive.
+type usageArgs struct {
+	U usageData
+	T map[string]string
 }
 
 // page is what every template receives. Title and Error hold dictionary
@@ -610,6 +619,32 @@ func (c *Console) setShares(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/accounts", http.StatusSeeOther)
 }
 
+// setAccountOrder saves the order accounts were dragged into, listed as
+// repeated "id" fields; IDs of accounts that no longer exist are dropped.
+func (c *Console) setAccountOrder(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Malformed form", http.StatusBadRequest)
+		return
+	}
+	accounts, err := c.store.Accounts(r.Context())
+	if err != nil {
+		c.fail(w, "list accounts", err)
+		return
+	}
+	var ids []string
+	for _, id := range r.PostForm["id"] {
+		if !slices.Contains(ids, id) && slices.ContainsFunc(accounts, func(a account.Account) bool { return a.ID == id }) {
+			ids = append(ids, id)
+		}
+	}
+	if err := c.store.SetAccountOrder(r.Context(), ids); err != nil {
+		c.fail(w, "set account order", err)
+		return
+	}
+	http.Redirect(w, r, "/admin/accounts", http.StatusSeeOther)
+}
+
 func (c *Console) deleteAccount(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	err := c.store.DeleteAccount(r.Context(), id)
@@ -684,35 +719,44 @@ func (c *Console) devices(w http.ResponseWriter, r *http.Request) {
 	c.render(w, r, "devices", http.StatusOK, page{Title: "navDevices", Nav: "devices", Authed: true, Data: rows})
 }
 
-// usagePeriods are the spans the usage page reports, by ID.
-var usagePeriods = []struct {
+// usagePeriod is a span the usage report covers.
+type usagePeriod struct {
 	ID          string
 	Hours, Days int
-}{{"24h", 24, 0}, {"7d", 0, 7}, {"30d", 0, 30}}
+}
 
-type usageData struct {
-	Period  string
-	Periods []struct {
-		ID          string
-		Hours, Days int
+func (p usagePeriod) span() time.Duration {
+	return time.Duration(p.Hours)*time.Hour + time.Duration(p.Days)*24*time.Hour
+}
+
+var usagePeriods = []usagePeriod{{"24h", 24, 0}, {"7d", 0, 7}, {"30d", 0, 30}}
+
+// periodOf is the period a request asks for, 30 days by default.
+func periodOf(r *http.Request) usagePeriod {
+	for _, p := range usagePeriods {
+		if p.ID == r.URL.Query().Get("period") {
+			return p
+		}
 	}
-	Report query.UsageReport
+	return usagePeriods[len(usagePeriods)-1]
+}
+
+// usageData is a usage report and its period switch, which links to Path.
+type usageData struct {
+	Path    string
+	Period  string
+	Periods []usagePeriod
+	Report  query.UsageReport
 }
 
 func (c *Console) usage(w http.ResponseWriter, r *http.Request) {
-	period := usagePeriods[len(usagePeriods)-1]
-	for _, p := range usagePeriods {
-		if p.ID == r.URL.Query().Get("period") {
-			period = p
-		}
-	}
-	span := time.Duration(period.Hours)*time.Hour + time.Duration(period.Days)*24*time.Hour
-	report, err := query.Usage(r.Context(), c.store, time.Now().Add(-span))
+	period := periodOf(r)
+	report, err := query.Usage(r.Context(), c.store, time.Now().Add(-period.span()))
 	if err != nil {
 		c.fail(w, "build usage report", err)
 		return
 	}
-	data := usageData{Period: period.ID, Periods: usagePeriods, Report: report}
+	data := usageData{Path: "/admin/usage", Period: period.ID, Periods: usagePeriods, Report: report}
 	c.render(w, r, "usage", http.StatusOK, page{Title: "navUsage", Nav: "usage", Authed: true, Data: data})
 }
 

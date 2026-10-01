@@ -116,6 +116,16 @@
         onchange={(e) => run(() => Desktop.SetLaunchAtLogin(e.currentTarget.checked))} />
     </label>
     <label class="row">
+      <span>{t('accountOrder')}</span>
+      <select value={app.account_sort ?? ''} disabled={busy}
+        onchange={(e) => run(() => Desktop.SetAccountSort(e.currentTarget.value))}>
+        <option value="">{t('sortDefault')}</option>
+        <option value="five_hour">{t('sortFiveHour')}</option>
+        <option value="weekly">{t('sortWeekly')}</option>
+        <option value="custom">{t('sortCustom')}</option>
+      </select>
+    </label>
+    <label class="row">
       <span>{t('fineChart')}</span>
       <input type="checkbox" checked={app.fine_chart} disabled={busy}
         onchange={(e) => run(() => Desktop.SetFineChart(e.currentTarget.checked))} />

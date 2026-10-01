@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -54,6 +55,20 @@ func TestStateCarriesLanguageAndUpdate(t *testing.T) {
 	}
 	if saved, err := settings.Load(); err != nil || !saved.FineChart {
 		t.Fatalf("saved fine chart = %v, %v; want it persisted", saved.FineChart, err)
+	}
+
+	if err := a.SetAccountSort("weekly"); err != nil || a.State(ctx).AccountSort != "weekly" {
+		t.Fatalf("account sort = %q, %v; want weekly", a.State(ctx).AccountSort, err)
+	}
+	if err := a.SetAccountSort("name"); err == nil {
+		t.Error("an unsupported account order must be rejected")
+	}
+	// Dragging lists the accounts in the dragged order.
+	if err := a.SetAccountOrder([]string{"b", "a"}); err != nil {
+		t.Fatal(err)
+	}
+	if saved, err := settings.Load(); err != nil || saved.AccountSort != "custom" || !slices.Equal(saved.AccountOrder, []string{"b", "a"}) {
+		t.Fatalf("saved order = %q %v, %v; want custom b, a", saved.AccountSort, saved.AccountOrder, err)
 	}
 }
 

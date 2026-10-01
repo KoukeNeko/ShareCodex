@@ -42,6 +42,41 @@ func (a *Agent) SetFineChart(enabled bool) error {
 	return nil
 }
 
+// accountSorts are the orders the popup can list accounts in; see
+// settings.Settings.AccountSort.
+var accountSorts = []string{"", "five_hour", "weekly", "custom"}
+
+// SetAccountSort saves the order the popup lists accounts in.
+func (a *Agent) SetAccountSort(sort string) error {
+	if !slices.Contains(accountSorts, sort) {
+		return fmt.Errorf("unsupported account order %q", sort)
+	}
+	a.mu.Lock()
+	a.settings.AccountSort = sort
+	st := a.settings
+	a.mu.Unlock()
+	if err := settings.Save(st); err != nil {
+		return err
+	}
+	a.changed()
+	return nil
+}
+
+// SetAccountOrder saves the order accounts were dragged into and lists
+// them in it.
+func (a *Agent) SetAccountOrder(ids []string) error {
+	a.mu.Lock()
+	a.settings.AccountSort = "custom"
+	a.settings.AccountOrder = slices.Clone(ids)
+	st := a.settings
+	a.mu.Unlock()
+	if err := settings.Save(st); err != nil {
+		return err
+	}
+	a.changed()
+	return nil
+}
+
 // Languages the UI is translated into; the first is the default.
 var languages = []string{"en", "zh-TW"}
 

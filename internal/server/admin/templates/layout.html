@@ -143,7 +143,12 @@ table.stats tr.total td { font-size: 18px; font-weight: 600; }
 nav.periods { flex: none; display: flex; border: 1px solid var(--line); }
 nav.periods a { padding: 4px 12px; font-size: 12px; border: none; margin: 0; }
 nav.periods a + a { border-left: 1px solid var(--line); }
-nav.periods a.active { background: var(--text); color: var(--bg); }
+nav.periods a.active, nav.periods button[aria-pressed=true] { background: var(--text); color: var(--bg); }
+nav.periods button { border: none; background: none; color: var(--muted); padding: 4px 12px; font-size: 12px; }
+nav.periods button + button { border-left: 1px solid var(--line); }
+button.grip { border: none; background: none; padding: 0 4px; color: var(--muted); cursor: grab; touch-action: none; font-size: 15px; line-height: 1; }
+button.grip:hover { color: var(--text); }
+.dragging { outline: 1px solid var(--accent); outline-offset: -1px; position: relative; z-index: 1; }
 .notice { background: var(--warn-soft); }
 a { color: var(--accent); }
 </style>
@@ -217,6 +222,81 @@ try { if (localStorage.getItem('sharecodex.cumulative') === '1') document.docume
     var on = root.classList.toggle('cumulative')
     show()
     try { localStorage.setItem('sharecodex.cumulative', on ? '1' : '0') } catch (err) { /* not remembered; the page still switches */ }
+  })
+})();
+
+// Account cards in the arranged order, or the most used window first.
+(function () {
+  var lists = document.querySelectorAll('[data-sort-list]')
+  if (!lists.length) return
+  var modes = ['custom', 'fiveHour', 'weekly']
+  lists.forEach(function (list) {
+    Array.prototype.forEach.call(list.children, function (el, i) { el.dataset.pos = i })
+  })
+  var apply = function (mode) {
+    lists.forEach(function (list) {
+      var items = Array.prototype.slice.call(list.children)
+      items.sort(function (a, b) {
+        var d = mode === 'custom' ? 0 : parseFloat(b.dataset[mode]) - parseFloat(a.dataset[mode])
+        return d || a.dataset.pos - b.dataset.pos
+      })
+      items.forEach(function (el) { list.appendChild(el) })
+    })
+    document.querySelectorAll('[data-sort]').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.sort === mode) })
+  }
+  var mode = 'custom'
+  try { mode = localStorage.getItem('sharecodex.accountSort') || mode } catch (e) { /* storage blocked: the arranged order */ }
+  apply(modes.indexOf(mode) < 0 ? 'custom' : mode)
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-sort]')
+    if (!b) return
+    apply(b.dataset.sort)
+    try { localStorage.setItem('sharecodex.accountSort', b.dataset.sort) } catch (err) { /* not remembered; the page still sorts */ }
+  })
+})();
+
+// Dragging a card by its grip arranges the list, then saves the order.
+(function () {
+  document.querySelectorAll('[data-reorder]').forEach(function (list) {
+    var form = document.getElementById(list.dataset.reorder)
+    var order = function () { return Array.prototype.map.call(list.children, function (el) { return el.dataset.id }) }
+    list.addEventListener('pointerdown', function (e) {
+      var grip = e.target.closest('[data-grip]')
+      if (!grip) return
+      e.preventDefault()
+      var item = grip.closest('[data-id]')
+      var before = order().join()
+      item.classList.add('dragging')
+      var move = function (ev) {
+        var next = Array.prototype.find.call(list.children, function (el) {
+          if (el === item) return false
+          var r = el.getBoundingClientRect()
+          return ev.clientY < r.top + r.height / 2
+        })
+        list.insertBefore(item, next || null)
+      }
+      var up = function () {
+        document.removeEventListener('pointermove', move)
+        document.removeEventListener('pointerup', up)
+        document.removeEventListener('pointercancel', up)
+        item.classList.remove('dragging')
+        if (order().join() === before) return
+        form.replaceChildren()
+        order().forEach(function (id) {
+          var input = document.createElement('input')
+          input.type = 'hidden'
+          input.name = 'id'
+          input.value = id
+          form.appendChild(input)
+        })
+        form.submit()
+      }
+      // On the document, not the grip: moving the card in the list
+      // releases any pointer capture the grip held.
+      document.addEventListener('pointermove', move)
+      document.addEventListener('pointerup', up)
+      document.addEventListener('pointercancel', up)
+    })
   })
 })();
 </script>

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -22,23 +23,38 @@ const dashboardPath = "/dashboard"
 const dashboardTTL = 30 * time.Second
 
 type dashboardCache struct {
-	mu       sync.Mutex
-	at       time.Time
-	overview syncapi.Overview
+	overview ttlCache[syncapi.Overview]
+	// usage holds a report per period ID.
+	usage ttlCache[query.UsageReport]
 }
 
-func (d *dashboardCache) get(ctx context.Context, build func(context.Context) (syncapi.Overview, error)) (syncapi.Overview, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if !d.at.IsZero() && time.Since(d.at) < dashboardTTL {
-		return d.overview, nil
+// ttlCache keeps each value for dashboardTTL after building it.
+type ttlCache[T any] struct {
+	mu      sync.Mutex
+	entries map[string]ttlEntry[T]
+}
+
+type ttlEntry[T any] struct {
+	at    time.Time
+	value T
+}
+
+func (c *ttlCache[T]) get(ctx context.Context, key string, build func(context.Context) (T, error)) (T, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if e, ok := c.entries[key]; ok && time.Since(e.at) < dashboardTTL {
+		return e.value, nil
 	}
-	o, err := build(ctx)
+	v, err := build(ctx)
 	if err != nil {
-		return syncapi.Overview{}, err
+		var zero T
+		return zero, err
 	}
-	d.overview, d.at = o, time.Now()
-	return o, nil
+	if c.entries == nil {
+		c.entries = map[string]ttlEntry[T]{}
+	}
+	c.entries[key] = ttlEntry[T]{at: time.Now(), value: v}
+	return v, nil
 }
 
 // root sends visitors to the dashboard when it is published, else to the
@@ -61,6 +77,7 @@ type dashboardData struct {
 	GeneratedAt time.Time
 	// Preview is an admin viewing the dashboard before it is published.
 	Preview bool
+	Usage   usageData
 }
 
 func (c *Console) dashboard(w http.ResponseWriter, r *http.Request) {
@@ -75,24 +92,46 @@ func (c *Console) dashboard(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	o, err := c.dash.get(r.Context(), c.publicOverview)
+	o, err := c.dash.overview.get(r.Context(), "", c.publicOverview)
 	if err != nil {
 		c.fail(w, "build dashboard", err)
 		return
 	}
+	period := periodOf(r)
+	report, err := c.dash.usage.get(r.Context(), period.ID, func(ctx context.Context) (query.UsageReport, error) {
+		return query.Usage(ctx, c.store, time.Now().Add(-period.span()))
+	})
+	if err != nil {
+		c.fail(w, "build dashboard usage", err)
+		return
+	}
+
 	t := dictionaries[requestLang(r)]
+	// Accounts still named by their email are numbered, the same in the
+	// cards and the usage report.
+	names := map[string]string{}
+	n := 0
+	for _, a := range o.Accounts {
+		names[a.ID] = a.Label
+		if a.Label == "" {
+			n++
+			names[a.ID] = fmt.Sprintf(t["accountN"], n)
+		}
+	}
 	data := dashboardData{
 		Accounts:    accountViews(o, nil, time.Now(), t),
 		GeneratedAt: o.GeneratedAt,
 		Preview:     !on,
 	}
-	n := 0
-	for i := range data.Accounts {
-		if data.Accounts[i].Label == "" {
-			n++
-			data.Accounts[i].Label = fmt.Sprintf(t["accountN"], n)
-		}
+	for i, a := range o.Accounts {
+		data.Accounts[i].Label = names[a.ID]
 	}
+	// The cached report is shared, so its account names change on a copy.
+	report.Accounts = slices.Clone(report.Accounts)
+	for i, a := range report.Accounts {
+		report.Accounts[i].Name = names[a.ID]
+	}
+	data.Usage = usageData{Path: r.URL.Path, Period: period.ID, Periods: usagePeriods, Report: report}
 	nav := "dashboard"
 	if preview {
 		nav = "preview"

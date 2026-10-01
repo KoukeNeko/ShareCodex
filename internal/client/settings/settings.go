@@ -30,6 +30,12 @@ type Settings struct {
 	// FineChart draws the usage chart at the server's full detail instead of
 	// grouping it into about 60 points.
 	FineChart bool `json:"fine_chart,omitempty"`
+	// AccountSort orders the popup's accounts: "" keeps the server's order
+	// (the accounts this device is signed into first), "five_hour" and
+	// "weekly" put the most used window first, and "custom" follows
+	// AccountOrder, the account IDs in the order they were dragged into.
+	AccountSort  string   `json:"account_sort,omitempty"`
+	AccountOrder []string `json:"account_order,omitempty"`
 }
 
 type SavedStatusLine struct {

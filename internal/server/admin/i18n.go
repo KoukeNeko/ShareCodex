@@ -106,6 +106,9 @@ var dictionaries = map[string]map[string]string{
 		"accountN":         "Account %d",
 		"cumulative":       "Cumulative",
 		"delete":           "Delete",
+		"sortBy":           "Sort",
+		"sortCustom":       "Custom",
+		"reorder":          "Reorder",
 
 		"deleteAccountConfirm": "Delete this account? Its usage and quota history are deleted too. A device still signed in to it adds it again on its next sync.",
 		"deletePersonConfirm":  "Delete this member? Their devices can no longer sync, and the usage they uploaded is deleted.",
@@ -197,6 +200,9 @@ var dictionaries = map[string]map[string]string{
 		"accountN":         "帳號 %d",
 		"cumulative":       "累積",
 		"delete":           "刪除",
+		"sortBy":           "排序",
+		"sortCustom":       "自訂",
+		"reorder":          "調整順序",
 
 		"deleteAccountConfirm": "刪除這個帳號？它的用量與額度紀錄會一併刪除。仍登入此帳號的裝置下次同步時會再加回來。",
 		"deletePersonConfirm":  "刪除這位成員？其裝置將無法再同步，已上傳的用量會一併刪除。",

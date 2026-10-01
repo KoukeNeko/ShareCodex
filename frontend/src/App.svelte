@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { flip } from 'svelte/animate'
   import { Events } from '@wailsio/runtime'
   import AccountCard from './features/overview/AccountCard.svelte'
   import JoinForm from './features/overview/JoinForm.svelte'
@@ -8,6 +9,7 @@
   import { Desktop, errorMessage, type ActiveUser, type ProviderState, type State } from './lib/api'
   import { clock, providerName } from './lib/format'
   import { renderShareImage } from './lib/share'
+  import { sortAccounts } from './lib/sort'
   import { setLocale, t } from './lib/i18n.svelte'
 
   let app = $state<State | null>(null)
@@ -44,7 +46,63 @@
   const issues = $derived(
     (app?.providers ?? []).filter((p) => p.status === 'error' || p.status === 'not_pooled'),
   )
-  const accounts = $derived(app?.overview?.accounts ?? [])
+  const accounts = $derived(
+    sortAccounts(app?.overview?.accounts ?? [], app?.account_sort ?? '', app?.account_order ?? [], now),
+  )
+
+  // While a card is dragged, the list follows dragOrder; dropping it saves
+  // the order, which also switches the popup to it.
+  let content: HTMLElement
+  let dragging = $state<string | null>(null)
+  let dragOrder = $state<string[] | null>(null)
+  let orderError = $state('')
+  const shown = $derived(
+    dragOrder ? dragOrder.map((id) => accounts.find((a) => a.id === id)!).filter(Boolean) : accounts,
+  )
+
+  function startDrag(e: PointerEvent, id: string) {
+    e.preventDefault()
+    const before = accounts.map((a) => a.id)
+    dragOrder = before
+    dragging = id
+    const move = (ev: PointerEvent) => {
+      // Near an edge, the list scrolls so a card can go past the view.
+      const box = content.getBoundingClientRect()
+      if (ev.clientY < box.top + 24) content.scrollTop -= 8
+      else if (ev.clientY > box.bottom - 24) content.scrollTop += 8
+      const next = [...content.querySelectorAll<HTMLElement>('[data-account]')].find((el) => {
+        if (el.dataset.account === id) return false
+        const r = el.getBoundingClientRect()
+        return ev.clientY < r.top + r.height / 2
+      })
+      const order = dragOrder!.filter((x) => x !== id)
+      order.splice(next ? order.indexOf(next.dataset.account!) : order.length, 0, id)
+      if (order.join() !== dragOrder!.join()) dragOrder = order
+    }
+    const end = async () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+      const order = dragOrder!
+      dragging = null
+      if (order.join() !== before.join()) {
+        orderError = ''
+        try {
+          await Desktop.SetAccountOrder(order)
+          // Shown at once, before the agent's state event arrives.
+          if (app) app = { ...app, account_sort: 'custom', account_order: order }
+        } catch (err) {
+          orderError = errorMessage(err)
+        }
+      }
+      dragOrder = null
+    }
+    // On the window, not the grip: reordering moves the card's element,
+    // which releases any pointer capture the grip held.
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+  }
   // Before joining, only this device's own sign-in is known.
   const youHere: ActiveUser = { person_id: '', name: '', is_you: true, devices: [] }
 
@@ -87,7 +145,7 @@
     </div>
   </header>
 
-  <div class="content">
+  <div class="content" bind:this={content}>
     {#if loadError}
       <p class="error">{loadError}</p>
     {:else if !app}
@@ -119,9 +177,15 @@
         <UsageStats usage={app.overview.you} />
       {/if}
 
+      {#if orderError}
+        <p class="banner error">{t('saveOrderFailed', { error: orderError })}</p>
+      {/if}
       {#if app.paired && accounts.length > 0}
-        {#each accounts as a (a.id)}
-          <AccountCard id={a.id} provider={a.provider} label={a.label} planType={a.plan_type} buckets={a.buckets ?? []} activeUsers={a.active_users ?? []} {now} fineChart={app.fine_chart} />
+        {#each shown as a (a.id)}
+          <div class="account" class:dragging={dragging === a.id} data-account={a.id} animate:flip={{ duration: 150 }}>
+            <AccountCard id={a.id} provider={a.provider} label={a.label} planType={a.plan_type} buckets={a.buckets ?? []} activeUsers={a.active_users ?? []} {now} fineChart={app.fine_chart}
+              onGrip={accounts.length > 1 ? (e) => startDrag(e, a.id) : undefined} />
+          </div>
         {/each}
       {:else}
         {#each app.local ?? [] as a (a.provider + a.hint)}
@@ -199,4 +263,7 @@
   footer .status { display: flex; gap: 8px; min-width: 0; }
   footer .error { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   p { margin: 0; }
+  .account { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .account.dragging { opacity: .85; }
+  .account.dragging :global(.card) { border-color: var(--accent); box-shadow: 0 4px 16px rgb(0 0 0 / .18); }
 </style>

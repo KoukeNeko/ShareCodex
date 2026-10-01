@@ -280,6 +280,14 @@ func (s *Service) SetFineChart(enabled bool) error {
 	return s.agent.SetFineChart(enabled)
 }
 
+func (s *Service) SetAccountSort(sort string) error {
+	return s.agent.SetAccountSort(sort)
+}
+
+func (s *Service) SetAccountOrder(ids []string) error {
+	return s.agent.SetAccountOrder(ids)
+}
+
 // SetLanguage switches the UI language, including the tray menu.
 func (s *Service) SetLanguage(lang string) error {
 	if err := s.agent.SetLanguage(lang); err != nil {

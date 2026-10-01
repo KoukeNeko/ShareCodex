@@ -1,5 +1,8 @@
 {{define "content"}}
-<h1>{{.T.navOverview}}</h1>
+<div class="row spread">
+  <h1>{{.T.navOverview}}</h1>
+  {{if .Data.Accounts}}{{template "sortnav" .}}{{end}}
+</div>
 <section class="card">
   <div class="table-wrap"><table class="stats">
     <thead><tr><th></th><th class="num">{{tf .T.hours 24}}</th><th class="num">{{.T.last30Days}}</th></tr></thead>
@@ -16,7 +19,11 @@
     </tbody>
   </table></div>
 </section>
-{{range .Data.Accounts}}{{template "account" (card . $.T true)}}{{else}}
+{{if .Data.Accounts}}
+<div class="cells" data-sort-list>
+{{range .Data.Accounts}}{{template "account" (card . $.T true)}}{{end}}
+</div>
+{{else}}
 <div class="card"><p class="muted" style="margin:0">{{.T.noAccounts}}</p></div>
 {{end}}
 {{end}}

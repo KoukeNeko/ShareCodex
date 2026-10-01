@@ -1,9 +1,12 @@
 {{define "content"}}
 <h1>{{.T.navAccounts}}</h1>
+{{if .Data}}
+<form id="account-order" method="post" action="/admin/accounts/order" hidden></form>
+<div class="cells" data-reorder="account-order">
 {{range .Data}}
-<section class="card">
+<section class="card" data-id="{{.ID}}">
   <div class="row spread">
-    <div class="row"><h2>{{provider .Provider}}</h2>{{if .PlanType}}<span class="tag">{{.PlanType}}</span>{{end}}<span class="muted small">{{.Hint}}</span></div>
+    <div class="row"><button type="button" class="grip" data-grip aria-label="{{$.T.reorder}}" title="{{$.T.reorder}}">⠿</button><h2>{{provider .Provider}}</h2>{{if .PlanType}}<span class="tag">{{.PlanType}}</span>{{end}}<span class="muted small">{{.Hint}}</span></div>
     <div class="row">
       <form class="row" method="post" action="/admin/accounts/{{.ID}}/label">
         <input class="grow" type="text" name="label" value="{{.Label}}" maxlength="50" required aria-label="{{$.T.accountName}}">
@@ -41,6 +44,8 @@
     </div>
   </form>
 </section>
+{{end}}
+</div>
 {{else}}
 <div class="card"><p class="muted" style="margin:0">{{.T.noAccounts}}</p></div>
 {{end}}

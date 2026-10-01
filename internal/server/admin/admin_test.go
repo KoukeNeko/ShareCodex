@@ -356,7 +356,7 @@ func TestPublicDashboard(t *testing.T) {
 	if st != http.StatusOK {
 		t.Fatalf("published dashboard returned %d", st)
 	}
-	for _, want := range []string{"alice", "Account 1", "40%", "claude-opus-5-5", "gpt-6-sol", "OCX", "<svg"} {
+	for _, want := range []string{"alice", "Account 1", "40%", "claude-opus-5-5", "gpt-6-sol", "OCX", "<svg", "Total tokens", "US$"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("dashboard lacks %q", want)
 		}
@@ -365,6 +365,10 @@ func TestPublicDashboard(t *testing.T) {
 		if strings.Contains(page, private) {
 			t.Errorf("dashboard shows %q, which only the console may", private)
 		}
+	}
+	// The usage report covers the period asked for, without email addresses.
+	if st, page := visitor.get("/dashboard?period=24h"); st != http.StatusOK || !strings.Contains(page, "4.5K") || strings.Contains(page, "al***@example.com") {
+		t.Errorf("dashboard usage for 24 hours returned %d without alice's tokens, or with an email", st)
 	}
 	if loc := location(visitor, "/"); loc != "/dashboard" {
 		t.Fatalf("root redirected to %q after publishing, want /dashboard", loc)
@@ -450,5 +454,42 @@ func TestDeleteMember(t *testing.T) {
 	}
 	if st, _ := b.post("/admin/people/"+alice.ID+"/delete", nil); st != http.StatusSeeOther {
 		t.Fatalf("deleting a member twice returned %d", st)
+	}
+}
+
+func TestAccountOrder(t *testing.T) {
+	ctx := context.Background()
+	store, b := newServer(t)
+	seedUsage(t, store)
+	persons, _ := store.Persons(ctx)
+	code, _, _ := store.CreateInvite(ctx, persons[0].ID, storage.InviteTTL)
+	device, _, err := store.Pair(ctx, code, "alice-pc", "windows")
+	if err != nil {
+		t.Fatal(err)
+	}
+	obs := syncapi.Observation{Provider: "openai", AccountRefHash: "codex", Hint: "co***@example.com", ObservedAt: time.Now()}
+	if _, err := store.Ingest(ctx, device, syncapi.SyncRequest{Version: syncapi.Version, Observations: []syncapi.Observation{obs}}); err != nil {
+		t.Fatal(err)
+	}
+	b.post("/admin/login", url.Values{"password": {password}})
+	accounts, _ := store.Accounts(ctx)
+	if len(accounts) != 2 || accounts[0].Provider != "anthropic" {
+		t.Fatalf("accounts before arranging = %+v, want Claude first", accounts)
+	}
+
+	form := url.Values{"id": {accounts[1].ID, "gone", accounts[0].ID}}
+	if st, _ := b.post("/admin/accounts/order", form); st != http.StatusSeeOther {
+		t.Fatalf("saving the order returned %d", st)
+	}
+	arranged, _ := store.Accounts(ctx)
+	if arranged[0].ID != accounts[1].ID || arranged[1].ID != accounts[0].ID {
+		t.Fatalf("accounts after arranging = %+v, want Codex first", arranged)
+	}
+	_, page := b.get("/admin/")
+	if strings.Index(page, "co***@example.com") > strings.Index(page, "al***@example.com") {
+		t.Error("the overview does not follow the arranged order")
+	}
+	if !strings.Contains(page, `data-five-hour="40"`) || !strings.Contains(page, `data-weekly="-1"`) {
+		t.Error("cards lack the window use the sort control orders them by")
 	}
 }

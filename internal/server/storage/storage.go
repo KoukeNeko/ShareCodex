@@ -451,7 +451,7 @@ func ensureAccount(ctx context.Context, tx *sql.Tx, provider, refHash, hint, pla
 
 func (s *Store) Accounts(ctx context.Context) ([]account.Account, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, provider, ref_hash, hint, label, plan_type FROM accounts ORDER BY provider, label`)
+		`SELECT id, provider, ref_hash, hint, label, plan_type FROM accounts ORDER BY position NULLS LAST, provider, label`)
 	if err != nil {
 		return nil, err
 	}
@@ -480,6 +480,22 @@ func (s *Store) Account(ctx context.Context, id string) (account.Account, error)
 	}
 	a.Provider = account.Provider(provider)
 	return a, err
+}
+
+// SetAccountOrder arranges accounts in the order of ids; accounts not
+// listed keep no position and follow them.
+func (s *Store) SetAccountOrder(ctx context.Context, ids []string) error {
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `UPDATE accounts SET position = NULL`); err != nil {
+			return err
+		}
+		for i, id := range ids {
+			if _, err := tx.ExecContext(ctx, `UPDATE accounts SET position = $2 WHERE id = $1`, id, i); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (s *Store) SetAccountLabel(ctx context.Context, id, label string) error {
