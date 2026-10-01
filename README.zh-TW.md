@@ -27,13 +27,13 @@
   · <a href="#架設-server">架設 server</a>
 </p>
 
-幾個人共用 Claude Max／Pro 與 ChatGPT Plus 訂閱時，provider 只告訴你一件事：整個帳號用掉多少。
+幾個人共用 Claude Max／Pro、ChatGPT Plus 與 Google AI 訂閱時，provider 只告訴你一件事：整個帳號用掉多少。
 ShareCodex 補上其餘的部分——**每個 5 小時與每週額度還剩多少、每個人分到多少、每個人大約用了多少，
 以及用在哪些模型上。**
 
 每位成員在自己電腦上執行一個常駐選單列（macOS）或系統匣（Windows）的小 app；Linux 機器（例如透過 SSH
 使用的主機）則執行命令列 agent。它讀取電腦上原本就有的
-Claude Code 與 Codex 紀錄，透過官方 CLI 確認目前登入的帳號，再把 token 用量同步到你自架的 server。
+Claude Code、Codex 與 Antigravity 紀錄，透過官方 CLI 確認目前登入的帳號，再把 token 用量同步到你自架的 server。
 
 只計算 coding agent 的用量：Claude Code（包含 Claude Desktop 的 Code 分頁與 Cowork）、Codex CLI、
 桌面 app 與 IDE 擴充功能，以及 Antigravity 的 CLI（`agy`）。不計算 Claude Desktop 或網頁版的聊天、
@@ -66,7 +66,8 @@ popup 最上方是你自己在所有帳號的用量，分成今天與最近 30 �
 
 ### 所有共用帳號一眼看完
 
-popup 列出每個共用帳號的 5 小時與每週額度、已用多少、何時重置。數字直接來自 Claude Code 與 Codex。帳號依 server 的順序排列，
+popup 列出每個共用帳號的 5 小時與每週額度、已用多少、何時重置。數字直接來自 Claude Code、Codex 與 Antigravity；Antigravity
+帳號有 Gemini 與 Claude 兩個 5 小時額度，GPT-OSS 也計入 Claude 額度。帳號依 server 的順序排列，
 你的電腦登入中的帳號排最前面；也可以在設定的**帳號排序**改成 5 小時或每週用量最多的在前，或拖曳卡片上的把手自訂順序。
 
 ### 誰用了多少
@@ -77,7 +78,7 @@ popup 列出每個共用帳號的 5 小時與每週額度、已用多少、何�
 
 ### 誰正在用哪個帳號
 
-每個帳號都會列出目前在 Claude Code 或 Codex 登入它的人，你自己電腦正在用的帳號會標上**你**。
+每個帳號都會列出目前在 Claude Code、Codex 或 `agy` 登入它的人，你自己電腦正在用的帳號會標上**你**。
 登出或電腦離線約 15 分鐘後，就會從名單中消失。Claude Desktop 的登入與 CLI 分開，因此另外計算：
 Desktop 最近一次使用 Claude Code 後的 15 分鐘內，會列在那次使用的帳號下。
 
@@ -106,8 +107,8 @@ Codex 登入的帳號，以獨立的 OCX 列顯示。若 OpenCodex 自己的請�
 
 ### 一條連結就能加入
 
-admin 在網頁管理介面產生一次性加入連結；已加入的成員也能替自己的其他電腦產生連結。成員把連結貼進 app，照常在 Claude Code 或 Codex
-登入共用帳號，就會自動加入該帳號。
+admin 在網頁管理介面產生一次性加入連結；已加入的成員也能替自己的其他電腦產生連結。成員把連結貼進 app，照常在 Claude Code、Codex 或
+`agy` 登入共用帳號，就會自動加入該帳號。
 
 ### 把帳號釘選在螢幕上
 
@@ -157,7 +158,7 @@ admin 可以在 `/dashboard` 公開唯讀儀表板：每個帳號的額度視窗
 3. **貼上加入連結。** 每台電腦各需要一條連結，所有裝置的用量都算在同一個人名下。第一台加入後，
    下一台的連結可以從 **設定 › 新增裝置** 或 `sharecodex invite` 取得。Linux 請見
    [Linux 與 SSH 主機](#linux-與-ssh-主機)。
-4. **照常在 Claude Code 或 Codex 登入共用帳號。** app 看到該帳號後就會出現。
+4. **照常在 Claude Code、Codex 或 `agy` 登入共用帳號。** app 看到該帳號後就會出現。
 5. **取得 Claude 的額度。** Claude Code 自己的登入會自動讀取。只在 Claude Desktop 使用的帳號，
    在 **設定 › Claude 額度 › 新增帳號** 登入即可（Linux 用 `sharecodex claude-login`）。同一處的
    statusLine 擷取則從 Claude Code 工作階段讀取；原本的 statusLine 照常顯示，停用時會還原原本的設定。
@@ -290,9 +291,13 @@ sharecodex status
   也只算一次。
 - **Codex**：讀取 `~/.codex/sessions` 與 `archived_sessions` 的 rollout。有逐次請求紀錄時直接使用；
   舊格式改用累計值的差額。
+- **Antigravity**：讀取 `agy` 的 SQLite 對話資料庫 `~/.gemini/antigravity-cli/conversations/*.db`。
+  每個完成的請求從其生成 metadata 讀取 token 數，每個對話步驟只算一次；失敗的請求沒有 token 數，會略過。
+  不讀取 prompt 與回應內容。
 - **額度**：Codex 的額度視窗來自 rollout 與 `codex app-server`；Claude 的來自 statusLine 輸入（由 app
   透過一個小 shim 擷取），以及 Anthropic 的 usage endpoint（用 Claude Code 自己的登入資訊，以及在
   ShareCodex 新增的帳號讀取）。後者不需要 session，因此只在 Claude Desktop 使用的帳號也能取得額度。
+  Antigravity 的額度來自 Google 的 Cloud Code endpoint，用 `agy` 自己的登入資訊讀取。
 - **Claude Desktop**：Code 分頁寫入同一份 transcript；Cowork 則存在 Desktop 的
   `local-agent-mode-sessions` 下。Desktop 的登入與 `claude` CLI 分開，因此它的用量依存放 session
   metadata 的資料夾（`claude-code-sessions/<帳號>/<組織>`）對應到組織。Desktop 也會列出在終端機啟動的

@@ -27,13 +27,13 @@
   · <a href="#run-the-server">Run the server</a>
 </p>
 
-When a few people share Claude Max/Pro and ChatGPT Plus subscriptions, the provider tells you only
+When a few people share Claude Max/Pro, ChatGPT Plus and Google AI subscriptions, the provider tells you only
 one thing: how much of the whole account is gone. ShareCodex adds the rest — **how much of each
 5-hour and weekly window is left, how much each person is allotted, roughly how much each has
 used, and which models used it.**
 
 Each member runs a small menu bar (macOS) or system tray (Windows) app, and a command-line agent on
-Linux machines such as ones used over SSH. It reads the Claude Code and Codex logs already on the
+Linux machines such as ones used over SSH. It reads the Claude Code, Codex and Antigravity logs already on the
 computer, asks the official CLIs which account is signed in, and syncs
 token counts to a server you host yourself.
 
@@ -70,7 +70,8 @@ tokens, input and how much of it was cached, output, requests, and an estimated 
 ### Every shared account at a glance
 
 The popup lists each shared account with its 5-hour and weekly windows, how much of each is used,
-and when it resets. The numbers come straight from Claude Code and Codex. Accounts are listed in the server's order, the
+and when it resets. The numbers come straight from Claude Code, Codex and Antigravity; an Antigravity
+account has a 5-hour Gemini pool and a 5-hour Claude pool, which GPT-OSS also draws on. Accounts are listed in the server's order, the
 ones your computer is signed into first; **Account order** in Settings puts the most used 5-hour or
 weekly window first instead, and dragging a card by its grip arranges them your own way.
 
@@ -83,7 +84,7 @@ computer it came from.
 
 ### Who is signed in where
 
-Each account shows who is signed into it in Claude Code or Codex right now, with **You** on the
+Each account shows who is signed into it in Claude Code, Codex or `agy` right now, with **You** on the
 account your own computer uses. Someone drops off the list about 15 minutes after they sign out or
 their computer goes offline. Claude Desktop signs in on its own, so it counts separately: it shows
 up on the account it last used for Claude Code, for 15 minutes after that use.
@@ -118,7 +119,7 @@ own request log shows another account in its pool served a request, that request
 
 An admin creates a single-use join link in the web console; a member who has joined can create
 more for their other computers. The member pastes it into the app, signs
-in to the shared account in Claude Code or Codex as usual, and is added to that account
+in to the shared account in Claude Code, Codex or `agy` as usual, and is added to that account
 automatically.
 
 ### Pin an account to the screen
@@ -182,7 +183,7 @@ until turned on under **Settings**.
 3. **Paste the join link.** Each of your computers needs its own link, and all of them count as
    you. Once one computer has joined, get a link for the next from **Settings › Add device** or
    `sharecodex invite`. On Linux, see [Linux and SSH machines](#linux-and-ssh-machines).
-4. **Sign in to the shared account** in Claude Code or Codex as usual. The account appears once the
+4. **Sign in to the shared account** in Claude Code, Codex or `agy` as usual. The account appears once the
    app sees it.
 5. **Get Claude's quota.** Claude Code's own sign-in is read automatically. To cover an account used
    only in Claude Desktop, add it under **Settings › Claude quota › Add account** (on Linux,
@@ -324,10 +325,14 @@ To update, run `brew update && brew upgrade sharecodex-cli` (or rerun the instal
   while streaming). Resumed sessions that copy earlier requests into a new file are counted once.
 - **Codex** — `~/.codex/sessions` and `archived_sessions` rollouts. Per-request records are used when
   present; older files fall back to the difference between cumulative totals.
+- **Antigravity** — `~/.gemini/antigravity-cli/conversations/*.db`, `agy`'s SQLite conversation
+  databases. Each finished request's token counts are read from its generation metadata, once per
+  conversation step; failed requests carry none and are skipped. Prompts and responses are not read.
 - **Quota** — Codex reports its windows in the rollouts and through `codex app-server`; Claude's come
   from the statusLine input, which the app captures through a small shim, and from Anthropic's usage
   endpoint, read with Claude Code's own sign-in and with the accounts added to ShareCodex. That
   endpoint needs no session, so an account used only through Claude Desktop reports its limits too.
+  Antigravity's pools come from Google's Cloud Code endpoint, read with `agy`'s own sign-in.
 - **Claude Desktop** — its Code tab writes to the same transcripts, and Cowork keeps its own under
   Desktop's `local-agent-mode-sessions`. Desktop signs in separately from the `claude` CLI, so its
   usage is matched to the organization in the folder holding the session's metadata
