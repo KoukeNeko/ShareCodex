@@ -1,0 +1,102 @@
+{{define "account"}}{{$T := .T}}{{$admin := .Admin}}{{with .A}}
+<section class="card">
+  <div class="row">
+    <h2>{{provider .Provider}}</h2><span class="muted">{{.Label}}</span>
+    {{if .PlanType}}<span class="tag">{{.PlanType}}</span>{{end}}
+    {{if and $admin .Hint}}<span class="muted small">{{.Hint}}</span>{{end}}
+  </div>
+  {{if .ActiveUsers}}
+  <div class="row small" style="gap:6px">
+    <span class="muted">{{$T.inUse}}</span>
+    {{range .ActiveUsers}}<span class="chip"{{if $admin}} title="{{join .Devices ", "}}"{{end}}>{{.Name}}</span>{{end}}
+  </div>
+  {{end}}
+  {{if not .Buckets}}<p class="muted" style="margin:0">{{$T.noQuota}}</p>{{end}}
+  {{range .Buckets}}
+  <div class="bucket stack">
+    <div class="row spread">
+      <strong>{{.Name}}</strong>
+      <span class="num"><strong>{{if .Expired}}—{{else}}{{pct .UsedPercent}}{{end}}</strong>
+        <span class="muted small">{{if .Expired}}{{$T.reset}}{{else if .ResetsAt}}{{tfh $T.resetsAt (when .ResetsAt)}}{{end}}</span></span>
+    </div>
+    {{if not .Expired}}<div class="meter"><i class="{{.Tone}}" style="width:{{width .UsedPercent}}"></i></div>{{end}}
+    {{if $admin}}<p class="muted small" style="margin:0">{{tfh $T.updatedAt (when .ObservedAt)}}</p>{{end}}
+
+    {{with .Chart}}
+    <div class="chart">
+      <span class="muted small num">{{tokens .Top}}</span>
+      <div class="plot">
+        <svg viewBox="0 0 1000 100" preserveAspectRatio="none" role="img" aria-label="{{$T.usageOverTime}}">
+          <line class="grid" x1="0" x2="1000" y1="3" y2="3"></line>
+          <line class="grid" x1="0" x2="1000" y1="99" y2="99"></line>
+          {{$tip := .TimeFormat}}
+          {{range .Points}}<rect class="hit" x="{{svgX .X}}" y="0" width="{{svgX .W}}" height="100"><title data-dt="{{iso .At}}" data-f="{{$tip}}">{{timeText $tip .At}}{{range .Lines}}
+{{.}}{{end}}</title></rect>{{end}}
+          {{range .Resets}}<line class="reset" x1="{{svgX .X}}" x2="{{svgX .X}}" y1="0" y2="100"></line>{{end}}
+          {{range .Lines}}<path class="line c{{.Slot}}{{if .Dashed}} dashed{{end}}" d="{{.Path}}"></path>{{end}}
+        </svg>
+        {{range .Resets}}<span class="reset-label num{{if lt .X 8.0}} right{{end}}" style="left:{{width .X}}">{{timeAs $tip .At}}</span>{{end}}
+      </div>
+      <div class="ticks muted small num">{{$f := .TickFormat}}{{range .Ticks}}<span>{{timeAs $f .}}</span>{{end}}</div>
+    </div>
+    {{end}}
+
+    {{if not .Expired}}
+    <div class="table-wrap"><table class="small">
+      <thead><tr><th>{{$T.member}}</th><th class="num">{{$T.estimatedUsage}}</th><th class="num">{{$T.allotted}}</th><th class="barcol"></th></tr></thead>
+      <tbody>
+      {{range .Members}}
+        <tr>
+          <td>{{.Name}}{{if .Over}} <span class="tag warn">{{$T.overAllotment}}</span>{{end}}</td>
+          <td class="num">{{pct .UsedPercent}}</td>
+          <td class="num muted">{{pct .AllottedPercent}}</td>
+          <td class="barcol"><div class="meter thin">{{range .Segments}}<i class="seg c{{.Slot}}" style="width:{{width .Width}}"></i>{{end}}<b style="left:{{width .AllottedPercent}}"></b></div></td>
+        </tr>
+        {{if $admin}}{{if gt (len .Devices) 1}}{{range .Devices}}
+        <tr class="sub muted"><td>{{.Name}}</td><td class="num">{{pct .UsedPercent}}</td><td></td>
+          <td class="barcol"><div class="meter thin"><i class="muted-bar" style="width:{{width .UsedPercent}}"></i></div></td></tr>
+        {{end}}{{else}}{{range .Devices}}
+        <tr class="sub muted"><td colspan="4">{{.Name}}</td></tr>
+        {{end}}{{end}}{{end}}
+      {{end}}
+      {{if gt .Unattributed 0.0}}
+        <tr class="muted"><td>{{$T.unattributed}}</td><td class="num">{{pct .Unattributed}}</td><td></td>
+          <td class="barcol"><div class="meter thin"><i class="muted-bar" style="width:{{width .Unattributed}}"></i></div></td></tr>
+      {{end}}
+      </tbody>
+    </table></div>
+
+    {{if .Models}}
+    <div class="table-wrap"><table class="small">
+      <thead><tr><th>{{$T.model}}</th><th class="num">{{$T.requests}}</th><th class="num">{{$T.tokens}}</th><th class="num">{{$T.estimatedUsage}}</th><th class="barcol"></th></tr></thead>
+      <tbody>
+      {{range .Models}}
+        <tr>
+          <td title="{{.Title}}"><i class="swatch c{{.Slot}}"></i>{{.Name}}{{if .Via}} <span class="via">{{.Via}}</span>{{end}}</td>
+          <td class="num">{{.Requests}}</td><td class="num">{{tokens .Tokens}}</td><td class="num">{{pct .UsedPercent}}</td>
+          <td class="barcol"><div class="meter thin"><i class="seg c{{.Slot}}" style="width:{{width .Bar}}"></i></div></td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table></div>
+    {{end}}
+
+    {{if .ThirdParty}}
+    <div class="table-wrap"><table class="small">
+      <thead><tr><th>{{$T.thirdPartyModels}}</th><th class="num">{{$T.requests}}</th><th class="num">{{$T.tokens}}</th><th class="num"></th><th class="barcol"></th></tr></thead>
+      <tbody>
+      {{range .ThirdParty}}
+        <tr>
+          <td title="{{.Title}}"><i class="swatch dashed c{{.Slot}}"></i>{{.Name}}{{if .Via}} <span class="via">{{.Via}}</span>{{end}}</td>
+          <td class="num">{{.Requests}}</td><td class="num">{{tokens .Tokens}}</td><td></td>
+          <td class="barcol"><div class="meter thin"><i class="seg c{{.Slot}}" style="width:{{width .Bar}}"></i></div></td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table></div>
+    {{end}}
+    {{end}}
+  </div>
+  {{end}}
+</section>
+{{end}}{{end}}

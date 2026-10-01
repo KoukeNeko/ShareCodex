@@ -4,7 +4,7 @@
 <section class="card invite">
   <h2>{{tf $.T.inviteTitle .Person}}</h2>
   <input type="text" readonly value="{{.Link}}" onfocus="this.select()">
-  <p class="muted small" style="margin:0">{{tf $.T.inviteNote (when .Expires)}}</p>
+  <p class="muted small" style="margin:0">{{tfh $.T.inviteNote (when .Expires)}}</p>
 </section>
 {{end}}
 <section class="card">
@@ -13,18 +13,21 @@
     <button class="primary" type="submit">{{.T.addPerson}}</button>
   </form>
   <div class="table-wrap"><table>
-    <thead><tr><th>{{.T.name}}</th><th>{{.T.devices}}</th><th></th></tr></thead>
+    <thead><tr><th>{{.T.name}}</th><th class="num">{{.T.devices}}</th><th class="num">{{.T.lastSeen}}</th><th class="num">{{.T.totalTokens}} · {{.T.last30Days}}</th><th class="num">{{.T.estCost}}</th><th></th></tr></thead>
     <tbody>
     {{range .Data.People}}
       <tr>
         <td>{{.DisplayName}}</td>
         <td class="num">{{.ActiveDevices}}</td>
+        <td class="num muted">{{when .LastSeenAt}}</td>
+        <td class="num">{{tokensOf .Month}}</td>
+        <td class="num">{{usd .Month.CostUSD}}</td>
         <td style="text-align:right">
           <form class="inline" method="post" action="/admin/people/{{.ID}}/invite"><button type="submit">{{$.T.createInvite}}</button></form>
         </td>
       </tr>
     {{else}}
-      <tr><td colspan="3" class="muted">{{$.T.noPeople}}</td></tr>
+      <tr><td colspan="6" class="muted">{{$.T.noPeople}}</td></tr>
     {{end}}
     </tbody>
   </table></div>

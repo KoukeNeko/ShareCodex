@@ -41,6 +41,8 @@ func newServer(t *testing.T) (*storage.Store, browser) {
 		t.Fatal(err)
 	}
 	mux.Handle("/admin/", console)
+	mux.Handle("GET /dashboard", console)
+	mux.Handle("GET /{$}", console)
 	mux.Handle("/", httpapi.New(store, log))
 
 	jar, _ := cookiejar.New(nil)
@@ -269,5 +271,136 @@ func TestLanguageSwitch(t *testing.T) {
 	}
 	if st, _ := b.get("/admin/lang/fr"); st != http.StatusNotFound {
 		t.Errorf("unknown language returned %d, want 404", st)
+	}
+}
+
+// seedUsage pairs alice's laptop, signs it into a Claude account and
+// uploads a 5-hour reading with two requests on it: one to the quota's own
+// model and one to a third-party model through OpenCodex.
+func seedUsage(t *testing.T, store *storage.Store) {
+	t.Helper()
+	ctx := context.Background()
+	person, err := store.AddPerson(ctx, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, err := store.CreateInvite(ctx, person.ID, storage.InviteTTL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, token, err := store.Pair(ctx, code, "alice-laptop", "darwin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Authenticating is what marks a device seen.
+	if _, err := store.DeviceByToken(ctx, token); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	used, minutes := 40.0, 300
+	resets := now.Add(2 * time.Hour)
+	event := func(key, model, gateway string, thirdParty bool) syncapi.Event {
+		return syncapi.Event{DedupeKey: key, AccountRefHash: "acct", Provider: "anthropic", Product: "claude-code",
+			Model: model, Gateway: gateway, ThirdParty: thirdParty, OccurredAt: now.Add(-10 * time.Minute),
+			Input: 1000, CachedInput: 3000, Output: 500}
+	}
+	_, err = store.Ingest(ctx, device, syncapi.SyncRequest{Version: syncapi.Version,
+		Observations: []syncapi.Observation{{Provider: "anthropic", AccountRefHash: "acct", Hint: "al***@example.com", ObservedAt: now.Add(-time.Minute)}},
+		Events: []syncapi.Event{
+			event("e1", "claude-opus-5-5", "", false),
+			event("e2", "ocx-claude-native--gpt-6-sol", "opencodex", true),
+		},
+		Snapshots: []syncapi.Snapshot{{Provider: "anthropic", AccountRefHash: "acct", Source: "claude-oauth-usage", ObservedAt: now.Add(-time.Minute),
+			Buckets: []syncapi.Bucket{{Key: "five_hour", UsedPercent: &used, ResetsAt: &resets, WindowMinutes: &minutes}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPublicDashboard(t *testing.T) {
+	store, admin := newServer(t)
+	seedUsage(t, store)
+	jar, _ := cookiejar.New(nil)
+	visitor := browser{t: t, base: admin.base, c: &http.Client{Jar: jar, CheckRedirect: admin.c.CheckRedirect}}
+
+	location := func(b browser, path string) string {
+		t.Helper()
+		resp, err := b.c.Get(b.base + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.Header.Get("Location")
+	}
+
+	if st, _ := visitor.get("/dashboard"); st != http.StatusNotFound {
+		t.Fatalf("unpublished dashboard returned %d to a visitor, want 404", st)
+	}
+	if loc := location(visitor, "/"); loc != "/admin/" {
+		t.Fatalf("root redirected to %q before publishing, want /admin/", loc)
+	}
+
+	admin.post("/admin/login", url.Values{"password": {password}})
+	if st, page := admin.get("/admin/dashboard"); st != http.StatusOK || !strings.Contains(page, "Preview") {
+		t.Fatalf("an admin's preview returned %d", st)
+	}
+	if st, _ := admin.post("/admin/settings", url.Values{"public_dashboard": {"on"}}); st != http.StatusSeeOther {
+		t.Fatalf("publishing returned %d", st)
+	}
+	if _, page := admin.get("/admin/settings"); !strings.Contains(page, admin.base+"/dashboard") {
+		t.Fatal("settings do not link the published dashboard")
+	}
+
+	st, page := visitor.get("/dashboard")
+	if st != http.StatusOK {
+		t.Fatalf("published dashboard returned %d", st)
+	}
+	for _, want := range []string{"alice", "Account 1", "40%", "claude-opus-5-5", "gpt-6-sol", "OCX", "<svg"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("dashboard lacks %q", want)
+		}
+	}
+	for _, private := range []string{"al***@example.com", "alice-laptop", "Sign out"} {
+		if strings.Contains(page, private) {
+			t.Errorf("dashboard shows %q, which only the console may", private)
+		}
+	}
+	if loc := location(visitor, "/"); loc != "/dashboard" {
+		t.Fatalf("root redirected to %q after publishing, want /dashboard", loc)
+	}
+
+	admin.post("/admin/settings", url.Values{})
+	if st, _ := visitor.get("/dashboard"); st != http.StatusNotFound {
+		t.Fatalf("unpublished again, the dashboard returned %d, want 404", st)
+	}
+}
+
+func TestConsoleShowsUsageDetails(t *testing.T) {
+	store, b := newServer(t)
+	seedUsage(t, store)
+	b.post("/admin/login", url.Values{"password": {password}})
+
+	_, page := b.get("/admin/")
+	for _, want := range []string{"al***@example.com", "In use", "alice-laptop", "Third-party models", "<svg", "4.5K"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("overview lacks %q", want)
+		}
+	}
+
+	_, page = b.get("/admin/usage?period=24h")
+	// One quota request: 1,000 input and 3,000 cached tokens, 500 output;
+	// the third-party request is listed apart and not in the totals.
+	for _, want := range []string{"alice", "Claude", "4.0K", "75%", "500", "gpt-6-sol", "OCX"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("usage page lacks %q", want)
+		}
+	}
+
+	if _, page = b.get("/admin/devices"); !strings.Contains(page, "Online") || !strings.Contains(page, "Claude · al***@example.com") {
+		t.Error("devices page does not show the device online and signed in to the account")
+	}
+	if _, page = b.get("/admin/people"); !strings.Contains(page, "4.5K") {
+		t.Error("members page does not show alice's 30-day tokens")
 	}
 }

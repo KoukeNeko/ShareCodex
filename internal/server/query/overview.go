@@ -1,4 +1,4 @@
-// Package query builds the read models the desktop popup shows.
+// Package query builds the read models the desktop popup and the console show.
 package query
 
 import (
@@ -18,10 +18,10 @@ import (
 // latest value of every bucket is found.
 const snapshotLookback = 8 * 24 * time.Hour
 
-// activeWindow is how recent a device's last observation must be for its
+// ActiveWindow is how recent a device's last observation must be for its
 // account to count as in use. Devices report every 5 minutes, so this
 // tolerates two missed reports.
-const activeWindow = 15 * time.Minute
+const ActiveWindow = 15 * time.Minute
 
 // Overview returns every account with its quota windows and, per window,
 // each member's allotment and estimated usage, plus the viewer's own usage
@@ -32,7 +32,7 @@ func Overview(ctx context.Context, st *storage.Store, viewerPersonID string, now
 	if err != nil {
 		return syncapi.Overview{}, err
 	}
-	active, err := st.ActiveDevices(ctx, now.Add(-activeWindow))
+	active, err := st.ActiveDevices(ctx, now.Add(-ActiveWindow))
 	if err != nil {
 		return syncapi.Overview{}, err
 	}

@@ -1,5 +1,6 @@
 // Command sharecodex-server is the central server: the sync API used by the
-// desktop app and the web admin console under /admin.
+// desktop app, the web admin console under /admin, and the dashboard an
+// admin can publish at /dashboard.
 //
 // Configuration comes from the environment:
 //
@@ -56,7 +57,10 @@ func run(ctx context.Context) error {
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/admin/", console)
-	mux.Handle("GET /{$}", http.RedirectHandler("/admin/", http.StatusSeeOther))
+	mux.Handle("GET /dashboard", console)
+	// The root opens the public dashboard once it is published, else the
+	// console.
+	mux.Handle("GET /{$}", console)
 	mux.Handle("/", httpapi.New(store, log))
 
 	addr := os.Getenv("LISTEN_ADDR")

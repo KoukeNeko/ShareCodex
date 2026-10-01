@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"strconv"
 	"strings"
 	"time"
 
@@ -517,6 +518,7 @@ func (s *Store) Snapshots(ctx context.Context, accountID string, since time.Time
 // provider.
 type ActiveDevice struct {
 	AccountID  string
+	DeviceID   string
 	PersonID   string
 	PersonName string
 	DeviceName string
@@ -529,8 +531,8 @@ type ActiveDevice struct {
 // either drops out once its last observation is older than since.
 func (s *Store) ActiveDevices(ctx context.Context, since time.Time) ([]ActiveDevice, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT account_id, person_id, display_name, name FROM (
-			SELECT DISTINCT ON (o.device_id, a.provider, o.source) o.account_id, d.person_id, p.display_name, d.name, o.observed_at
+		SELECT account_id, device_id, person_id, display_name, name FROM (
+			SELECT DISTINCT ON (o.device_id, a.provider, o.source) o.account_id, o.device_id, d.person_id, p.display_name, d.name, o.observed_at
 			FROM observations o
 			JOIN devices d ON d.id = o.device_id
 			JOIN persons p ON p.id = d.person_id
@@ -545,7 +547,7 @@ func (s *Store) ActiveDevices(ctx context.Context, since time.Time) ([]ActiveDev
 	var out []ActiveDevice
 	for rows.Next() {
 		var d ActiveDevice
-		if err := rows.Scan(&d.AccountID, &d.PersonID, &d.PersonName, &d.DeviceName); err != nil {
+		if err := rows.Scan(&d.AccountID, &d.DeviceID, &d.PersonID, &d.PersonName, &d.DeviceName); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
@@ -683,6 +685,66 @@ func scanPersonUsage(rows *sql.Rows) ([]PersonUsage, error) {
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// SummaryRow is the totals of one person's requests from one device to one
+// model on one account.
+type SummaryRow struct {
+	PersonID   string
+	PersonName string
+	DeviceID   string
+	AccountID  string
+	Model      string
+	Gateway    string
+	ThirdParty bool
+	Tokens     usage.Tokens
+	Requests   int
+}
+
+// UsageSummary sums every request since a time, for the console's usage
+// report.
+func (s *Store) UsageSummary(ctx context.Context, since time.Time) ([]SummaryRow, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT e.person_id, p.display_name, e.device_id, e.account_id, e.model, e.gateway, e.third_party,
+			sum(e.input), sum(e.cached_input), sum(e.cache_write), sum(e.output), sum(e.reasoning_output), count(*)
+		FROM usage_events e JOIN persons p ON p.id = e.person_id
+		WHERE e.occurred_at >= $1
+		GROUP BY e.person_id, p.display_name, e.device_id, e.account_id, e.model, e.gateway, e.third_party`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SummaryRow
+	for rows.Next() {
+		var r SummaryRow
+		t := &r.Tokens
+		if err := rows.Scan(&r.PersonID, &r.PersonName, &r.DeviceID, &r.AccountID, &r.Model, &r.Gateway, &r.ThirdParty,
+			&t.Input, &t.CachedInput, &t.CacheWrite, &t.Output, &t.ReasoningOutput, &r.Requests); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+const settingPublicDashboard = "public_dashboard"
+
+// PublicDashboard reports whether the dashboard is published without
+// sign-in. It is off until an admin turns it on.
+func (s *Store) PublicDashboard(ctx context.Context) (bool, error) {
+	var v string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = $1`, settingPublicDashboard).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return v == "true", err
+}
+
+func (s *Store) SetPublicDashboard(ctx context.Context, on bool) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO settings (key, value) VALUES ($1, $2)
+		ON CONFLICT (key) DO UPDATE SET value = excluded.value`, settingPublicDashboard, strconv.FormatBool(on))
+	return err
 }
 
 func (s *Store) inTx(ctx context.Context, fn func(*sql.Tx) error) error {

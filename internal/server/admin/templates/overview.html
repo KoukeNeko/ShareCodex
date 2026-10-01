@@ -1,55 +1,22 @@
 {{define "content"}}
 <h1>{{.T.navOverview}}</h1>
-{{if not .Data.Accounts}}
-  <div class="card"><p class="muted" style="margin:0">{{.T.noAccounts}}</p></div>
-{{end}}
-<div class="grid2">
-{{range .Data.Accounts}}
-  <section class="card">
-    <div class="row">
-      <h2>{{provider .Provider}}</h2><span class="muted">{{.Label}}</span>
-      {{if .PlanType}}<span class="tag">{{.PlanType}}</span>{{end}}
-    </div>
-    {{if not .Buckets}}<p class="muted" style="margin:0">{{$.T.noQuota}}</p>{{end}}
-    {{range .Buckets}}
-      <div class="stack" style="gap:6px">
-        <div class="row spread">
-          <strong>{{bucket .Key .WindowMinutes $.T}}</strong>
-          <span class="num"><strong>{{if .Reset}}—{{else}}{{pct .UsedPercent}}{{end}}</strong>
-            <span class="muted small">{{if .Reset}}{{$.T.reset}}{{else if .ResetsAt}}{{tf $.T.resetsAt (when .ResetsAt)}}{{end}}</span></span>
-        </div>
-        {{if not .Reset}}
-        <div class="meter"><i style="width:{{pct .UsedPercent}}"></i></div>
-        <div class="table-wrap"><table class="small">
-          <thead><tr><th>{{$.T.member}}</th><th>{{$.T.estimatedUsage}}</th><th>{{$.T.allotted}}</th><th></th></tr></thead>
-          <tbody>
-          {{range .Members}}
-            <tr>
-              <td>{{.Name}}</td>
-              <td class="num">{{pct .UsedPercent}}</td>
-              <td class="num">{{pct .AllottedPercent}}</td>
-              <td>{{if over .}}<span class="tag warn">{{$.T.overAllotment}}</span>{{end}}</td>
-            </tr>
-          {{end}}
-          {{if gt .UnattributedPercent 0.0}}
-            <tr><td class="muted">{{$.T.unattributed}}</td><td class="num muted">{{pct .UnattributedPercent}}</td><td></td><td></td></tr>
-          {{end}}
-          </tbody>
-        </table></div>
-        {{if .Models}}
-        <div class="table-wrap"><table class="small">
-          <thead><tr><th>{{$.T.model}}</th><th>{{$.T.requests}}</th><th>{{$.T.tokens}}</th><th>{{$.T.estimatedUsage}}</th></tr></thead>
-          <tbody>
-          {{range .Models}}
-            <tr><td>{{.Model}}</td><td class="num">{{.Requests}}</td><td class="num">{{tokens .Tokens}}</td><td class="num">{{pct .UsedPercent}}</td></tr>
-          {{end}}
-          </tbody>
-        </table></div>
-        {{end}}
-        {{end}}
-      </div>
+<section class="card">
+  <div class="table-wrap"><table class="stats">
+    <thead><tr><th></th><th class="num">{{tf .T.hours 24}}</th><th class="num">{{.T.last30Days}}</th></tr></thead>
+    <tbody>
+    {{with .Data}}
+      <tr class="total"><th>{{$.T.totalTokens}}</th><td class="num">{{tokensOf .Day}}</td><td class="num">{{tokensOf .Month}}</td></tr>
+      <tr><th>{{$.T.input}}</th>
+        <td class="num">{{inputOf .Day}}<span class="cached muted">{{tf $.T.cachedShare (pct (cachedOf .Day))}}</span></td>
+        <td class="num">{{inputOf .Month}}<span class="cached muted">{{tf $.T.cachedShare (pct (cachedOf .Month))}}</span></td></tr>
+      <tr><th>{{$.T.output}}</th><td class="num">{{tokens .Day.Output}}</td><td class="num">{{tokens .Month.Output}}</td></tr>
+      <tr><th>{{$.T.estCost}}</th><td class="num">{{usd .Day.CostUSD}}</td><td class="num">{{usd .Month.CostUSD}}</td></tr>
+      <tr><th>{{$.T.requests}}</th><td class="num">{{.Day.Requests}}</td><td class="num">{{.Month.Requests}}</td></tr>
     {{end}}
-  </section>
+    </tbody>
+  </table></div>
+</section>
+{{range .Data.Accounts}}{{template "account" (card . $.T true)}}{{else}}
+<div class="card"><p class="muted" style="margin:0">{{.T.noAccounts}}</p></div>
 {{end}}
-</div>
 {{end}}

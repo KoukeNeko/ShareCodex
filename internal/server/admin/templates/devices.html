@@ -2,13 +2,15 @@
 <h1>{{.T.navDevices}}</h1>
 <section class="card">
   <div class="table-wrap"><table>
-    <thead><tr><th>{{.T.member}}</th><th>{{.T.device}}</th><th>{{.T.platform}}</th><th>{{.T.lastSeen}}</th><th></th></tr></thead>
+    <thead><tr><th>{{.T.member}}</th><th>{{.T.device}}</th><th>{{.T.platform}}</th><th>{{.T.signedInTo}}</th><th class="num">{{.T.totalTokens}} · {{.T.last30Days}}</th><th class="num">{{.T.lastSeen}}</th><th></th></tr></thead>
     <tbody>
     {{range .Data}}
       <tr>
         <td>{{.PersonName}}</td>
-        <td>{{.Name}}</td>
+        <td>{{.Name}}{{if .Online}} <span class="tag">{{$.T.online}}</span>{{end}}</td>
         <td class="muted">{{.Platform}}</td>
+        <td class="small">{{range $i, $a := .SignedIn}}{{if $i}}<br>{{end}}{{$a}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="num">{{tokensOf .Month}}</td>
         <td class="num muted">{{when .LastSeenAt}}</td>
         <td style="text-align:right">
           {{if .RevokedAt}}<span class="tag off">{{$.T.revoked}}</span>{{else}}
@@ -18,7 +20,7 @@
         </td>
       </tr>
     {{else}}
-      <tr><td colspan="5" class="muted">{{.T.noDevices}}</td></tr>
+      <tr><td colspan="7" class="muted">{{.T.noDevices}}</td></tr>
     {{end}}
     </tbody>
   </table></div>

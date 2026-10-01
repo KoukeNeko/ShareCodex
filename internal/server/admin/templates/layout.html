@@ -3,17 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{.Title}} · {{.T.appTitle}}</title>
+<title>{{.Title}} · {{if or (eq .Nav "dashboard") (eq .Nav "preview")}}ShareCodex{{else}}{{.T.appTitle}}{{end}}</title>
+{{if or (eq .Nav "dashboard") (eq .Nav "preview")}}<meta http-equiv="refresh" content="60">{{end}}
 <style>
 :root {
   --bg: #f6f7f9; --surface: #fff; --text: #16181d; --muted: #69707d; --line: #e3e6eb;
   --track: #e9ecf1; --accent: #225ed6; --accent-soft: #dde7fb; --warn: #b86b00; --warn-soft: #fbecd4; --danger: #c4312b;
+  /* Model colors in the desktop popup's slot order. */
+  --model-1: #2a78d6; --model-2: #eb6834; --model-3: #1baf7a; --model-4: #eda100; --model-other: #9aa1ad;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #17191d; --surface: #202328; --text: #eceef2; --muted: #9aa1ad; --line: #2f333a;
     --track: #30343c; --accent: #5b8cf0; --accent-soft: #24345a; --warn: #f0a640; --warn-soft: #3d2f18; --danger: #f06a63;
+    --model-1: #3987e5; --model-2: #d95926; --model-3: #199e70; --model-4: #c98500; --model-other: #6b7280;
     color-scheme: dark;
   }
 }
@@ -46,8 +50,8 @@ h2 { font-size: 15px; margin: 0; }
 table { width: 100%; border-collapse: collapse; }
 .table-wrap { overflow-x: auto; }
 th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-th { font-weight: 500; color: var(--muted); font-size: 12.5px; }
-tr:last-child td { border-bottom: none; }
+th { font-weight: 500; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+tr:last-child td, tr:last-child th { border-bottom: none; }
 input[type=text], input[type=password], input[type=number], select {
   font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; }
 input[type=number] { width: 84px; }
@@ -59,13 +63,52 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 button.danger { color: var(--danger); }
 button.link { border: none; background: none; color: var(--muted); padding: 6px 8px; }
 form.inline { display: inline; margin: 0; }
-.meter { position: relative; height: 8px; border-radius: 4px; background: var(--track); }
+.meter { position: relative; display: flex; height: 8px; border-radius: 4px; background: var(--track); }
 .meter.thin { height: 5px; }
-.meter > i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.meter > i { display: block; flex: none; height: 100%; border-radius: inherit; background: var(--accent); }
 .meter > i.warn { background: var(--warn); }
+.meter > i.danger { background: var(--danger); }
+.meter > i.seg { border-radius: 0; background: currentColor; }
+.meter > i.seg:first-child { border-top-left-radius: inherit; border-bottom-left-radius: inherit; }
+.meter > i.muted-bar { background: var(--muted); opacity: .6; }
 .meter > b { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--text); opacity: .55; }
 .grid2 { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); }
 .invite { border-color: var(--accent); }
+.c1 { color: var(--model-1); } .c2 { color: var(--model-2); } .c3 { color: var(--model-3); } .c4 { color: var(--model-4); } .co { color: var(--model-other); }
+.chip { background: var(--track); border-radius: 4px; padding: 0 6px; }
+.via { font-size: 10.5px; letter-spacing: .04em; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; background: currentColor; }
+.swatch.dashed { height: 2px; border-radius: 0; vertical-align: middle; background: repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 5px); }
+.bucket { padding-top: 12px; border-top: 1px solid var(--line); }
+td.barcol, th.barcol { width: 30%; min-width: 90px; }
+/* On a phone the numbers keep the width; the bars repeat them. */
+@media (max-width: 600px) { td.barcol, th.barcol { display: none; } }
+tr.sub td:first-child { padding-left: 20px; }
+tr.sub td { border-bottom: none; padding-top: 2px; padding-bottom: 2px; font-size: 12px; }
+th.num, td.num { text-align: right; }
+.chart { display: grid; gap: 4px; }
+.plot { position: relative; height: 120px; }
+.plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.plot line.grid { stroke: var(--line); vector-effect: non-scaling-stroke; }
+.plot line.reset { stroke: var(--muted); stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.plot path.line { fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.plot path.dashed { stroke-dasharray: 4 3; }
+.plot rect.hit { fill: transparent; }
+.plot rect.hit:hover { fill: var(--track); }
+.reset-label { position: absolute; top: 0; transform: translateX(calc(-100% - 4px)); font-size: 11px; color: var(--muted); pointer-events: none; white-space: nowrap; }
+.reset-label.right { transform: translateX(4px); }
+.ticks { display: flex; justify-content: space-between; }
+table.stats th { color: var(--muted); font-weight: normal; }
+table.stats tr.total td { font-size: 17px; font-weight: 600; }
+.cached { display: block; font-size: 11.5px; }
+.tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.tile { gap: 2px; }
+.tile strong { font-size: 18px; }
+nav.periods { flex: none; display: flex; gap: 4px; background: var(--track); border-radius: 8px; padding: 2px; }
+nav.periods a { color: var(--muted); text-decoration: none; padding: 3px 10px; border-radius: 6px; font-size: 13px; }
+nav.periods a.active { background: var(--surface); color: var(--text); }
+.notice { margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--warn-soft); }
+a { color: var(--accent); }
 .invite input { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 </style>
 </head>
@@ -76,9 +119,11 @@ form.inline { display: inline; margin: 0; }
     {{if .Authed}}
     <nav>
       <a href="/admin/" class="{{if eq .Nav "overview"}}active{{end}}">{{.T.navOverview}}</a>
+      <a href="/admin/usage" class="{{if eq .Nav "usage"}}active{{end}}">{{.T.navUsage}}</a>
       <a href="/admin/people" class="{{if eq .Nav "people"}}active{{end}}">{{.T.navPeople}}</a>
       <a href="/admin/accounts" class="{{if eq .Nav "accounts"}}active{{end}}">{{.T.navAccounts}}</a>
       <a href="/admin/devices" class="{{if eq .Nav "devices"}}active{{end}}">{{.T.navDevices}}</a>
+      <a href="/admin/settings" class="{{if eq .Nav "settings"}}active{{end}}">{{.T.navSettings}}</a>
     </nav>
     {{else}}<span class="spacer"></span>{{end}}
     <nav class="langs" aria-label="{{.T.language}}">
@@ -93,5 +138,28 @@ form.inline { display: inline; margin: 0; }
   {{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
   {{template "content" .}}
 </main>
+<script>
+// Show times in the viewer's time zone; the server wrote them in its own.
+(function () {
+  var pad = function (n) { return (n < 10 ? '0' : '') + n }
+  var clock = function (d) { return pad(d.getHours()) + ':' + pad(d.getMinutes()) }
+  var day = function (d) { return (d.getMonth() + 1) + '/' + d.getDate() }
+  var formats = {
+    datetime: function (d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + clock(d) },
+    clock: clock,
+    day: day,
+    dayclock: function (d) { return day(d) + ' ' + clock(d) },
+  }
+  document.querySelectorAll('[data-dt]').forEach(function (el) {
+    var format = formats[el.getAttribute('data-f')]
+    var d = new Date(el.getAttribute('data-dt'))
+    if (!format || isNaN(d)) return
+    // A chart's hover tip holds its time on the first line.
+    var lines = el.textContent.split('\n')
+    lines[0] = format(d)
+    el.textContent = lines.join('\n')
+  })
+})()
+</script>
 </body>
 </html>

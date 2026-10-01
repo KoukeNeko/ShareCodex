@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -57,6 +58,9 @@ type Console struct {
 
 	mu       sync.Mutex
 	sessions map[string]time.Time
+	// dash caches the public dashboard's overview, which anyone can ask
+	// for.
+	dash dashboardCache
 	// loginMu serialises failed-login delays so guessing is slow.
 	loginMu sync.Mutex
 }
@@ -95,6 +99,12 @@ func New(store *storage.Store, log *slog.Logger, cfg Config) (http.Handler, erro
 	mux.HandleFunc("POST /admin/accounts/{id}/shares", c.authed(c.setShares))
 	mux.HandleFunc("GET /admin/devices", c.authed(c.devices))
 	mux.HandleFunc("POST /admin/devices/{id}/revoke", c.authed(c.revoke))
+	mux.HandleFunc("GET /admin/usage", c.authed(c.usage))
+	mux.HandleFunc("GET /admin/settings", c.authed(c.settings))
+	mux.HandleFunc("POST /admin/settings", c.authed(c.saveSettings))
+	mux.HandleFunc("GET /{$}", c.root)
+	mux.HandleFunc("GET /dashboard", c.dashboard)
+	mux.HandleFunc("GET /admin/dashboard", c.authed(c.dashboard))
 
 	// Forms post with the session cookie; reject cross-site requests.
 	return http.NewCrossOriginProtection().Handler(mux), nil
@@ -102,24 +112,55 @@ func New(store *storage.Store, log *slog.Logger, cfg Config) (http.Handler, erro
 
 func parsePages() (map[string]*template.Template, error) {
 	funcs := template.FuncMap{
-		"pct":      func(v float64) string { return strconv.Itoa(int(math.Round(v))) + "%" },
+		"pct":      percent,
 		"weight":   func(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) },
 		"provider": providerName,
 		"bucket":   bucketName,
 		"tf":       fmt.Sprintf,
-		"when":     formatTime,
-		"over":     func(m syncapi.MemberShare) bool { return m.UsedPercent > m.AllottedPercent+0.5 },
+		"tfh":      tfHTML,
+		"when":     func(t any) template.HTML { return timeHTML(t, "datetime") },
+		"timeAs":   func(format string, t any) template.HTML { return timeHTML(t, format) },
 		"tokens":   compactTokens,
+		"tokensOf": func(u syncapi.UsageTotals) string { return compactTokens(query.Tokens(u)) },
+		"inputOf":  func(u syncapi.UsageTotals) string { return compactTokens(u.Input + u.CachedInput + u.CacheWrite) },
+		"cachedOf": func(u syncapi.UsageTotals) float64 {
+			if in := u.Input + u.CachedInput + u.CacheWrite; in > 0 {
+				return float64(u.CachedInput) / float64(in) * 100
+			}
+			return 0
+		},
+		"usd":   usd,
+		"width": width,
+		"svgX":  func(pct float64) string { return strconv.FormatFloat(pct*chartWidth/100, 'f', 1, 64) },
+		"join":  strings.Join,
+		"card": func(a accountView, t map[string]string, admin bool) cardData {
+			return cardData{A: a, T: t, Admin: admin}
+		},
+		"modelLabel": func(model, gateway string) struct{ Name, Via, Title string } {
+			name, via, title := modelName(model, gateway)
+			return struct{ Name, Via, Title string }{name, via, title}
+		},
+		"iso":      func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
+		"timeText": func(format string, t time.Time) string { return t.Local().Format(timeFormats[format]) },
 	}
 	pages := map[string]*template.Template{}
-	for _, name := range []string{"login", "overview", "people", "accounts", "devices"} {
-		t, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS, "templates/layout.html", "templates/"+name+".html")
+	for _, name := range []string{"login", "overview", "people", "accounts", "devices", "usage", "settings", "dashboard"} {
+		t, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS,
+			"templates/layout.html", "templates/account.html", "templates/"+name+".html")
 		if err != nil {
 			return nil, err
 		}
 		pages[name] = t
 	}
 	return pages, nil
+}
+
+// cardData is what the shared account card receives; Admin adds what only
+// the console shows, such as email hints and device names.
+type cardData struct {
+	A     accountView
+	T     map[string]string
+	Admin bool
 }
 
 // page is what every template receives. Title and Error hold dictionary
@@ -139,7 +180,9 @@ type page struct {
 }
 
 var navPaths = map[string]string{
-	"overview": "/admin/", "people": "/admin/people", "accounts": "/admin/accounts", "devices": "/admin/devices",
+	"overview": "/admin/", "usage": "/admin/usage", "people": "/admin/people", "accounts": "/admin/accounts",
+	"devices": "/admin/devices", "settings": "/admin/settings", "dashboard": dashboardPath,
+	"preview": "/admin/dashboard",
 }
 
 func (c *Console) render(w http.ResponseWriter, r *http.Request, name string, status int, p page) {
@@ -174,13 +217,17 @@ func (c *Console) fail(w http.ResponseWriter, action string, err error) {
 
 func (c *Console) authed(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie(sessionCookie)
-		if err == nil && c.validSession(cookie.Value) {
+		if c.signedIn(r) {
 			next(w, r)
 			return
 		}
 		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
 	}
+}
+
+func (c *Console) signedIn(r *http.Request) bool {
+	cookie, err := r.Cookie(sessionCookie)
+	return err == nil && c.validSession(cookie.Value)
 }
 
 func (c *Console) validSession(id string) bool {
@@ -248,19 +295,51 @@ func (c *Console) logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
 }
 
+type overviewData struct {
+	Accounts []accountView
+	// Day and Month are everyone's usage over the last 24 hours and 30
+	// days.
+	Day, Month syncapi.UsageTotals
+}
+
 func (c *Console) overview(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	now := time.Now()
-	o, err := query.Overview(r.Context(), c.store, "", now, now)
+	o, err := query.Overview(ctx, c.store, "", now, now)
 	if err != nil {
 		c.fail(w, "build overview", err)
 		return
 	}
-	c.render(w, r, "overview", http.StatusOK, page{Title: "navOverview", Nav: "overview", Authed: true, Data: o})
+	accounts, err := c.store.Accounts(ctx)
+	if err != nil {
+		c.fail(w, "list accounts", err)
+		return
+	}
+	hints := map[string]string{}
+	for _, a := range accounts {
+		hints[a.ID] = a.Hint
+	}
+	data := overviewData{Accounts: accountViews(o, hints, now, dictionaries[requestLang(r)])}
+	for _, p := range []struct {
+		since time.Time
+		into  *syncapi.UsageTotals
+	}{{now.Add(-24 * time.Hour), &data.Day}, {now.Add(-30 * 24 * time.Hour), &data.Month}} {
+		report, err := query.Usage(ctx, c.store, p.since)
+		if err != nil {
+			c.fail(w, "build usage report", err)
+			return
+		}
+		*p.into = report.Total
+	}
+	c.render(w, r, "overview", http.StatusOK, page{Title: "navOverview", Nav: "overview", Authed: true, Data: data})
 }
 
 type personRow struct {
 	identity.Person
 	ActiveDevices int
+	LastSeenAt    *time.Time
+	// Month is their usage over the last 30 days.
+	Month syncapi.UsageTotals
 }
 
 type inviteView struct {
@@ -283,15 +362,27 @@ func (c *Console) peopleData(r *http.Request) (peopleData, error) {
 	if err != nil {
 		return peopleData{}, err
 	}
+	report, err := query.Usage(r.Context(), c.store, time.Now().Add(-30*24*time.Hour))
+	if err != nil {
+		return peopleData{}, err
+	}
+	month := map[string]syncapi.UsageTotals{}
+	for _, m := range report.Members {
+		month[m.ID] = m.UsageTotals
+	}
 	active := map[string]int{}
+	lastSeen := map[string]*time.Time{}
 	for _, d := range devices {
 		if d.RevokedAt == nil {
 			active[d.PersonID]++
 		}
+		if d.LastSeenAt != nil && (lastSeen[d.PersonID] == nil || d.LastSeenAt.After(*lastSeen[d.PersonID])) {
+			lastSeen[d.PersonID] = d.LastSeenAt
+		}
 	}
 	var data peopleData
 	for _, p := range persons {
-		data.People = append(data.People, personRow{Person: p, ActiveDevices: active[p.ID]})
+		data.People = append(data.People, personRow{Person: p, ActiveDevices: active[p.ID], LastSeenAt: lastSeen[p.ID], Month: month[p.ID]})
 	}
 	return data, nil
 }
@@ -511,13 +602,91 @@ func parseWeight(s string) (float64, bool) {
 	return v, true
 }
 
+type deviceRow struct {
+	storage.DeviceRow
+	Online bool
+	// SignedIn names the accounts the device is signed into now.
+	SignedIn []string
+	Month    syncapi.UsageTotals
+}
+
 func (c *Console) devices(w http.ResponseWriter, r *http.Request) {
-	devices, err := c.store.Devices(r.Context())
+	ctx := r.Context()
+	now := time.Now()
+	devices, err := c.store.Devices(ctx)
 	if err != nil {
 		c.fail(w, "list devices", err)
 		return
 	}
-	c.render(w, r, "devices", http.StatusOK, page{Title: "navDevices", Nav: "devices", Authed: true, Data: devices})
+	accounts, err := c.store.Accounts(ctx)
+	if err != nil {
+		c.fail(w, "list accounts", err)
+		return
+	}
+	active, err := c.store.ActiveDevices(ctx, now.Add(-query.ActiveWindow))
+	if err != nil {
+		c.fail(w, "list active devices", err)
+		return
+	}
+	report, err := query.Usage(ctx, c.store, now.Add(-30*24*time.Hour))
+	if err != nil {
+		c.fail(w, "build usage report", err)
+		return
+	}
+	names := map[string]string{}
+	for _, a := range accounts {
+		names[a.ID] = providerName(string(a.Provider)) + " · " + a.Label
+	}
+	signedIn := map[string][]string{}
+	for _, a := range active {
+		signedIn[a.DeviceID] = append(signedIn[a.DeviceID], names[a.AccountID])
+	}
+	rows := make([]deviceRow, 0, len(devices))
+	for _, d := range devices {
+		in := signedIn[d.ID]
+		// A device on one account in both the CLI and Claude Desktop
+		// names it once.
+		sort.Strings(in)
+		rows = append(rows, deviceRow{
+			DeviceRow: d,
+			Online:    d.RevokedAt == nil && d.LastSeenAt != nil && now.Sub(*d.LastSeenAt) <= query.ActiveWindow,
+			SignedIn:  slices.Compact(in),
+			Month:     report.Devices[d.ID],
+		})
+	}
+	c.render(w, r, "devices", http.StatusOK, page{Title: "navDevices", Nav: "devices", Authed: true, Data: rows})
+}
+
+// usagePeriods are the spans the usage page reports, by ID.
+var usagePeriods = []struct {
+	ID          string
+	Hours, Days int
+}{{"24h", 24, 0}, {"7d", 0, 7}, {"30d", 0, 30}}
+
+type usageData struct {
+	Period  string
+	Periods []struct {
+		ID          string
+		Hours, Days int
+	}
+	Report query.UsageReport
+}
+
+func (c *Console) usage(w http.ResponseWriter, r *http.Request) {
+	period := usagePeriods[len(usagePeriods)-1]
+	for _, p := range usagePeriods {
+		if p.ID == r.URL.Query().Get("period") {
+			period = p
+		}
+	}
+	span := time.Duration(period.Hours)*time.Hour + time.Duration(period.Days)*24*time.Hour
+	report, err := query.Usage(r.Context(), c.store, time.Now().Add(-span))
+	if err != nil {
+		c.fail(w, "build usage report", err)
+		return
+	}
+	data := usageData{Period: period.ID, Periods: usagePeriods, Report: report}
+	c.render(w, r, "usage", http.StatusOK, page{Title: "navUsage", Nav: "usage", Authed: true, Data: data})
 }
 
 func (c *Console) revoke(w http.ResponseWriter, r *http.Request) {
@@ -527,6 +696,15 @@ func (c *Console) revoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/admin/devices", http.StatusSeeOther)
+}
+
+// percent rounds a share to a whole percent, showing a small non-zero one
+// as <1%.
+func percent(v float64) string {
+	if v > 0 && v < 1 {
+		return "<1%"
+	}
+	return strconv.Itoa(int(math.Round(v))) + "%"
 }
 
 // compactTokens renders a token count as 950, 12.3K, 4.5M.
@@ -552,31 +730,64 @@ func providerName(p string) string {
 	return p
 }
 
-func bucketName(key string, windowMinutes int, t map[string]string) string {
-	switch key {
-	case "five_hour":
-		return t["fiveHour"]
-	case "weekly":
-		return t["weekly"]
-	}
-	if windowMinutes%1440 == 0 && windowMinutes > 0 {
-		return fmt.Sprintf(t["days"], windowMinutes/1440)
-	}
-	if windowMinutes%60 == 0 && windowMinutes > 0 {
-		return fmt.Sprintf(t["hours"], windowMinutes/60)
-	}
-	return fmt.Sprintf(t["minutes"], windowMinutes)
+// Times are rendered in the server's time zone and carry their instant, so
+// the page's script can show them in the viewer's; the formats match.
+var timeFormats = map[string]string{
+	"datetime": "2006-01-02 15:04",
+	"clock":    "15:04",
+	"day":      "1/2",
+	"dayclock": "1/2 15:04",
 }
 
-func formatTime(t any) string {
-	switch v := t.(type) {
+func timeHTML(t any, format string) template.HTML {
+	var v time.Time
+	switch tv := t.(type) {
 	case time.Time:
-		return v.Local().Format("2006-01-02 15:04")
+		v = tv
 	case *time.Time:
-		if v == nil {
+		if tv == nil {
 			return "—"
 		}
-		return v.Local().Format("2006-01-02 15:04")
+		v = *tv
+	default:
+		return ""
 	}
-	return ""
+	return template.HTML(fmt.Sprintf(`<time datetime="%s" data-dt="%[1]s" data-f="%s">%s</time>`,
+		v.UTC().Format(time.RFC3339), format, v.Local().Format(timeFormats[format])))
+}
+
+// tfHTML fills a translated format with arguments that may be markup, such
+// as a time.
+func tfHTML(format string, args ...any) template.HTML {
+	escaped := make([]any, len(args))
+	for i, a := range args {
+		if h, ok := a.(template.HTML); ok {
+			escaped[i] = h
+		} else {
+			escaped[i] = template.HTMLEscapeString(fmt.Sprint(a))
+		}
+	}
+	return template.HTML(fmt.Sprintf(template.HTMLEscapeString(format), escaped...))
+}
+
+// width is a bar length for a style attribute, kept within 0 to 100%.
+func width(v float64) string {
+	return strconv.FormatFloat(max(0, min(100, v)), 'f', 2, 64) + "%"
+}
+
+// usd is an estimated price in US dollars; cents only below $100.
+func usd(v float64) string {
+	digits := 0
+	if v < 100 {
+		digits = 2
+	}
+	s := strconv.FormatFloat(v, 'f', digits, 64)
+	whole, frac, _ := strings.Cut(s, ".")
+	for i := len(whole) - 3; i > 0; i -= 3 {
+		whole = whole[:i] + "," + whole[i:]
+	}
+	if frac != "" {
+		whole += "." + frac
+	}
+	return "US$" + whole
 }

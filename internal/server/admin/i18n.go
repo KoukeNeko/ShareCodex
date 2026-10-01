@@ -76,6 +76,34 @@ var dictionaries = map[string]map[string]string{
 		"hours":           "%d hours",
 		"minutes":         "%d min",
 		"language":        "Language",
+
+		"navUsage":         "Usage",
+		"navSettings":      "Settings",
+		"dashboard":        "Dashboard",
+		"inUse":            "In use",
+		"updatedAt":        "Updated %s",
+		"thirdPartyModels": "Third-party models",
+		"totalTokens":      "Total tokens",
+		"input":            "Input",
+		"cachedShare":      "%s cached",
+		"output":           "Output",
+		"estCost":          "Cost · est.",
+		"usageOverTime":    "Tokens over time",
+		"online":           "Online",
+		"signedInTo":       "Signed in to",
+		"account":          "Account",
+		"noUsage":          "No usage",
+		"publicDashboard":  "Public dashboard",
+		"publish":          "Publish",
+		"publicNote":       "Anyone with the address can see each account's quota, members' names and estimated usage. Email addresses and device names are not shown.",
+		"save":             "Save",
+		"published":        "Published",
+		"notPublished":     "Not published",
+		"preview":          "Preview",
+		"previewNote":      "Preview. Only signed-in admins can see this page until it is published.",
+		"last30Days":       "30 days",
+		"models":           "Models",
+		"accountN":         "Account %d",
 	},
 	"zh-TW": {
 		"appTitle":        "ShareCodex 管理",
@@ -134,6 +162,34 @@ var dictionaries = map[string]map[string]string{
 		"hours":           "%d 小時",
 		"minutes":         "%d 分鐘",
 		"language":        "語言",
+
+		"navUsage":         "用量",
+		"navSettings":      "設定",
+		"dashboard":        "儀表板",
+		"inUse":            "使用中",
+		"updatedAt":        "%s 更新",
+		"thirdPartyModels": "第三方模型",
+		"totalTokens":      "總 tokens",
+		"input":            "輸入",
+		"cachedShare":      "快取 %s",
+		"output":           "輸出",
+		"estCost":          "估計費用",
+		"usageOverTime":    "Tokens 用量趨勢",
+		"online":           "連線中",
+		"signedInTo":       "登入帳號",
+		"account":          "帳號",
+		"noUsage":          "沒有用量",
+		"publicDashboard":  "公開儀表板",
+		"publish":          "公開",
+		"publicNote":       "任何知道網址的人都能看到各帳號的額度、成員名稱與估計用量，不會顯示電子郵件與裝置名稱。",
+		"save":             "儲存",
+		"published":        "已公開",
+		"notPublished":     "未公開",
+		"preview":          "預覽",
+		"previewNote":      "預覽。公開前只有已登入的管理員能看到此頁。",
+		"last30Days":       "30 天",
+		"models":           "模型",
+		"accountN":         "帳號 %d",
 	},
 }
 
@@ -147,24 +203,27 @@ func requestLang(r *http.Request) string {
 }
 
 // setLang stores the chosen language and returns to the page the switch was
-// on. Only console paths are accepted as the destination.
+// on. Only console paths and the dashboard are accepted as the destination.
 func (c *Console) setLang(w http.ResponseWriter, r *http.Request) {
 	lang := r.PathValue("lang")
 	if _, ok := dictionaries[lang]; !ok {
 		http.NotFound(w, r)
 		return
 	}
+	// The dashboard is outside /admin, so the choice is kept site-wide; the
+	// cookie earlier versions kept under /admin would otherwise shadow it.
+	http.SetCookie(w, &http.Cookie{Name: langCookie, Path: "/admin", MaxAge: -1})
 	http.SetCookie(w, &http.Cookie{
 		Name:     langCookie,
 		Value:    lang,
-		Path:     "/admin",
+		Path:     "/",
 		MaxAge:   int((365 * 24 * time.Hour).Seconds()),
 		HttpOnly: true,
 		Secure:   strings.HasPrefix(c.publicURL, "https://"),
 		SameSite: http.SameSiteLaxMode,
 	})
 	next := r.URL.Query().Get("next")
-	if !strings.HasPrefix(next, "/admin/") || strings.HasPrefix(next, "//") || strings.Contains(next, "\\") {
+	if next != dashboardPath && (!strings.HasPrefix(next, "/admin/") || strings.HasPrefix(next, "//") || strings.Contains(next, "\\")) {
 		next = "/admin/"
 	}
 	http.Redirect(w, r, next, http.StatusSeeOther)

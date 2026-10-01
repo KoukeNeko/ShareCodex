@@ -1,0 +1,15 @@
+{{define "content"}}
+<h1>{{.T.navSettings}}</h1>
+<form class="card" method="post" action="/admin/settings">
+  <div class="row spread">
+    <h2>{{.T.publicDashboard}}</h2>
+    {{if .Data.PublicDashboard}}<span class="tag">{{.T.published}}</span>{{else}}<span class="tag off">{{.T.notPublished}}</span>{{end}}
+  </div>
+  <p class="muted" style="margin:0">{{.T.publicNote}}</p>
+  <label class="row"><input type="checkbox" name="public_dashboard"{{if .Data.PublicDashboard}} checked{{end}}> {{.T.publish}}</label>
+  <div class="row spread">
+    <span class="row">{{if .Data.PublicDashboard}}<a href="/dashboard">{{.Data.DashboardURL}}</a>{{end}}<a href="/admin/dashboard">{{.T.preview}}</a></span>
+    <button class="primary" type="submit">{{.T.save}}</button>
+  </div>
+</form>
+{{end}}
