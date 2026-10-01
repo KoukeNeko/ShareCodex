@@ -127,6 +127,7 @@ func TestParseConversation(t *testing.T) {
 func TestObserve(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
 	t.Setenv("PATH", "")
 	if _, err := Observe(); err == nil {
 		t.Fatal("without agy or its data, Observe must report it not installed")
