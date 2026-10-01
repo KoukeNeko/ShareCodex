@@ -258,12 +258,15 @@ func (s *Store) RevokeDevice(ctx context.Context, id string) error {
 // joins an account simply by using it.
 //
 // Re-sent events are ignored unless they carry a larger output count or an
-// account correction. Any device may correct, as long as it names the account
-// the record was previously attributed to: one request can appear in more than
-// one device's logs (Claude Desktop mirrors a session it drives on another
-// host), and the device that uploaded it first may be the one that knows it
-// least. The person a record belongs to never changes, because a device only
-// reports events whose account it observed itself.
+// account correction. Any device of the person the record belongs to may
+// correct, as long as it names the account the record was previously
+// attributed to: one request can appear in more than one of a person's
+// devices' logs (Claude Desktop mirrors a session it drives on another host),
+// and the device that uploaded it first may be the one that knows it least.
+// Another person's device never changes a record, since the dedupe key is
+// global and a record is only ever that person's own usage. The person a
+// record belongs to never changes, because a device only reports events whose
+// account it observed itself.
 func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (syncapi.SyncResponse, error) {
 	accepted := 0
 	diverged := 0
@@ -326,10 +329,11 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 					account_id = excluded.account_id,
 					output = GREATEST(usage_events.output, excluded.output),
 					reasoning_output = GREATEST(usage_events.reasoning_output, excluded.reasoning_output)
-				WHERE (usage_events.account_id = excluded.account_id AND excluded.output > usage_events.output) OR
-					(usage_events.session_id = excluded.session_id AND usage_events.originator = excluded.originator AND
-					 usage_events.account_id != excluded.account_id AND $16 != '' AND
-					 usage_events.account_id = (SELECT id FROM accounts WHERE provider = $15 AND ref_hash = $16))`,
+				WHERE usage_events.person_id = excluded.person_id AND
+					((usage_events.account_id = excluded.account_id AND excluded.output > usage_events.output) OR
+					 (usage_events.session_id = excluded.session_id AND usage_events.originator = excluded.originator AND
+					  usage_events.account_id != excluded.account_id AND $16 != '' AND
+					  usage_events.account_id = (SELECT id FROM accounts WHERE provider = $15 AND ref_hash = $16)))`,
 				e.DedupeKey, id, d.PersonID, d.ID, e.Product, e.Originator, e.SessionID, e.Model, e.OccurredAt,
 				e.Input, e.CachedInput, e.CacheWrite, e.Output, e.ReasoningOutput, e.Provider, e.PreviousAccountRefHash, e.ThirdParty,
 				e.Gateway)
@@ -358,8 +362,8 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 				if _, err := tx.ExecContext(ctx, `
 					UPDATE usage_events SET third_party = third_party OR $2,
 						gateway = CASE WHEN gateway = '' THEN $3 ELSE gateway END
-					WHERE dedupe_key = $1 AND (third_party != (third_party OR $2) OR (gateway = '' AND $3 != ''))`,
-					e.DedupeKey, e.ThirdParty, e.Gateway); err != nil {
+					WHERE dedupe_key = $1 AND person_id = $4 AND (third_party != (third_party OR $2) OR (gateway = '' AND $3 != ''))`,
+					e.DedupeKey, e.ThirdParty, e.Gateway, d.PersonID); err != nil {
 					return fmt.Errorf("reclassify %s: %w", e.DedupeKey, err)
 				}
 			}

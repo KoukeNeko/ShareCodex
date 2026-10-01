@@ -153,7 +153,11 @@ func TestPairSyncOverview(t *testing.T) {
 		t.Errorf("models = %+v, want gpt-5.5 with all 4 requests and the whole 40%%", b.Models)
 	}
 
-	// A larger output for a known request replaces the partial one.
+	// A larger output for a known request replaces the partial one, but only
+	// when it comes from the person the request belongs to.
+	if st := bob.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event("codex:a1", 10)}}, &res); st != http.StatusOK || res.Accepted != 0 {
+		t.Fatalf("another person's larger output accepted %d; want 0", res.Accepted)
+	}
 	if st := alice.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event("codex:a1", 10)}}, &res); st != http.StatusOK || res.Accepted != 1 {
 		t.Fatalf("larger output accepted %d; want 1", res.Accepted)
 	}
@@ -189,8 +193,9 @@ func TestSnapshotNamesAccountKnownOnlyFromSignIn(t *testing.T) {
 }
 
 // The dedupe key is global, so whichever device uploads a request first fixes
-// its account. A device that parsed the same request differently must still be
-// able to correct the account without becoming the record's owner.
+// its account. Another device of the same person that parsed the request
+// differently must still be able to correct the account without becoming the
+// record's owner; a different person's device cannot touch the record.
 func TestSyncCorrectsAccountAttributionWithoutChangingOwner(t *testing.T) {
 	ctx := context.Background()
 	store := storagetest.New(t)
@@ -201,6 +206,7 @@ func TestSyncCorrectsAccountAttributionWithoutChangingOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	alice := pairDevice(t, store, srv.URL, alicePerson, "alice-laptop", identity.PlatformDarwin)
+	desktop := pairDevice(t, store, srv.URL, alicePerson, "alice-desktop", identity.PlatformDarwin)
 	bob := pair(t, store, srv.URL, "bob")
 	carol := pair(t, store, srv.URL, "carol")
 	now := time.Now().UTC().Truncate(time.Second)
@@ -220,12 +226,18 @@ func TestSyncCorrectsAccountAttributionWithoutChangingOwner(t *testing.T) {
 	event.AccountRefHash, snap.AccountRefHash = "correct", "correct"
 	event.PreviousAccountRefHash, snap.PreviousAccountRefHash = "wrong", "wrong"
 
-	// Bob never stored this request, but his previous ref names the account
-	// the server actually holds, so the correction applies.
-	if st, res := sync(bob, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event}}); st != http.StatusOK || res.Accepted != 1 || res.Diverged != 0 {
+	// Bob is another person: his previous ref names the account the server
+	// holds, yet the record is not his to correct.
+	if st, res := sync(bob, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event}}); st != http.StatusOK || res.Accepted != 0 || res.Diverged != 1 {
+		t.Fatalf("another person's correction = %d, accepted %d, diverged %d; want 200, 0, 1", st, res.Accepted, res.Diverged)
+	}
+
+	// Alice's desktop never stored this request, but her previous ref names the
+	// account the server actually holds, so the correction applies.
+	if st, res := sync(desktop, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event}}); st != http.StatusOK || res.Accepted != 1 || res.Diverged != 0 {
 		t.Fatalf("cross-device correction = %d, accepted %d, diverged %d; want 200, 1, 0", st, res.Accepted, res.Diverged)
 	}
-	if st, res := sync(bob, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event}}); st != http.StatusOK || res.Accepted != 0 || res.Diverged != 0 {
+	if st, res := sync(desktop, syncapi.SyncRequest{Version: syncapi.Version, Events: []syncapi.Event{event}}); st != http.StatusOK || res.Accepted != 0 || res.Diverged != 0 {
 		t.Fatalf("replayed correction = %d, accepted %d, diverged %d; want 200, 0, 0", st, res.Accepted, res.Diverged)
 	}
 
