@@ -155,7 +155,8 @@ func newBucketView(b syncapi.BucketOverview, now time.Time, t map[string]string)
 		}
 		bv.Members = append(bv.Members, mv)
 	}
-	if b.Timeline != nil && len(b.Timeline.Points) > 0 {
+	// Drawn even without usage, so a quiet window still shows its time axis.
+	if b.Timeline != nil {
 		bv.Chart = newChart(*b.Timeline, quotaKeys, thirdKeys, now)
 	}
 	return bv
@@ -236,7 +237,8 @@ type chartView struct {
 }
 
 type chartMode struct {
-	Lines  []chartLine
+	Lines []chartLine
+	// Top is the axis's top value; 0 when nothing was used.
 	Top    int64
 	Points []chartPoint
 }
@@ -360,7 +362,11 @@ func newChart(tl syncapi.Timeline, quotaKeys, thirdKeys []string, now time.Time)
 				peak = max(peak, v)
 			}
 		}
-		m := chartMode{Top: niceTop(peak)}
+		m := chartMode{}
+		// An empty chart has no scale to label.
+		if peak > 0 {
+			m.Top = niceTop(peak)
+		}
 		// A running total sits at its span's end; an amount in its middle.
 		px := func(p int) float64 {
 			if cumulative {
@@ -375,7 +381,7 @@ func newChart(tl syncapi.Timeline, quotaKeys, thirdKeys []string, now time.Time)
 				if p == 0 {
 					cmd = "M"
 				}
-				y := chartHeight - float64(v)/float64(m.Top)*(chartHeight-4) - 1
+				y := chartHeight - float64(v)/float64(max(m.Top, 1))*(chartHeight-4) - 1
 				fmt.Fprintf(&d, "%s%.1f,%.1f", cmd, px(p)*chartWidth/100, y)
 			}
 			m.Lines = append(m.Lines, chartLine{Path: d.String(), Slot: slotFor(s.rank), Dashed: s.third})

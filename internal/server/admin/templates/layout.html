@@ -146,7 +146,14 @@ table.stats tr.total td { font-size: 18px; font-weight: 600; }
 .tile { display: grid; gap: 4px; align-content: start; }
 .tile .label { font: 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .tile strong { font: 600 22px var(--mono); }
-.accounts { grid-template-columns: repeat(auto-fit, minmax(min(620px, 100%), 1fr)); }
+/* A window's chart and its lists side by side once the card is wide
+   enough for both, as on the dashboard; stacked otherwise. */
+.card { container-type: inline-size; }
+.bucket-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@container (min-width: 1200px) {
+  .bucket-body.split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; align-items: start; }
+  .bucket-body.split .plot { height: 200px; }
+}
 nav.periods { flex: none; display: flex; border: 1px solid var(--line); }
 nav.periods a { padding: 4px 12px; font-size: 12px; border: none; margin: 0; }
 nav.periods a + a { border-left: 1px solid var(--line); }

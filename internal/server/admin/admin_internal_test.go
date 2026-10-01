@@ -108,3 +108,13 @@ func TestChartModes(t *testing.T) {
 		t.Errorf("resets = %+v, want one a third of the way across", c.Resets)
 	}
 }
+
+// A window nobody used still gets its chart: the time axis, no lines and
+// no scale.
+func TestChartWithoutUsage(t *testing.T) {
+	start := time.Date(2026, 10, 1, 7, 0, 0, 0, time.UTC)
+	c := newChart(syncapi.Timeline{Start: start, BinMinutes: 1, Bins: 300}, nil, nil, start.Add(time.Hour))
+	if c == nil || c.Amount.Top != 0 || c.Cumulative.Top != 0 || len(c.Amount.Lines) != 0 || len(c.Ticks) != 3 {
+		t.Fatalf("chart = %+v, want an empty chart with its axis", c)
+	}
+}

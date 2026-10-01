@@ -155,7 +155,7 @@
     </div>
   </div>
 
-  <span class="axis num">{tokens(top)}</span>
+  <span class="axis num">{series.length ? tokens(top) : '0'}</span>
   <div class="plot" bind:clientWidth={width}>
     {#if width > 0}
       <svg {width} {height} role="img" aria-label={t('usageOverTime')} onpointermove={onMove} onpointerleave={() => (hover = null)}>

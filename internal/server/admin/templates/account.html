@@ -22,10 +22,11 @@
     {{if not .Expired}}<div class="meter"><i class="{{.Tone}}" style="width:{{width .UsedPercent}}"></i></div>{{end}}
     {{if $admin}}<p class="muted small" style="margin:0">{{tfh $T.updatedAt (when .ObservedAt)}}</p>{{end}}
 
+    <div class="bucket-body{{if not .Expired}} split{{end}}">
     {{with .Chart}}
     <div class="chart">
       <div class="row spread chart-head">
-        <span class="muted small num"><span class="mode-amount">{{tokens .Amount.Top}}</span><span class="mode-cumulative">{{tokens .Cumulative.Top}}</span></span>
+        <span class="muted small num"><span class="mode-amount">{{if .Amount.Top}}{{tokens .Amount.Top}}{{else}}0{{end}}</span><span class="mode-cumulative">{{if .Cumulative.Top}}{{tokens .Cumulative.Top}}{{else}}0{{end}}</span></span>
         <button type="button" class="toggle" data-cumulative aria-pressed="false">{{$T.cumulative}}</button>
       </div>
       <div class="plot">
@@ -47,6 +48,7 @@
     {{end}}
 
     {{if not .Expired}}
+    <div class="bucket-lists stack">
     <div class="table-wrap"><table class="small">
       <thead><tr><th>{{$T.member}}</th><th class="num">{{$T.estimatedUsage}}</th><th class="num">{{$T.allotted}}</th><th class="barcol"></th></tr></thead>
       <tbody>
@@ -100,7 +102,9 @@
       </tbody>
     </table></div>
     {{end}}
+    </div>
     {{end}}
+    </div>
   </div>
   {{end}}
 </section>
