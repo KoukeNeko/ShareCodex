@@ -31,9 +31,11 @@
 }
 * { box-sizing: border-box; border-radius: 0; }
 html, body { min-height: 100%; }
-/* The header's corner marks stand 4px outside the frame; where the frame
-   meets the window's edge they must not make the page scroll sideways. */
-body { overflow-x: clip; }
+/* The header's corner marks stand 4px outside the frame. Where the frame
+   meets the window's edge, the page clips them itself: clipping on the root
+   still counts them in the page's width on phones, which then open zoomed
+   in and scroll sideways. */
+.page { overflow-x: clip; }
 body { margin: 0; color: var(--text); background-color: var(--bg);
   background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
   background-size: 48px 48px;
@@ -135,6 +137,8 @@ td.barcol, th.barcol { width: 30%; min-width: 90px; }
   th, td { padding-left: 6px; padding-right: 6px; }
   /* Total tokens stays; its input and output split waits for a wider screen. */
   th.detail, td.detail { display: none; }
+  /* Long model names break at their hyphens, beside their swatch. */
+  td:has(> .swatch) { white-space: normal; overflow-wrap: anywhere; }
 }
 tr.sub td:first-child { padding-left: 20px; }
 tr.sub td { border-bottom: none; padding-top: 2px; padding-bottom: 2px; font-size: 12px; }
@@ -194,6 +198,7 @@ try { if (localStorage.getItem('sharecodex.cumulative') === '1') document.docume
 </script>
 </head>
 <body>
+<div class="page">
 <div class="frame{{if .Public}} wide{{end}}">
 <header>
   <div class="bar">
@@ -225,6 +230,7 @@ try { if (localStorage.getItem('sharecodex.cumulative') === '1') document.docume
   {{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
   {{template "content" .}}
 </main>
+</div>
 </div>
 <script>
 // Show times in the viewer's time zone; the server wrote them in its own.
