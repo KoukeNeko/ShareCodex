@@ -206,20 +206,26 @@ func bucketName(key string, windowMinutes int, t map[string]string) string {
 	return fmt.Sprintf(t["minutes"], windowMinutes)
 }
 
-// chartView draws a timeline the way the desktop popup does by default: a
-// running total per model that starts again from zero where a window
-// reset, about 60 points across. X positions are percentages of the width;
-// the SVG's view box is chartWidth by chartHeight.
+// chartView draws a timeline the way the desktop popup does: a line per
+// model, about 60 points across, in two modes the viewer switches between.
+// X positions are percentages of the width; the SVG's view box is
+// chartWidth by chartHeight.
 type chartView struct {
-	Lines  []chartLine
-	Resets []chartMark
-	Top    int64
-	Ticks  []time.Time
+	// Amount holds the tokens used within each point's span; Cumulative
+	// the running totals, which start again from zero where a window reset.
+	Amount, Cumulative chartMode
+	Resets             []chartMark
+	Ticks              []time.Time
 	// TickFormat and TimeFormat are timeFormats keys: a chart of more
 	// than a day labels its axis with dates, and keeps the time in reset
 	// labels and hover tips.
 	TickFormat, TimeFormat string
-	Points                 []chartPoint
+}
+
+type chartMode struct {
+	Lines  []chartLine
+	Top    int64
+	Points []chartPoint
 }
 
 type chartLine struct {
@@ -233,11 +239,13 @@ type chartMark struct {
 	At time.Time
 }
 
-// chartPoint is one point's hover area, with its time and each model's
-// running total.
+// chartPoint is one point's hover area, with the time its values are as of
+// (a running total) or the span they cover (an amount), and each model's
+// value.
 type chartPoint struct {
 	X, W  float64
 	At    time.Time
+	Until *time.Time
 	Lines []string
 }
 
@@ -259,6 +267,8 @@ func newChart(tl syncapi.Timeline, quotaKeys, thirdKeys []string, now time.Time)
 	lastBin := min(tl.Bins-1, max(0, int(now.Sub(start)/binDur)))
 	group := max(1, (tl.Bins+chartPoints-1)/chartPoints)
 	lastPoint := lastBin / group
+	// Each point's bins are [from(p), end(p)).
+	from := func(point int) int { return point * group }
 	end := func(point int) int { return min((point+1)*group, lastBin+1) }
 
 	resetBins := map[int]bool{}
@@ -306,62 +316,89 @@ func newChart(tl syncapi.Timeline, quotaKeys, thirdKeys []string, now time.Time)
 		return a.rank - b.rank
 	})
 
-	values := make([][]int64, len(all))
-	var peak int64
+	amounts := make([][]int64, len(all))
+	totals := make([][]int64, len(all))
 	for i, s := range all {
 		var total int64
-		totals := make([]int64, lastBin+1)
+		running := make([]int64, lastBin+1)
 		for bin, v := range s.perBin {
 			if resetBins[bin] {
 				total = 0
 			}
 			total += v
-			totals[bin] = total
+			running[bin] = total
 		}
-		values[i] = make([]int64, lastPoint+1)
-		for p := range values[i] {
-			values[i][p] = totals[end(p)-1]
-			peak = max(peak, values[i][p])
+		amounts[i] = make([]int64, lastPoint+1)
+		totals[i] = make([]int64, lastPoint+1)
+		for p := range lastPoint + 1 {
+			for _, v := range s.perBin[from(p):end(p)] {
+				amounts[i][p] += v
+			}
+			totals[i][p] = running[end(p)-1]
 		}
 	}
 
-	c := &chartView{Top: niceTop(peak), TickFormat: "clock", TimeFormat: "clock"}
+	x := func(bin float64) float64 { return bin / float64(tl.Bins) * 100 }
+	at := func(bin int) time.Time { return minTime(start.Add(time.Duration(bin)*binDur), now) }
+	mode := func(values [][]int64, cumulative bool) chartMode {
+		var peak int64
+		for _, vs := range values {
+			for _, v := range vs {
+				peak = max(peak, v)
+			}
+		}
+		m := chartMode{Top: niceTop(peak)}
+		// A running total sits at its span's end; an amount in its middle.
+		px := func(p int) float64 {
+			if cumulative {
+				return x(float64(end(p)))
+			}
+			return x(float64(from(p)+end(p)) / 2)
+		}
+		for i, s := range all {
+			var d strings.Builder
+			for p, v := range values[i] {
+				cmd := "L"
+				if p == 0 {
+					cmd = "M"
+				}
+				y := chartHeight - float64(v)/float64(m.Top)*(chartHeight-4) - 1
+				fmt.Fprintf(&d, "%s%.1f,%.1f", cmd, px(p)*chartWidth/100, y)
+			}
+			m.Lines = append(m.Lines, chartLine{Path: d.String(), Slot: slotFor(s.rank), Dashed: s.third})
+		}
+		for p := range lastPoint + 1 {
+			pt := chartPoint{X: x(float64(from(p))), W: x(float64(end(p) - from(p))), At: at(end(p))}
+			// An amount names its span, when it covers more than a bin.
+			if !cumulative {
+				pt.At = at(from(p))
+				if until := at(end(p)); until.Sub(pt.At) > binDur {
+					pt.Until = &until
+				}
+			}
+			for i, s := range all {
+				if v := values[i][p]; v > 0 {
+					name, via, _ := modelName(s.model, s.gateway)
+					if via != "" {
+						name += " (" + via + ")"
+					}
+					pt.Lines = append(pt.Lines, compactTokens(v)+"  "+name)
+				}
+			}
+			m.Points = append(m.Points, pt)
+		}
+		return m
+	}
+
+	c := &chartView{Amount: mode(amounts, false), Cumulative: mode(totals, true), TickFormat: "clock", TimeFormat: "clock"}
 	if tl.Bins*tl.BinMinutes > 1440 {
 		c.TickFormat, c.TimeFormat = "day", "dayclock"
-	}
-	x := func(bin int) float64 { return float64(bin) / float64(tl.Bins) * 100 }
-	y := func(v int64) float64 {
-		return chartHeight - float64(v)/float64(c.Top)*(chartHeight-4) - 1
-	}
-	for i, s := range all {
-		var d strings.Builder
-		for p, v := range values[i] {
-			cmd := "L"
-			if p == 0 {
-				cmd = "M"
-			}
-			fmt.Fprintf(&d, "%s%.1f,%.1f", cmd, x(end(p))*chartWidth/100, y(v))
-		}
-		c.Lines = append(c.Lines, chartLine{Path: d.String(), Slot: slotFor(s.rank), Dashed: s.third})
 	}
 	span := time.Duration(tl.Bins) * binDur
 	for _, r := range tl.Resets {
 		c.Resets = append(c.Resets, chartMark{X: float64(r.Sub(start)) / float64(span) * 100, At: r})
 	}
 	c.Ticks = []time.Time{start, start.Add(span / 2), start.Add(span)}
-	for p := 0; p <= lastPoint; p++ {
-		pt := chartPoint{X: x(p * group), W: x(end(p)) - x(p*group), At: minTime(start.Add(time.Duration(end(p))*binDur), now)}
-		for i, s := range all {
-			if v := values[i][p]; v > 0 {
-				name, via, _ := modelName(s.model, s.gateway)
-				if via != "" {
-					name += " (" + via + ")"
-				}
-				pt.Lines = append(pt.Lines, compactTokens(v)+"  "+name)
-			}
-		}
-		c.Points = append(c.Points, pt)
-	}
 	return c
 }
 

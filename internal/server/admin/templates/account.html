@@ -24,16 +24,21 @@
 
     {{with .Chart}}
     <div class="chart">
-      <span class="muted small num">{{tokens .Top}}</span>
+      <div class="row spread chart-head">
+        <span class="muted small num"><span class="mode-amount">{{tokens .Amount.Top}}</span><span class="mode-cumulative">{{tokens .Cumulative.Top}}</span></span>
+        <button type="button" class="toggle" data-cumulative aria-pressed="false">{{$T.cumulative}}</button>
+      </div>
       <div class="plot">
         <svg viewBox="0 0 1000 100" preserveAspectRatio="none" role="img" aria-label="{{$T.usageOverTime}}">
           <line class="grid" x1="0" x2="1000" y1="3" y2="3"></line>
           <line class="grid" x1="0" x2="1000" y1="99" y2="99"></line>
-          {{$tip := .TimeFormat}}
-          {{range .Points}}<rect class="hit" x="{{svgX .X}}" y="0" width="{{svgX .W}}" height="100"><title data-dt="{{iso .At}}" data-f="{{$tip}}">{{timeText $tip .At}}{{range .Lines}}
-{{.}}{{end}}</title></rect>{{end}}
           {{range .Resets}}<line class="reset" x1="{{svgX .X}}" x2="{{svgX .X}}" y1="0" y2="100"></line>{{end}}
-          {{range .Lines}}<path class="line c{{.Slot}}{{if .Dashed}} dashed{{end}}" d="{{.Path}}"></path>{{end}}
+          {{$tip := .TimeFormat}}
+          {{range $name, $m := modes .}}<g class="mode-{{$name}}">
+            {{range $m.Points}}<rect class="hit" x="{{svgX .X}}" y="0" width="{{svgX .W}}" height="100"><title data-dt="{{iso .At}}"{{with .Until}} data-dt-until="{{iso .}}"{{end}} data-f="{{$tip}}">{{timeText $tip .At}}{{with .Until}}–{{timeText $tip .}}{{end}}{{range .Lines}}
+{{.}}{{end}}</title></rect>{{end}}
+            {{range $m.Lines}}<path class="line c{{.Slot}}{{if .Dashed}} dashed{{end}}" d="{{.Path}}"></path>{{end}}
+          </g>{{end}}
         </svg>
         {{range .Resets}}<span class="reset-label num{{if lt .X 8.0}} right{{end}}" style="left:{{width .X}}">{{timeAs $tip .At}}</span>{{end}}
       </div>

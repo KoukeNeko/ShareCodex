@@ -57,10 +57,10 @@ func TestBucketNameOfAModelFamily(t *testing.T) {
 	}
 }
 
-// The chart is a running total per model that starts again at a reset,
-// stops at now, and draws the quota's models before third-party ones in
-// their legends' order.
-func TestChartRunsTotalsUntilNow(t *testing.T) {
+// The chart stops at now and draws the quota's models before third-party
+// ones in their legends' order. Amounts are each span's tokens; running
+// totals start again at a reset.
+func TestChartModes(t *testing.T) {
 	start := time.Date(2026, 10, 1, 7, 0, 0, 0, time.UTC)
 	tl := syncapi.Timeline{
 		Start: start, BinMinutes: 1, Bins: 300,
@@ -69,6 +69,7 @@ func TestChartRunsTotalsUntilNow(t *testing.T) {
 			{Bin: 10, Model: "ocx-claude-native--gpt-6-sol", ThirdParty: true, Gateway: "opencodex", Tokens: 7},
 			{Bin: 10, Model: "sonnet", Tokens: 50},
 			{Bin: 20, Model: "opus", Tokens: 100},
+			{Bin: 21, Model: "opus", Tokens: 20},
 			{Bin: 150, Model: "opus", Tokens: 30},
 			{Bin: 290, Model: "opus", Tokens: 999}, // after now
 		},
@@ -76,24 +77,32 @@ func TestChartRunsTotalsUntilNow(t *testing.T) {
 	now := start.Add(200 * time.Minute)
 	c := newChart(tl, []string{modelKey("opus", ""), modelKey("sonnet", "")}, []string{modelKey("ocx-claude-native--gpt-6-sol", "opencodex")}, now)
 
-	// 300 one-minute bins in points of 5; the last holds now.
-	if len(c.Points) != 41 {
-		t.Fatalf("points = %d, want 41 up to now", len(c.Points))
+	for name, m := range map[string]chartMode{"amount": c.Amount, "cumulative": c.Cumulative} {
+		// 300 one-minute bins in points of 5; the last holds now.
+		if len(m.Points) != 41 {
+			t.Fatalf("%s: points = %d, want 41 up to now", name, len(m.Points))
+		}
+		if len(m.Lines) != 3 || m.Lines[0].Slot != "1" || m.Lines[1].Slot != "2" || !m.Lines[2].Dashed || m.Lines[2].Slot != "1" {
+			t.Fatalf("%s: lines = %+v, want opus, sonnet, then the dashed third-party model", name, m.Lines)
+		}
 	}
-	if len(c.Lines) != 3 || c.Lines[0].Slot != "1" || c.Lines[1].Slot != "2" || !c.Lines[2].Dashed || c.Lines[2].Slot != "1" {
-		t.Fatalf("lines = %+v, want opus, sonnet, then the dashed third-party model", c.Lines)
+
+	// Opus used 120 in the span from 07:20, and 30 more after the reset,
+	// where its running total started again.
+	if c.Amount.Top != 200 || c.Cumulative.Top != 200 {
+		t.Errorf("tops = %d, %d; want 200 for both", c.Amount.Top, c.Cumulative.Top)
 	}
-	// Opus reaches 100 before the reset and only 30 after it; the bin after
-	// now is not drawn.
-	if c.Top != 100 {
-		t.Errorf("top = %d, want 100", c.Top)
+	if got := c.Amount.Points[4]; got.Lines[0] != "120  opus" || !got.At.Equal(start.Add(20*time.Minute)) || got.Until == nil {
+		t.Errorf("amount at 07:20 = %+v, want opus 120 over 07:20 to 07:25", got)
 	}
-	// Sonnet and the third-party model started again from zero.
-	if got := c.Points[len(c.Points)-1].Lines; len(got) != 1 || got[0] != "30  opus" {
-		t.Errorf("last point = %q, want only opus, at 30 after the reset", got)
+	if got := c.Amount.Points[40].Lines; len(got) != 0 {
+		t.Errorf("last amount = %q, want nothing used in the last span", got)
 	}
-	if got := c.Points[3].Lines; len(got) != 2 || got[1] != "7  gpt-6-sol (OCX)" {
-		t.Errorf("point 3 = %q, want sonnet and the third-party model", got)
+	if got := c.Cumulative.Points[40].Lines; len(got) != 1 || got[0] != "30  opus" {
+		t.Errorf("last running total = %q, want only opus, at 30 after the reset", got)
+	}
+	if got := c.Cumulative.Points[3].Lines; len(got) != 2 || got[1] != "7  gpt-6-sol (OCX)" {
+		t.Errorf("running total at 07:15 = %q, want sonnet and the third-party model", got)
 	}
 	if len(c.Resets) != 1 || c.Resets[0].X < 33.3 || c.Resets[0].X > 33.4 {
 		t.Errorf("resets = %+v, want one a third of the way across", c.Resets)

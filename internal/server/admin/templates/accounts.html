@@ -4,10 +4,15 @@
 <section class="card">
   <div class="row spread">
     <div class="row"><h2>{{provider .Provider}}</h2>{{if .PlanType}}<span class="tag">{{.PlanType}}</span>{{end}}<span class="muted small">{{.Hint}}</span></div>
-    <form class="row" method="post" action="/admin/accounts/{{.ID}}/label">
-      <input class="grow" type="text" name="label" value="{{.Label}}" maxlength="50" required aria-label="{{$.T.accountName}}">
-      <button type="submit">{{$.T.rename}}</button>
-    </form>
+    <div class="row">
+      <form class="row" method="post" action="/admin/accounts/{{.ID}}/label">
+        <input class="grow" type="text" name="label" value="{{.Label}}" maxlength="50" required aria-label="{{$.T.accountName}}">
+        <button type="submit">{{$.T.rename}}</button>
+      </form>
+      <form class="inline" method="post" action="/admin/accounts/{{.ID}}/delete" onsubmit="return confirm({{$.T.deleteAccountConfirm}})">
+        <button class="danger" type="submit">{{$.T.delete}}</button>
+      </form>
+    </div>
   </div>
   <form class="stack" method="post" action="/admin/accounts/{{.ID}}/shares">
     <div class="table-wrap"><table>

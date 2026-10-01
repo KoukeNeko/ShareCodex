@@ -94,9 +94,11 @@ func New(store *storage.Store, log *slog.Logger, cfg Config) (http.Handler, erro
 	mux.HandleFunc("GET /admin/people", c.authed(c.people))
 	mux.HandleFunc("POST /admin/people", c.authed(c.addPerson))
 	mux.HandleFunc("POST /admin/people/{id}/invite", c.authed(c.invite))
+	mux.HandleFunc("POST /admin/people/{id}/delete", c.authed(c.deletePerson))
 	mux.HandleFunc("GET /admin/accounts", c.authed(c.accounts))
 	mux.HandleFunc("POST /admin/accounts/{id}/label", c.authed(c.setLabel))
 	mux.HandleFunc("POST /admin/accounts/{id}/shares", c.authed(c.setShares))
+	mux.HandleFunc("POST /admin/accounts/{id}/delete", c.authed(c.deleteAccount))
 	mux.HandleFunc("GET /admin/devices", c.authed(c.devices))
 	mux.HandleFunc("POST /admin/devices/{id}/revoke", c.authed(c.revoke))
 	mux.HandleFunc("GET /admin/usage", c.authed(c.usage))
@@ -139,6 +141,9 @@ func parsePages() (map[string]*template.Template, error) {
 		"modelLabel": func(model, gateway string) struct{ Name, Via, Title string } {
 			name, via, title := modelName(model, gateway)
 			return struct{ Name, Via, Title string }{name, via, title}
+		},
+		"modes": func(c *chartView) map[string]chartMode {
+			return map[string]chartMode{"amount": c.Amount, "cumulative": c.Cumulative}
 		},
 		"iso":      func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
 		"timeText": func(format string, t time.Time) string { return t.Local().Format(timeFormats[format]) },
@@ -453,6 +458,17 @@ func (c *Console) invite(w http.ResponseWriter, r *http.Request) {
 	c.render(w, r, "people", http.StatusOK, page{Title: "navPeople", Nav: "people", Authed: true, Data: data})
 }
 
+func (c *Console) deletePerson(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	err := c.store.DeletePerson(r.Context(), id)
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
+		c.fail(w, "delete person", err)
+		return
+	}
+	c.log.Info("person deleted", "person", id)
+	http.Redirect(w, r, "/admin/people", http.StatusSeeOther)
+}
+
 type memberRow struct {
 	PersonID        string
 	Name            string
@@ -591,6 +607,17 @@ func (c *Console) setShares(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	http.Redirect(w, r, "/admin/accounts", http.StatusSeeOther)
+}
+
+func (c *Console) deleteAccount(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	err := c.store.DeleteAccount(r.Context(), id)
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
+		c.fail(w, "delete account", err)
+		return
+	}
+	c.log.Info("account deleted", "account", id)
 	http.Redirect(w, r, "/admin/accounts", http.StatusSeeOther)
 }
 

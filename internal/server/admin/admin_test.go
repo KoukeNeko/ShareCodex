@@ -404,3 +404,51 @@ func TestConsoleShowsUsageDetails(t *testing.T) {
 		t.Error("members page does not show alice's 30-day tokens")
 	}
 }
+
+// Each delete runs against a full set of records: usage, quota readings,
+// sign-ins, memberships and devices.
+func TestDeleteAccount(t *testing.T) {
+	ctx := context.Background()
+	store, b := newServer(t)
+	seedUsage(t, store)
+	b.post("/admin/login", url.Values{"password": {password}})
+	accounts, _ := store.Accounts(ctx)
+
+	if st, _ := b.post("/admin/accounts/"+accounts[0].ID+"/delete", nil); st != http.StatusSeeOther {
+		t.Fatalf("delete account returned %d", st)
+	}
+	if accounts, _ = store.Accounts(ctx); len(accounts) != 0 {
+		t.Fatalf("accounts after delete = %+v", accounts)
+	}
+	if _, page := b.get("/admin/usage"); strings.Contains(page, "claude-opus-5-5") {
+		t.Error("the deleted account's usage is still reported")
+	}
+	if persons, _ := store.Persons(ctx); len(persons) != 1 {
+		t.Error("deleting an account removed its member")
+	}
+}
+
+func TestDeleteMember(t *testing.T) {
+	ctx := context.Background()
+	store, b := newServer(t)
+	seedUsage(t, store)
+	b.post("/admin/login", url.Values{"password": {password}})
+	persons, _ := store.Persons(ctx)
+	alice := persons[0]
+
+	if st, _ := b.post("/admin/people/"+alice.ID+"/delete", nil); st != http.StatusSeeOther {
+		t.Fatalf("delete member returned %d", st)
+	}
+	if persons, _ = store.Persons(ctx); len(persons) != 0 {
+		t.Fatalf("people after delete = %+v", persons)
+	}
+	if devices, _ := store.Devices(ctx); len(devices) != 0 {
+		t.Fatalf("the member's devices remain: %+v", devices)
+	}
+	if _, page := b.get("/admin/usage"); strings.Contains(page, "claude-opus-5-5") {
+		t.Error("the deleted member's usage is still reported")
+	}
+	if st, _ := b.post("/admin/people/"+alice.ID+"/delete", nil); st != http.StatusSeeOther {
+		t.Fatalf("deleting a member twice returned %d", st)
+	}
+}

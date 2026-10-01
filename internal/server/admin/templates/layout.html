@@ -6,113 +6,154 @@
 <title>{{.Title}} · {{if or (eq .Nav "dashboard") (eq .Nav "preview")}}ShareCodex{{else}}{{.T.appTitle}}{{end}}</title>
 {{if or (eq .Nav "dashboard") (eq .Nav "preview")}}<meta http-equiv="refresh" content="60">{{end}}
 <style>
+/* Straight lines: square corners, hairline rules between sections instead
+   of floating cards, and monospace labels. */
 :root {
-  --bg: #f6f7f9; --surface: #fff; --text: #16181d; --muted: #69707d; --line: #e3e6eb;
-  --track: #e9ecf1; --accent: #225ed6; --accent-soft: #dde7fb; --warn: #b86b00; --warn-soft: #fbecd4; --danger: #c4312b;
+  --bg: #fafaf9; --surface: #fafaf9; --text: #141414; --muted: #6d6d6a; --line: #dcdcd7; --grid: rgb(0 0 0 / .035);
+  --track: #ebebe6; --accent: #2f5bd3; --accent-soft: #e2e8f8; --warn: #a86200; --warn-soft: #f8ead3; --danger: #c4312b;
   /* Model colors in the desktop popup's slot order. */
   --model-1: #2a78d6; --model-2: #eb6834; --model-3: #1baf7a; --model-4: #eda100; --model-other: #9aa1ad;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #17191d; --surface: #202328; --text: #eceef2; --muted: #9aa1ad; --line: #2f333a;
-    --track: #30343c; --accent: #5b8cf0; --accent-soft: #24345a; --warn: #f0a640; --warn-soft: #3d2f18; --danger: #f06a63;
+    --bg: #0c0c0d; --surface: #0c0c0d; --text: #ececee; --muted: #8b8c93; --line: #27282c; --grid: rgb(255 255 255 / .03);
+    --track: #1d1e22; --accent: #7b93ff; --accent-soft: #1c2340; --warn: #f0a640; --warn-soft: #33270f; --danger: #f06a63;
     --model-1: #3987e5; --model-2: #d95926; --model-3: #199e70; --model-4: #c98500; --model-other: #6b7280;
     color-scheme: dark;
   }
 }
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text);
+* { box-sizing: border-box; border-radius: 0; }
+html, body { min-height: 100%; }
+body { margin: 0; color: var(--text); background-color: var(--bg);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 48px 48px;
   font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif; }
-header { background: var(--surface); border-bottom: 1px solid var(--line); }
-.bar { max-width: 960px; margin: 0 auto; padding: 0 16px; display: flex; align-items: center; gap: 12px; height: 52px; }
-.brand { font-weight: 600; }
-nav { display: flex; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; }
-nav a { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 6px; white-space: nowrap; }
-nav a.active { color: var(--text); background: var(--track); }
+.frame { max-width: 1120px; min-height: 100vh; margin: 0 auto; background: var(--bg);
+  border-left: 1px solid var(--line); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+.frame.wide { max-width: 1760px; }
+header { position: relative; border-bottom: 1px solid var(--line); }
+/* Marks where the header's rule meets the frame's sides. */
+header::before, header::after { content: ""; position: absolute; bottom: -4px; width: 7px; height: 7px;
+  background: var(--bg); border: 1px solid var(--muted); z-index: 1; }
+header::before { left: -4px; }
+header::after { right: -4px; }
+.bar { padding: 0 24px; display: flex; align-items: stretch; gap: 16px; height: 52px; }
+.brand { font: 600 13px var(--mono); letter-spacing: .08em; text-transform: uppercase; display: flex; align-items: center; }
+nav { display: flex; gap: 0; flex: 1; min-width: 0; overflow-x: auto; }
+nav a { color: var(--muted); text-decoration: none; padding: 0 12px; white-space: nowrap; display: flex; align-items: center;
+  font: 12.5px var(--mono); letter-spacing: .04em; border-bottom: 1px solid transparent; margin-bottom: -1px; }
+nav a:hover { color: var(--text); }
+nav a.active { color: var(--text); border-bottom-color: var(--text); }
 nav.langs { flex: none; }
-nav.langs a { font-size: 12.5px; padding: 4px 8px; }
 .spacer { flex: 1; }
-main { max-width: 960px; margin: 0 auto; padding: 20px 16px 48px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
-h1 { font-size: 20px; margin: 0; }
-h2 { font-size: 15px; margin: 0; }
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0; }
+.bar > form.inline { display: flex; align-items: center; }
+main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; }
+/* Each block of a page is a band between rules. */
+main > * { padding: 20px 24px; border-bottom: 1px solid var(--line); margin: 0; min-width: 0; }
+h1 { font-size: 22px; font-weight: 600; letter-spacing: -.01em; margin: 0; }
+h2 { font-size: 15px; font-weight: 600; margin: 0; }
+.card { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 14px; min-width: 0; }
 .stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .spread { justify-content: space-between; }
 .muted { color: var(--muted); }
 .small { font-size: 12.5px; }
-.num { font-variant-numeric: tabular-nums; }
-.error { color: var(--danger); border: 1px solid var(--danger); border-radius: 8px; padding: 8px 12px; margin: 0; }
-.tag { font-size: 11.5px; border-radius: 4px; padding: 1px 6px; background: var(--accent-soft); color: var(--accent); }
-.tag.warn { background: var(--warn-soft); color: var(--warn); }
-.tag.off { background: var(--track); color: var(--muted); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.error { color: var(--danger); }
+.tag { font: 10.5px/1.6 var(--mono); letter-spacing: .06em; text-transform: uppercase; padding: 0 6px;
+  border: 1px solid currentColor; color: var(--accent); white-space: nowrap; }
+.tag.warn { color: var(--warn); }
+.tag.off { color: var(--muted); }
 table { width: 100%; border-collapse: collapse; }
 .table-wrap { overflow-x: auto; }
-th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-th { font-weight: 500; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+th, td { text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th:first-child, td:first-child { padding-left: 0; }
+th:last-child, td:last-child { padding-right: 0; }
+th { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
 tr:last-child td, tr:last-child th { border-bottom: none; }
+th.num, td.num { text-align: right; }
+td.actions { text-align: right; white-space: nowrap; }
 input[type=text], input[type=password], input[type=number], select {
-  font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; }
-input[type=number] { width: 84px; }
-input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); padding: 6px 9px; }
+input[type=number] { width: 84px; font-family: var(--mono); }
+input:focus, select:focus { outline: 1px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
 input.grow { flex: 1; min-width: 0; }
-button { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
-button:hover { border-color: var(--muted); }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button { font: 12.5px var(--mono); letter-spacing: .02em; color: inherit; background: var(--bg); border: 1px solid var(--line);
+  padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+button:hover { border-color: var(--text); }
+button.primary { background: var(--text); border-color: var(--text); color: var(--bg); }
 button.danger { color: var(--danger); }
-button.link { border: none; background: none; color: var(--muted); padding: 6px 8px; }
+button.danger:hover { border-color: var(--danger); }
+button.link { border: none; background: none; color: var(--muted); padding: 0 0 0 8px; }
+button.link:hover { color: var(--text); }
 form.inline { display: inline; margin: 0; }
-.meter { position: relative; display: flex; height: 8px; border-radius: 4px; background: var(--track); }
-.meter.thin { height: 5px; }
-.meter > i { display: block; flex: none; height: 100%; border-radius: inherit; background: var(--accent); }
+.meter { position: relative; display: flex; height: 6px; background: var(--track); }
+.meter.thin { height: 4px; }
+.meter > i { display: block; flex: none; height: 100%; background: var(--accent); }
 .meter > i.warn { background: var(--warn); }
 .meter > i.danger { background: var(--danger); }
-.meter > i.seg { border-radius: 0; background: currentColor; }
-.meter > i.seg:first-child { border-top-left-radius: inherit; border-bottom-left-radius: inherit; }
+.meter > i.seg { background: currentColor; }
 .meter > i.muted-bar { background: var(--muted); opacity: .6; }
-.meter > b { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--text); opacity: .55; }
-.grid2 { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); }
-.invite { border-color: var(--accent); }
+.meter > b { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--text); }
+.invite { box-shadow: inset 2px 0 0 var(--accent); }
+.invite input { width: 100%; font-family: var(--mono); }
 .c1 { color: var(--model-1); } .c2 { color: var(--model-2); } .c3 { color: var(--model-3); } .c4 { color: var(--model-4); } .co { color: var(--model-other); }
-.chip { background: var(--track); border-radius: 4px; padding: 0 6px; }
-.via { font-size: 10.5px; letter-spacing: .04em; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
-.swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; background: currentColor; }
-.swatch.dashed { height: 2px; border-radius: 0; vertical-align: middle; background: repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 5px); }
-.bucket { padding-top: 12px; border-top: 1px solid var(--line); }
+.chip { border: 1px solid var(--line); padding: 0 6px; }
+.via { font: 10px var(--mono); letter-spacing: .04em; color: var(--muted); border: 1px solid var(--line); padding: 0 4px; }
+td:has(> .swatch) { white-space: nowrap; }
+.swatch { display: inline-block; width: 8px; height: 8px; margin-right: 8px; background: currentColor; }
+.swatch.dashed { height: 2px; vertical-align: middle; background: repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 5px); }
+.bucket { padding-top: 14px; border-top: 1px solid var(--line); }
 td.barcol, th.barcol { width: 30%; min-width: 90px; }
 /* On a phone the numbers keep the width; the bars repeat them. */
 @media (max-width: 600px) { td.barcol, th.barcol { display: none; } }
 tr.sub td:first-child { padding-left: 20px; }
 tr.sub td { border-bottom: none; padding-top: 2px; padding-bottom: 2px; font-size: 12px; }
-th.num, td.num { text-align: right; }
 .chart { display: grid; gap: 4px; }
-.plot { position: relative; height: 120px; }
+.chart-head { min-height: 26px; }
+.plot { position: relative; height: 140px; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
 .plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .plot line.grid { stroke: var(--line); vector-effect: non-scaling-stroke; }
 .plot line.reset { stroke: var(--muted); stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
-.plot path.line { fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.plot path.line { fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .plot path.dashed { stroke-dasharray: 4 3; }
 .plot rect.hit { fill: transparent; }
 .plot rect.hit:hover { fill: var(--track); }
-.reset-label { position: absolute; top: 0; transform: translateX(calc(-100% - 4px)); font-size: 11px; color: var(--muted); pointer-events: none; white-space: nowrap; }
+.reset-label { position: absolute; top: 0; transform: translateX(calc(-100% - 4px)); font: 10.5px var(--mono); color: var(--muted); pointer-events: none; white-space: nowrap; }
 .reset-label.right { transform: translateX(4px); }
 .ticks { display: flex; justify-content: space-between; }
-table.stats th { color: var(--muted); font-weight: normal; }
-table.stats tr.total td { font-size: 17px; font-weight: 600; }
+/* The chart draws one mode at a time; the toggle switches every chart. */
+.mode-cumulative { display: none; }
+.cumulative .mode-cumulative { display: revert; }
+.cumulative .mode-amount { display: none; }
+button.toggle { padding: 2px 10px; font-size: 11.5px; color: var(--muted); }
+button.toggle[aria-pressed=true] { color: var(--bg); background: var(--text); border-color: var(--text); }
+table.stats tr.total td { font-size: 18px; font-weight: 600; }
 .cached { display: block; font-size: 11.5px; }
-.tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-.tile { gap: 2px; }
-.tile strong { font-size: 18px; }
-nav.periods { flex: none; display: flex; gap: 4px; background: var(--track); border-radius: 8px; padding: 2px; }
-nav.periods a { color: var(--muted); text-decoration: none; padding: 3px 10px; border-radius: 6px; font-size: 13px; }
-nav.periods a.active { background: var(--surface); color: var(--text); }
-.notice { margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--warn-soft); }
+/* Cells that share their rules: a 1px gap over the line color. */
+.cells { display: grid; gap: 1px; background: var(--line); padding: 0; }
+.cells > * { background: var(--bg); padding: 20px 24px; }
+.tiles { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.tile { display: grid; gap: 4px; align-content: start; }
+.tile .label { font: 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.tile strong { font: 600 22px var(--mono); }
+.accounts { grid-template-columns: repeat(auto-fit, minmax(min(620px, 100%), 1fr)); }
+nav.periods { flex: none; display: flex; border: 1px solid var(--line); }
+nav.periods a { padding: 4px 12px; font-size: 12px; border: none; margin: 0; }
+nav.periods a + a { border-left: 1px solid var(--line); }
+nav.periods a.active { background: var(--text); color: var(--bg); }
+.notice { background: var(--warn-soft); }
 a { color: var(--accent); }
-.invite input { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 </style>
+<script>
+// Apply the remembered chart mode before the page draws.
+try { if (localStorage.getItem('sharecodex.cumulative') === '1') document.documentElement.classList.add('cumulative') } catch (e) { /* storage blocked: the default mode */ }
+</script>
 </head>
 <body>
+<div class="frame{{if or (eq .Nav "dashboard") (eq .Nav "preview")}} wide{{end}}">
 <header>
   <div class="bar">
     <span class="brand">ShareCodex</span>
@@ -138,6 +179,7 @@ a { color: var(--accent); }
   {{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
   {{template "content" .}}
 </main>
+</div>
 <script>
 // Show times in the viewer's time zone; the server wrote them in its own.
 (function () {
@@ -156,10 +198,27 @@ a { color: var(--accent); }
     if (!format || isNaN(d)) return
     // A chart's hover tip holds its time on the first line.
     var lines = el.textContent.split('\n')
-    lines[0] = format(d)
+    var until = el.getAttribute('data-dt-until')
+    lines[0] = format(d) + (until ? '–' + format(new Date(until)) : '')
     el.textContent = lines.join('\n')
   })
-})()
+})();
+
+// One chart mode for every chart, remembered in this browser when it can be.
+(function () {
+  var root = document.documentElement
+  var show = function () {
+    var on = root.classList.contains('cumulative')
+    document.querySelectorAll('[data-cumulative]').forEach(function (b) { b.setAttribute('aria-pressed', on) })
+  }
+  show()
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('[data-cumulative]')) return
+    var on = root.classList.toggle('cumulative')
+    show()
+    try { localStorage.setItem('sharecodex.cumulative', on ? '1' : '0') } catch (err) { /* not remembered; the page still switches */ }
+  })
+})();
 </script>
 </body>
 </html>

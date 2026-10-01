@@ -22,8 +22,9 @@
         <td class="num muted">{{when .LastSeenAt}}</td>
         <td class="num">{{tokensOf .Month}}</td>
         <td class="num">{{usd .Month.CostUSD}}</td>
-        <td style="text-align:right">
+        <td class="actions">
           <form class="inline" method="post" action="/admin/people/{{.ID}}/invite"><button type="submit">{{$.T.createInvite}}</button></form>
+          <form class="inline" method="post" action="/admin/people/{{.ID}}/delete" onsubmit="return confirm({{$.T.deletePersonConfirm}})"><button class="danger" type="submit">{{$.T.delete}}</button></form>
         </td>
       </tr>
     {{else}}

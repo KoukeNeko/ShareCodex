@@ -118,6 +118,35 @@ func (s *Store) Person(ctx context.Context, id string) (identity.Person, error) 
 	return p, err
 }
 
+// DeletePerson removes a member with their devices, join links and
+// memberships, and everything their devices uploaded: usage, quota readings
+// and sign-ins. Their devices can no longer sync.
+func (s *Store) DeletePerson(ctx context.Context, id string) error {
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		const devices = `SELECT id FROM devices WHERE person_id = $1`
+		for _, q := range []string{
+			`DELETE FROM usage_events WHERE person_id = $1 OR device_id IN (` + devices + `)`,
+			`DELETE FROM quota_snapshots WHERE device_id IN (` + devices + `)`,
+			`DELETE FROM observations WHERE device_id IN (` + devices + `)`,
+			`DELETE FROM invites WHERE person_id = $1 OR device_id IN (` + devices + `)`,
+			`DELETE FROM memberships WHERE person_id = $1`,
+			`DELETE FROM devices WHERE person_id = $1`,
+		} {
+			if _, err := tx.ExecContext(ctx, q, id); err != nil {
+				return fmt.Errorf("delete person's records: %w", err)
+			}
+		}
+		res, err := tx.ExecContext(ctx, `DELETE FROM persons WHERE id = $1`, id)
+		if err != nil {
+			return err
+		}
+		if rowsAffected(res) == 0 {
+			return fmt.Errorf("person %q: %w", id, ErrNotFound)
+		}
+		return nil
+	})
+}
+
 // InviteTTL is how long a join link stays valid.
 const InviteTTL = 24 * time.Hour
 
@@ -464,6 +493,27 @@ func (s *Store) SetShareWeight(ctx context.Context, accountID, personID string, 
 		ON CONFLICT (account_id, person_id) DO UPDATE SET share_weight = excluded.share_weight`,
 		accountID, personID, weight)
 	return err
+}
+
+// DeleteAccount removes an account with everything recorded on it: its
+// usage, quota readings, sign-ins and memberships. A device still signed
+// into it creates it again on its next sync.
+func (s *Store) DeleteAccount(ctx context.Context, id string) error {
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		for _, table := range []string{"usage_events", "quota_snapshots", "observations", "memberships"} {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE account_id = $1`, id); err != nil {
+				return fmt.Errorf("delete account's %s: %w", table, err)
+			}
+		}
+		res, err := tx.ExecContext(ctx, `DELETE FROM accounts WHERE id = $1`, id)
+		if err != nil {
+			return err
+		}
+		if rowsAffected(res) == 0 {
+			return fmt.Errorf("account %q: %w", id, ErrNotFound)
+		}
+		return nil
+	})
 }
 
 type Member struct {

@@ -6,12 +6,12 @@
   </nav>
 </div>
 {{with .Data.Report}}
-<div class="tiles">
-  <div class="card tile"><span class="muted small">{{$.T.totalTokens}}</span><strong class="num">{{tokensOf .Total}}</strong></div>
-  <div class="card tile"><span class="muted small">{{$.T.input}}</span><strong class="num">{{inputOf .Total}}</strong><span class="muted small">{{tf $.T.cachedShare (pct (cachedOf .Total))}}</span></div>
-  <div class="card tile"><span class="muted small">{{$.T.output}}</span><strong class="num">{{tokens .Total.Output}}</strong></div>
-  <div class="card tile"><span class="muted small">{{$.T.estCost}}</span><strong class="num">{{usd .Total.CostUSD}}</strong></div>
-  <div class="card tile"><span class="muted small">{{$.T.requests}}</span><strong class="num">{{.Total.Requests}}</strong></div>
+<div class="cells tiles">
+  <div class="tile"><span class="label">{{$.T.totalTokens}}</span><strong class="num">{{tokensOf .Total}}</strong></div>
+  <div class="tile"><span class="label">{{$.T.input}}</span><strong class="num">{{inputOf .Total}}</strong><span class="muted small">{{tf $.T.cachedShare (pct (cachedOf .Total))}}</span></div>
+  <div class="tile"><span class="label">{{$.T.output}}</span><strong class="num">{{tokens .Total.Output}}</strong></div>
+  <div class="tile"><span class="label">{{$.T.estCost}}</span><strong class="num">{{usd .Total.CostUSD}}</strong></div>
+  <div class="tile"><span class="label">{{$.T.requests}}</span><strong class="num">{{.Total.Requests}}</strong></div>
 </div>
 
 <section class="card">
