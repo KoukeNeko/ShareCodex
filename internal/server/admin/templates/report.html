@@ -1,6 +1,6 @@
 {{define "usagenav"}}
 <nav class="periods" aria-label="{{.T.navUsage}}">
-    {{range .U.Periods}}<a href="{{$.U.Path}}?period={{.ID}}#usage" class="{{if eq .ID $.U.Period}}active{{end}}">{{if .Days}}{{tf $.T.days .Days}}{{else}}{{tf $.T.hours .Hours}}{{end}}</a>{{end}}
+    {{range .U.Periods}}<a href="{{$.U.Path}}?period={{.ID}}" class="{{if eq .ID $.U.Period}}active{{end}}">{{if .Days}}{{tf $.T.days .Days}}{{else}}{{tf $.T.hours .Hours}}{{end}}</a>{{end}}
   </nav>
 {{end}}
 

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{.Title}} · {{if or (eq .Nav "dashboard") (eq .Nav "preview")}}ShareCodex{{else}}{{.T.appTitle}}{{end}}</title>
-{{if or (eq .Nav "dashboard") (eq .Nav "preview")}}<meta http-equiv="refresh" content="60">{{end}}
+<title>{{.Title}} · {{if .Public}}ShareCodex{{else}}{{.T.appTitle}}{{end}}</title>
+{{if .Public}}<meta http-equiv="refresh" content="60">{{end}}
 <style>
 /* Straight lines: square corners, hairline rules between sections instead
    of floating cards, and monospace labels. */
@@ -158,7 +158,7 @@ try { if (localStorage.getItem('sharecodex.cumulative') === '1') document.docume
 </script>
 </head>
 <body>
-<div class="frame{{if or (eq .Nav "dashboard") (eq .Nav "preview")}} wide{{end}}">
+<div class="frame{{if .Public}} wide{{end}}">
 <header>
   <div class="bar">
     <span class="brand">ShareCodex</span>
@@ -171,9 +171,14 @@ try { if (localStorage.getItem('sharecodex.cumulative') === '1') document.docume
       <a href="/admin/devices" class="{{if eq .Nav "devices"}}active{{end}}">{{.T.navDevices}}</a>
       <a href="/admin/settings" class="{{if eq .Nav "settings"}}active{{end}}">{{.T.navSettings}}</a>
     </nav>
+    {{else if .Public}}
+    <nav>
+      <a href="/dashboard" class="{{if eq .Nav "dashboard"}}active{{end}}">{{.T.navOverview}}</a>
+      <a href="/dashboard/usage" class="{{if eq .Nav "dashboardUsage"}}active{{end}}">{{.T.navUsage}}</a>
+    </nav>
     {{else}}<span class="spacer"></span>{{end}}
     <nav class="langs" aria-label="{{.T.language}}">
-      {{range .Languages}}<a href="/admin/lang/{{.ID}}?next={{$.Here}}" class="{{if eq .ID $.Lang}}active{{end}}" lang="{{.ID}}">{{.Label}}</a>{{end}}
+      {{range .Languages}}<a href="/lang/{{.ID}}?next={{$.Here}}" class="{{if eq .ID $.Lang}}active{{end}}" lang="{{.ID}}">{{.Label}}</a>{{end}}
     </nav>
     {{if .Authed}}
     <form class="inline" method="post" action="/admin/logout"><button class="link">{{.T.logout}}</button></form>

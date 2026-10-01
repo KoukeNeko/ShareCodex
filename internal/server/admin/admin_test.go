@@ -42,6 +42,8 @@ func newServer(t *testing.T) (*storage.Store, browser) {
 	}
 	mux.Handle("/admin/", console)
 	mux.Handle("GET /dashboard", console)
+	mux.Handle("GET /dashboard/usage", console)
+	mux.Handle("GET /lang/{lang}", console)
 	mux.Handle("GET /{$}", console)
 	mux.Handle("/", httpapi.New(store, log))
 
@@ -244,7 +246,7 @@ func TestLanguageSwitch(t *testing.T) {
 		t.Fatal("the console must default to English")
 	}
 
-	resp, err := b.c.Get(b.base + "/admin/lang/zh-TW?next=/admin/people")
+	resp, err := b.c.Get(b.base + "/lang/zh-TW?next=/admin/people")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +262,7 @@ func TestLanguageSwitch(t *testing.T) {
 	}
 
 	for _, next := range []string{"https://evil.example/", "//evil.example/admin/", "/elsewhere"} {
-		resp, err := b.c.Get(b.base + "/admin/lang/en?next=" + url.QueryEscape(next))
+		resp, err := b.c.Get(b.base + "/lang/en?next=" + url.QueryEscape(next))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -269,7 +271,7 @@ func TestLanguageSwitch(t *testing.T) {
 			t.Errorf("next=%q redirected to %q, want /admin/", next, loc)
 		}
 	}
-	if st, _ := b.get("/admin/lang/fr"); st != http.StatusNotFound {
+	if st, _ := b.get("/lang/fr"); st != http.StatusNotFound {
 		t.Errorf("unknown language returned %d, want 404", st)
 	}
 }
@@ -342,7 +344,7 @@ func TestPublicDashboard(t *testing.T) {
 	}
 
 	admin.post("/admin/login", url.Values{"password": {password}})
-	if st, page := admin.get("/admin/dashboard"); st != http.StatusOK || !strings.Contains(page, "Preview") {
+	if st, page := admin.get("/dashboard"); st != http.StatusOK || !strings.Contains(page, "Preview") {
 		t.Fatalf("an admin's preview returned %d", st)
 	}
 	if st, _ := admin.post("/admin/settings", url.Values{"public_dashboard": {"on"}}); st != http.StatusSeeOther {
@@ -356,7 +358,7 @@ func TestPublicDashboard(t *testing.T) {
 	if st != http.StatusOK {
 		t.Fatalf("published dashboard returned %d", st)
 	}
-	for _, want := range []string{"alice", "Account 1", "40%", "claude-opus-5-5", "gpt-6-sol", "OCX", "<svg", "Total tokens", "US$"} {
+	for _, want := range []string{"alice", "Account 1", "40%", "claude-opus-5-5", "gpt-6-sol", "OCX", "<svg", `href="/dashboard/usage"`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("dashboard lacks %q", want)
 		}
@@ -367,16 +369,23 @@ func TestPublicDashboard(t *testing.T) {
 		}
 	}
 	// The usage report covers the period asked for, without email addresses.
-	if st, page := visitor.get("/dashboard?period=24h"); st != http.StatusOK || !strings.Contains(page, "4.5K") || strings.Contains(page, "al***@example.com") {
-		t.Errorf("dashboard usage for 24 hours returned %d without alice's tokens, or with an email", st)
+	st, page = visitor.get("/dashboard/usage?period=24h")
+	if st != http.StatusOK || !strings.Contains(page, "4.5K") || !strings.Contains(page, "Account 1") || strings.Contains(page, "al***@example.com") {
+		t.Errorf("dashboard usage for 24 hours returned %d without alice's tokens and the numbered account, or with an email", st)
+	}
+	// Nothing on the public pages leads into /admin.
+	if strings.Contains(page, `href="/admin`) {
+		t.Error("the public usage page links into /admin")
 	}
 	if loc := location(visitor, "/"); loc != "/dashboard" {
 		t.Fatalf("root redirected to %q after publishing, want /dashboard", loc)
 	}
 
 	admin.post("/admin/settings", url.Values{})
-	if st, _ := visitor.get("/dashboard"); st != http.StatusNotFound {
-		t.Fatalf("unpublished again, the dashboard returned %d, want 404", st)
+	for _, path := range []string{"/dashboard", "/dashboard/usage"} {
+		if st, _ := visitor.get(path); st != http.StatusNotFound {
+			t.Fatalf("unpublished again, %s returned %d, want 404", path, st)
+		}
 	}
 }
 

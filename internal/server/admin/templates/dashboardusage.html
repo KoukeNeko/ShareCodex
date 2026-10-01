@@ -1,0 +1,11 @@
+{{define "content"}}
+<div class="row spread">
+  <h1>{{.T.navUsage}}</h1>
+  <div class="row">
+    <span class="muted small">{{tfh .T.updatedAt (when .Data.GeneratedAt)}}</span>
+    {{template "usagenav" (usageOf .Data.Usage .T)}}
+  </div>
+</div>
+{{if .Data.Preview}}<p class="notice">{{.T.previewNote}}</p>{{end}}
+{{template "usagereport" (usageOf .Data.Usage .T)}}
+{{end}}

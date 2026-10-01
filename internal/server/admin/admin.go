@@ -87,7 +87,7 @@ func New(store *storage.Store, log *slog.Logger, cfg Config) (http.Handler, erro
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /admin/lang/{lang}", c.setLang)
+	mux.HandleFunc("GET /lang/{lang}", c.setLang)
 	mux.HandleFunc("GET /admin/login", c.loginPage)
 	mux.HandleFunc("POST /admin/login", c.login)
 	mux.HandleFunc("POST /admin/logout", c.logout)
@@ -107,8 +107,8 @@ func New(store *storage.Store, log *slog.Logger, cfg Config) (http.Handler, erro
 	mux.HandleFunc("GET /admin/settings", c.authed(c.settings))
 	mux.HandleFunc("POST /admin/settings", c.authed(c.saveSettings))
 	mux.HandleFunc("GET /{$}", c.root)
-	mux.HandleFunc("GET /dashboard", c.dashboard)
-	mux.HandleFunc("GET /admin/dashboard", c.authed(c.dashboard))
+	mux.HandleFunc("GET "+dashboardPath, c.dashboard)
+	mux.HandleFunc("GET "+dashboardUsagePath, c.dashboardUsage)
 
 	// Forms post with the session cookie; reject cross-site requests.
 	return http.NewCrossOriginProtection().Handler(mux), nil
@@ -152,7 +152,7 @@ func parsePages() (map[string]*template.Template, error) {
 		"timeText": func(format string, t time.Time) string { return t.Local().Format(timeFormats[format]) },
 	}
 	pages := map[string]*template.Template{}
-	for _, name := range []string{"login", "overview", "people", "accounts", "devices", "usage", "settings", "dashboard"} {
+	for _, name := range []string{"login", "overview", "people", "accounts", "devices", "usage", "settings", "dashboard", "dashboardusage"} {
 		t, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS,
 			"templates/layout.html", "templates/account.html", "templates/report.html", "templates/"+name+".html")
 		if err != nil {
@@ -185,6 +185,8 @@ type page struct {
 	Error  string
 	Data   any
 	Authed bool
+	// Public is a dashboard page, which anyone may see once published.
+	Public bool
 
 	Lang      string
 	T         map[string]string
@@ -196,7 +198,7 @@ type page struct {
 var navPaths = map[string]string{
 	"overview": "/admin/", "usage": "/admin/usage", "people": "/admin/people", "accounts": "/admin/accounts",
 	"devices": "/admin/devices", "settings": "/admin/settings", "dashboard": dashboardPath,
-	"preview": "/admin/dashboard",
+	"dashboardUsage": dashboardUsagePath,
 }
 
 func (c *Console) render(w http.ResponseWriter, r *http.Request, name string, status int, p page) {
@@ -239,9 +241,15 @@ func (c *Console) authed(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// signedIn looks at every session cookie sent: one an earlier version kept
+// under /admin can come along with the current one.
 func (c *Console) signedIn(r *http.Request) bool {
-	cookie, err := r.Cookie(sessionCookie)
-	return err == nil && c.validSession(cookie.Value)
+	for _, cookie := range r.CookiesNamed(sessionCookie) {
+		if c.validSession(cookie.Value) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Console) validSession(id string) bool {
@@ -287,10 +295,12 @@ func (c *Console) login(w http.ResponseWriter, r *http.Request) {
 	c.sessions[id] = now.Add(sessionTTL)
 	c.mu.Unlock()
 
+	// Site-wide, so an admin can preview the dashboard before publishing it.
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Path: "/admin", MaxAge: -1})
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    id,
-		Path:     "/admin",
+		Path:     "/",
 		MaxAge:   int(sessionTTL.Seconds()),
 		HttpOnly: true,
 		Secure:   strings.HasPrefix(c.publicURL, "https://"),
@@ -300,12 +310,13 @@ func (c *Console) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Console) logout(w http.ResponseWriter, r *http.Request) {
-	if cookie, err := r.Cookie(sessionCookie); err == nil {
-		c.mu.Lock()
+	c.mu.Lock()
+	for _, cookie := range r.CookiesNamed(sessionCookie) {
 		delete(c.sessions, cookie.Value)
-		c.mu.Unlock()
 	}
+	c.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Path: "/admin", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Path: "/", MaxAge: -1})
 	http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
 }
 

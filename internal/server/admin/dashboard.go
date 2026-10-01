@@ -16,7 +16,10 @@ import (
 // publishes it: each account's windows, members' names and estimated usage,
 // and models. Email hints and device names stay in the console.
 
-const dashboardPath = "/dashboard"
+const (
+	dashboardPath      = "/dashboard"
+	dashboardUsagePath = "/dashboard/usage"
+)
 
 // dashboardTTL bounds how often anyone opening the dashboard can make the
 // server rebuild the overview.
@@ -72,29 +75,70 @@ func (c *Console) root(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/", http.StatusSeeOther)
 }
 
-type dashboardData struct {
-	Accounts    []accountView
+// Admins see the dashboard before it is published, with a notice.
+type publicData struct {
 	GeneratedAt time.Time
-	// Preview is an admin viewing the dashboard before it is published.
-	Preview bool
-	Usage   usageData
+	Preview     bool
 }
 
-func (c *Console) dashboard(w http.ResponseWriter, r *http.Request) {
+type dashboardData struct {
+	publicData
+	Accounts []accountView
+}
+
+type dashboardUsageData struct {
+	publicData
+	Usage usageData
+}
+
+// publicView gathers what both dashboard pages need: whether the visitor
+// may see them, the cached overview, and the names accounts are published
+// under. ok is false once it has answered the request.
+func (c *Console) publicView(w http.ResponseWriter, r *http.Request) (o syncapi.Overview, names map[string]string, pd publicData, ok bool) {
 	on, err := c.store.PublicDashboard(r.Context())
 	if err != nil {
 		c.fail(w, "read dashboard setting", err)
-		return
+		return o, nil, pd, false
 	}
-	// Admins preview it under /admin, where their session cookie is sent.
-	preview := r.URL.Path != dashboardPath
-	if !on && !preview {
+	if !on && !c.signedIn(r) {
 		http.NotFound(w, r)
-		return
+		return o, nil, pd, false
 	}
-	o, err := c.dash.overview.get(r.Context(), "", c.publicOverview)
+	o, err = c.dash.overview.get(r.Context(), "", c.publicOverview)
 	if err != nil {
 		c.fail(w, "build dashboard", err)
+		return o, nil, pd, false
+	}
+	// Accounts still named by their email are numbered, the same on both
+	// pages.
+	t := dictionaries[requestLang(r)]
+	names = map[string]string{}
+	n := 0
+	for _, a := range o.Accounts {
+		names[a.ID] = a.Label
+		if a.Label == "" {
+			n++
+			names[a.ID] = fmt.Sprintf(t["accountN"], n)
+		}
+	}
+	return o, names, publicData{GeneratedAt: o.GeneratedAt, Preview: !on}, true
+}
+
+func (c *Console) dashboard(w http.ResponseWriter, r *http.Request) {
+	o, names, pd, ok := c.publicView(w, r)
+	if !ok {
+		return
+	}
+	data := dashboardData{publicData: pd, Accounts: accountViews(o, nil, time.Now(), dictionaries[requestLang(r)])}
+	for i, a := range o.Accounts {
+		data.Accounts[i].Label = names[a.ID]
+	}
+	c.render(w, r, "dashboard", http.StatusOK, page{Title: "dashboard", Nav: "dashboard", Public: true, Data: data})
+}
+
+func (c *Console) dashboardUsage(w http.ResponseWriter, r *http.Request) {
+	_, names, pd, ok := c.publicView(w, r)
+	if !ok {
 		return
 	}
 	period := periodOf(r)
@@ -105,38 +149,13 @@ func (c *Console) dashboard(w http.ResponseWriter, r *http.Request) {
 		c.fail(w, "build dashboard usage", err)
 		return
 	}
-
-	t := dictionaries[requestLang(r)]
-	// Accounts still named by their email are numbered, the same in the
-	// cards and the usage report.
-	names := map[string]string{}
-	n := 0
-	for _, a := range o.Accounts {
-		names[a.ID] = a.Label
-		if a.Label == "" {
-			n++
-			names[a.ID] = fmt.Sprintf(t["accountN"], n)
-		}
-	}
-	data := dashboardData{
-		Accounts:    accountViews(o, nil, time.Now(), t),
-		GeneratedAt: o.GeneratedAt,
-		Preview:     !on,
-	}
-	for i, a := range o.Accounts {
-		data.Accounts[i].Label = names[a.ID]
-	}
 	// The cached report is shared, so its account names change on a copy.
 	report.Accounts = slices.Clone(report.Accounts)
 	for i, a := range report.Accounts {
 		report.Accounts[i].Name = names[a.ID]
 	}
-	data.Usage = usageData{Path: r.URL.Path, Period: period.ID, Periods: usagePeriods, Report: report}
-	nav := "dashboard"
-	if preview {
-		nav = "preview"
-	}
-	c.render(w, r, "dashboard", http.StatusOK, page{Title: "dashboard", Nav: nav, Data: data})
+	data := dashboardUsageData{publicData: pd, Usage: usageData{Path: dashboardUsagePath, Period: period.ID, Periods: usagePeriods, Report: report}}
+	c.render(w, r, "dashboardusage", http.StatusOK, page{Title: "navUsage", Nav: "dashboardUsage", Public: true, Data: data})
 }
 
 // publicOverview is the overview without what the dashboard does not

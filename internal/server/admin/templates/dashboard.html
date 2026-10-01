@@ -14,9 +14,4 @@
 {{else}}
 <div class="card"><p class="muted" style="margin:0">{{.T.noAccounts}}</p></div>
 {{end}}
-<div class="row spread" id="usage">
-  <h2>{{.T.navUsage}}</h2>
-  {{template "usagenav" (usageOf .Data.Usage .T)}}
-</div>
-{{template "usagereport" (usageOf .Data.Usage .T)}}
 {{end}}

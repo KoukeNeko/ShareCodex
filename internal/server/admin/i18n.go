@@ -219,7 +219,8 @@ func requestLang(r *http.Request) string {
 }
 
 // setLang stores the chosen language and returns to the page the switch was
-// on. Only console paths and the dashboard are accepted as the destination.
+// on. Only console paths and the dashboard pages are accepted as the
+// destination.
 func (c *Console) setLang(w http.ResponseWriter, r *http.Request) {
 	lang := r.PathValue("lang")
 	if _, ok := dictionaries[lang]; !ok {
@@ -239,7 +240,7 @@ func (c *Console) setLang(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 	next := r.URL.Query().Get("next")
-	if next != dashboardPath && (!strings.HasPrefix(next, "/admin/") || strings.HasPrefix(next, "//") || strings.Contains(next, "\\")) {
+	if next != dashboardPath && next != dashboardUsagePath && (!strings.HasPrefix(next, "/admin/") || strings.HasPrefix(next, "//") || strings.Contains(next, "\\")) {
 		next = "/admin/"
 	}
 	http.Redirect(w, r, next, http.StatusSeeOther)
