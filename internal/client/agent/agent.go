@@ -163,6 +163,7 @@ func New(ctx context.Context, version string, log *slog.Logger) (*Agent, error) 
 		providers: map[account.Provider]*ProviderState{
 			account.ProviderAnthropic: {Provider: account.ProviderAnthropic, Status: StatusNotInstalled},
 			account.ProviderOpenAI:    {Provider: account.ProviderOpenAI, Status: StatusNotInstalled},
+			account.ProviderGoogle:    {Provider: account.ProviderGoogle, Status: StatusNotInstalled},
 		},
 	}
 	if st.Paired() {

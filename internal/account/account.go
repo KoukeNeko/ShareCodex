@@ -15,6 +15,8 @@ type Provider string
 const (
 	ProviderAnthropic Provider = "anthropic"
 	ProviderOpenAI    Provider = "openai"
+	// ProviderGoogle is a Google AI plan, used through Antigravity's CLI.
+	ProviderGoogle Provider = "google"
 )
 
 type Account struct {

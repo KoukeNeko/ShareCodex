@@ -9,6 +9,7 @@ import (
 	"github.com/KoukeNeko/ShareCodex/internal/account"
 	"github.com/KoukeNeko/ShareCodex/internal/provider/anthropic/desktop"
 	claudeidentity "github.com/KoukeNeko/ShareCodex/internal/provider/anthropic/identity"
+	"github.com/KoukeNeko/ShareCodex/internal/provider/google/antigravity"
 	"github.com/KoukeNeko/ShareCodex/internal/provider/openai/codex/appserver"
 )
 
@@ -17,6 +18,7 @@ import (
 func (a *Agent) observeAll(ctx context.Context) {
 	a.observe(ctx, account.ProviderAnthropic)
 	a.observe(ctx, account.ProviderOpenAI)
+	a.observe(ctx, account.ProviderGoogle)
 	a.observeDesktop(ctx)
 }
 
@@ -80,6 +82,8 @@ func (a *Agent) observe(ctx context.Context, p account.Provider) {
 				a.log.Error("save codex rate limits", "err", err)
 			}
 		}
+	case account.ProviderGoogle:
+		o, err = antigravity.Observe()
 	}
 	if errors.Is(err, exec.ErrNotFound) {
 		a.setProvider(p, func(s *ProviderState) { *s = ProviderState{Provider: p, Status: StatusNotInstalled} })

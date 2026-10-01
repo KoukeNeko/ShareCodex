@@ -30,6 +30,9 @@ type accountView struct {
 
 type bucketView struct {
 	Name string
+	// NoQuota is an account's last 5 hours shown for want of a quota
+	// reading: models and chart, without shares of a quota.
+	NoQuota bool
 	// Expired is a window whose last reading has reset: its use is unknown.
 	Expired     bool
 	UsedPercent float64
@@ -92,6 +95,9 @@ func accountViews(o syncapi.Overview, hints map[string]string, now time.Time, t 
 				}
 			}
 			av.Buckets = append(av.Buckets, bv)
+		}
+		if len(a.Buckets) == 0 && a.Usage != nil {
+			av.Buckets = append(av.Buckets, recentView(*a.Usage, now, t))
 		}
 		out = append(out, av)
 	}
@@ -162,6 +168,25 @@ func newBucketView(b syncapi.BucketOverview, now time.Time, t map[string]string)
 	return bv
 }
 
+// recentView shows an account's recent usage in place of its windows; its
+// bars are each model's share of the tokens.
+func recentView(b syncapi.BucketOverview, now time.Time, t map[string]string) bucketView {
+	bv := newBucketView(b, now, t)
+	bv.Name, bv.NoQuota = t["noQuota"], true
+	var all int64
+	for _, m := range append(slices.Clone(bv.Models), bv.ThirdParty...) {
+		all += m.Tokens
+	}
+	for _, list := range [][]modelView{bv.Models, bv.ThirdParty} {
+		for i := range list {
+			if all > 0 {
+				list[i].Bar = float64(list[i].Tokens) / float64(all) * 100
+			}
+		}
+	}
+	return bv
+}
+
 func newModelView(m syncapi.ModelUsage, slot string, bar float64) modelView {
 	name, via, title := modelName(m.Model, m.Gateway)
 	return modelView{ModelUsage: m, Name: name, Via: via, Title: title, Slot: slot, Bar: bar}
@@ -208,8 +233,14 @@ func bucketName(key string, windowMinutes int, t map[string]string) string {
 		return t["weekly"]
 	}
 	// A weekly limit on one model family, such as weekly_fable.
+	// A limit on one model family, such as weekly_fable or
+	// five_hour_gemini.
 	if family := quota.BucketKey(key).ModelFamily(); family != "" {
-		return t["weekly"] + " · " + strings.ToUpper(family[:1]) + family[1:]
+		window := t["weekly"]
+		if strings.HasPrefix(key, string(quota.BucketFiveHour)) {
+			window = t["fiveHour"]
+		}
+		return window + " · " + strings.ToUpper(family[:1]) + family[1:]
 	}
 	if windowMinutes%1440 == 0 && windowMinutes > 0 {
 		return fmt.Sprintf(t["days"], windowMinutes/1440)

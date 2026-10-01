@@ -40,7 +40,7 @@ func TestIngestFileAttributesByAccountTimeline(t *testing.T) {
 	}
 	src := source{
 		provider: account.ProviderAnthropic,
-		parse:    func(*os.File) (parsed, error) { return parsed{events: events}, nil },
+		parse:    func(string) (parsed, error) { return parsed{events: events}, nil },
 	}
 	path := filepath.Join(t.TempDir(), "s.jsonl")
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
@@ -244,7 +244,7 @@ func TestIngestFileCorrectsAttributionForTheOriginalSession(t *testing.T) {
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	src := source{provider: account.ProviderAnthropic, parse: func(*os.File) (parsed, error) { return parsed{events: []usage.Event{e}}, nil }}
+	src := source{provider: account.ProviderAnthropic, parse: func(string) (parsed, error) { return parsed{events: []usage.Event{e}}, nil }}
 	ac := accounts{provider: account.ProviderAnthropic, desktopSeen: true, desktop: map[string]string{"desk": "correct-org"}, since: t0}
 	wrong := account.HashExternalRef(account.ProviderAnthropic, "wrong-org")
 	correct := account.HashExternalRef(account.ProviderAnthropic, "correct-org")
@@ -338,7 +338,7 @@ func TestIngestFileRecordsThirdPartyUsage(t *testing.T) {
 	}
 	src := source{
 		provider: account.ProviderAnthropic,
-		parse:    func(*os.File) (parsed, error) { return parsed{events: events}, nil },
+		parse:    func(string) (parsed, error) { return parsed{events: events}, nil },
 	}
 	path := filepath.Join(t.TempDir(), "s.jsonl")
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
@@ -377,7 +377,7 @@ func TestIngestFileRecordsThirdPartyUsage(t *testing.T) {
 	}
 	third := []usage.Event{{DedupeKey: "desktop-gateway", Provider: account.ProviderAnthropic, Originator: "claude-desktop",
 		Model: "glm-5.3", ThirdParty: true, OccurredAt: later.Add(time.Minute)}}
-	src.parse = func(*os.File) (parsed, error) { return parsed{events: third}, nil }
+	src.parse = func(string) (parsed, error) { return parsed{events: third}, nil }
 	desk := ac
 	desk.desktopSeen, desk.desktop = true, map[string]string{"": "org"}
 	if _, err := a.ingestFile(ctx, src, path, scan.FileState{Size: 1}, desk); err != nil {
@@ -410,7 +410,7 @@ func TestIngestFileBooksOtherProvidersUsageToTheirAccount(t *testing.T) {
 	}
 	src := source{
 		provider: account.ProviderAnthropic,
-		parse:    func(*os.File) (parsed, error) { return parsed{events: events}, nil },
+		parse:    func(string) (parsed, error) { return parsed{events: events}, nil },
 	}
 	path := filepath.Join(t.TempDir(), "s.jsonl")
 	if err := os.WriteFile(path, nil, 0o600); err != nil {

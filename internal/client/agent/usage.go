@@ -6,21 +6,25 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"time"
 
 	"github.com/KoukeNeko/ShareCodex/internal/account"
 	"github.com/KoukeNeko/ShareCodex/internal/client/secret"
 	"github.com/KoukeNeko/ShareCodex/internal/client/storage"
 	"github.com/KoukeNeko/ShareCodex/internal/provider/anthropic/oauthusage"
+	"github.com/KoukeNeko/ShareCodex/internal/provider/google/antigravity"
 	"github.com/KoukeNeko/ShareCodex/internal/quota"
 )
 
 // probeUsage records the rate limits Anthropic reports for the account
-// Claude Code is signed into and for every account signed in to ShareCodex.
+// Claude Code is signed into and for every account signed in to ShareCodex,
+// and the quota Google reports for the account agy is signed into.
 // Claude Desktop runs no statusLine, so usage that only Desktop produces is
 // read here instead, without any session.
 func (a *Agent) probeUsage(ctx context.Context) {
 	covered, recorded := a.probeClaudeCode(ctx)
+	recorded = a.probeAntigravity(ctx) || recorded
 
 	logins, err := a.store.ClaudeLogins(ctx)
 	if err != nil {
@@ -97,6 +101,58 @@ func (a *Agent) probeClaudeCode(ctx context.Context) (string, bool) {
 		return "", false
 	}
 	return ref, true
+}
+
+// probeAntigravity records the quota left in each of Antigravity's pools
+// for the account agy is signed into.
+func (a *Agent) probeAntigravity(ctx context.Context) bool {
+	ac, err := a.loadAccounts(ctx, account.ProviderGoogle)
+	if err != nil {
+		a.log.Error("load Antigravity accounts", "err", err)
+		return false
+	}
+	// The credential is whatever agy is signed into now; see
+	// probeClaudeCode.
+	if time.Since(lastObservedAt(ac.cli)) > time.Minute {
+		a.observe(ctx, account.ProviderGoogle)
+		if ac, err = a.loadAccounts(ctx, account.ProviderGoogle); err != nil {
+			a.log.Error("load Antigravity accounts", "err", err)
+			return false
+		}
+	}
+	if !ac.pooled() {
+		return false
+	}
+	now := time.Now()
+	ref, ok := ac.resolve("", "", now)
+	if !ok {
+		return false
+	}
+	buckets, err := antigravity.Quota(ctx, now)
+	// Not signed in on this computer, or a sign-in agy has yet to renew:
+	// nothing to read until agy runs again.
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, antigravity.ErrExpired) {
+		return false
+	}
+	if err != nil {
+		a.log.Warn("read Antigravity quota", "err", err)
+		return false
+	}
+	if len(buckets) == 0 {
+		return false
+	}
+	err = a.store.AddSnapshot(ctx, quota.Snapshot{
+		AccountRefHash: ref,
+		Provider:       account.ProviderGoogle,
+		ObservedAt:     now,
+		Source:         quota.SourceAntigravity,
+		Buckets:        buckets,
+	})
+	if err != nil {
+		a.log.Error("save Antigravity quota", "err", err)
+		return false
+	}
+	return true
 }
 
 // usagePaused reports whether Anthropic asked for a sign-in's usage not to be

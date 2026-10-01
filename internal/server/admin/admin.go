@@ -810,6 +810,8 @@ func providerName(p string) string {
 		return "Claude"
 	case "openai":
 		return "Codex"
+	case "google":
+		return "Antigravity"
 	}
 	return p
 }

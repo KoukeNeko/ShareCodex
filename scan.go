@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/KoukeNeko/ShareCodex/internal/provider/anthropic/transcript"
+	"github.com/KoukeNeko/ShareCodex/internal/provider/google/antigravity"
 	"github.com/KoukeNeko/ShareCodex/internal/provider/openai/codex/rollout"
 	"github.com/KoukeNeko/ShareCodex/internal/scan"
 	"github.com/KoukeNeko/ShareCodex/internal/usage"
@@ -122,6 +123,18 @@ func parseAll() ([]usage.Event, error) {
 			}
 			events[i].Tokens.Output = max(events[i].Tokens.Output, e.Tokens.Output)
 		}
+	}
+
+	agyFiles, err := antigravity.List(antigravity.Roots())
+	if err != nil {
+		return nil, err
+	}
+	for path := range agyFiles {
+		agyEvents, err := antigravity.Parse(path)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		events = append(events, agyEvents...)
 	}
 	return events, nil
 }

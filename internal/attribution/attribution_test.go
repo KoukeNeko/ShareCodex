@@ -55,6 +55,10 @@ func TestCostWeightsModels(t *testing.T) {
 	if Cost("gpt-5.5-mini", tok) >= Cost("gpt-5.5", tok) {
 		t.Error("mini should weigh less than the full model")
 	}
+	// "gemini" contains "mini"; Gemini must not be priced as a mini model.
+	if Cost("gemini-3.1-pro", tok) <= Cost("gemini-3.8-flash", tok) || Cost("gemini-3.8-flash", tok) == Cost("gpt-5.5-mini", tok) {
+		t.Error("Gemini Pro should weigh more than Flash, and Flash is not a mini model")
+	}
 	if Cost("unknown", tok) == 0 {
 		t.Error("unknown models need a default weight")
 	}

@@ -12,15 +12,17 @@
   </div>
   {{end}}
   {{if not .Buckets}}<p class="muted" style="margin:0">{{$T.noQuota}}</p>{{end}}
-  {{range .Buckets}}
+  {{range $b := .Buckets}}
   <div class="bucket stack">
     <div class="row spread">
       <strong>{{.Name}}</strong>
-      <span class="num"><strong>{{if .Expired}}—{{else}}{{pct .UsedPercent}}{{end}}</strong>
-        <span class="muted small">{{if .Expired}}{{$T.reset}}{{else if .ResetsAt}}{{tfh $T.resetsAt (when .ResetsAt)}}{{end}}</span></span>
+      {{if not .NoQuota}}<span class="num"><strong>{{if .Expired}}—{{else}}{{pct .UsedPercent}}{{end}}</strong>
+        <span class="muted small">{{if .Expired}}{{$T.reset}}{{else if .ResetsAt}}{{tfh $T.resetsAt (when .ResetsAt)}}{{end}}</span></span>{{end}}
     </div>
+    {{if not .NoQuota}}
     {{if not .Expired}}<div class="meter"><i class="{{.Tone}}" style="width:{{width .UsedPercent}}"></i></div>{{end}}
     {{if $admin}}<p class="muted small" style="margin:0">{{tfh $T.updatedAt (when .ObservedAt)}}</p>{{end}}
+    {{end}}
 
     <div class="bucket-body{{if not .Expired}} split{{end}}">
     {{with .Chart}}
@@ -49,6 +51,7 @@
 
     {{if not .Expired}}
     <div class="bucket-lists stack">
+    {{if not .NoQuota}}
     <div class="table-wrap"><table class="small">
       <thead><tr><th>{{$T.member}}</th><th class="num">{{$T.estimatedUsage}}</th><th class="num">{{$T.allotted}}</th><th class="barcol"></th></tr></thead>
       <tbody>
@@ -72,15 +75,16 @@
       {{end}}
       </tbody>
     </table></div>
+    {{end}}
 
     {{if .Models}}
     <div class="table-wrap"><table class="small">
-      <thead><tr><th>{{$T.model}}</th><th class="num">{{$T.requests}}</th><th class="num">{{$T.tokens}}</th><th class="num">{{$T.estimatedUsage}}</th><th class="barcol"></th></tr></thead>
+      <thead><tr><th>{{$T.model}}</th><th class="num">{{$T.requests}}</th><th class="num">{{$T.tokens}}</th><th class="num">{{if not $b.NoQuota}}{{$T.estimatedUsage}}{{end}}</th><th class="barcol"></th></tr></thead>
       <tbody>
       {{range .Models}}
         <tr>
           <td title="{{.Title}}"><i class="swatch c{{.Slot}}"></i>{{.Name}}{{if .Via}} <span class="via">{{.Via}}</span>{{end}}</td>
-          <td class="num">{{.Requests}}</td><td class="num">{{tokens .Tokens}}</td><td class="num">{{pct .UsedPercent}}</td>
+          <td class="num">{{.Requests}}</td><td class="num">{{tokens .Tokens}}</td><td class="num">{{if not $b.NoQuota}}{{pct .UsedPercent}}{{end}}</td>
           <td class="barcol"><div class="meter thin"><i class="seg c{{.Slot}}" style="width:{{width .Bar}}"></i></div></td>
         </tr>
       {{end}}

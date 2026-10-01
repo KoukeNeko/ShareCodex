@@ -37,9 +37,11 @@ Linux machines such as ones used over SSH. It reads the Claude Code and Codex lo
 computer, asks the official CLIs which account is signed in, and syncs
 token counts to a server you host yourself.
 
-Only coding-agent usage counts: Claude Code (including Claude Desktop's Code tab and Cowork), and
-the Codex CLI, desktop app and IDE extension. Chat in Claude Desktop or on the web, and ChatGPT web
-chat, is not tracked.
+Only coding-agent usage counts: Claude Code (including Claude Desktop's Code tab and Cowork), the
+Codex CLI, desktop app and IDE extension, and Antigravity's CLI (`agy`). Chat in Claude Desktop or on
+the web, ChatGPT web chat, and the Antigravity IDE, which encrypts its conversations, are not
+tracked. Antigravity accounts show their 5-hour Gemini and Claude quotas, or their recent usage
+until a quota reading arrives.
 
 ## See it in action
 
@@ -165,10 +167,11 @@ until turned on under **Settings**.
 - Claude Code's own sign-in is read — from the macOS Keychain, or from `.credentials.json` where
   there is none — and used for one thing: asking Anthropic for that account's rate limits. Accounts
   you add under **Claude quota** get ShareCodex's own sign-in, kept in the OS credential store (an
-  owner-only file on Linux) and used the same way. No token is ever uploaded, logged, or written to
-  the ledger. Everything else about identity comes from
-  `claude auth status`, Codex's own app server, and the folder names of Claude Desktop's Claude Code
-  sessions.
+  owner-only file on Linux) and used the same way. `agy`'s sign-in is read from the OS credential
+  store to ask Google for that account's quotas; it is never refreshed, and macOS asks before the
+  first read. No token is ever uploaded, logged, or written to the ledger. Everything else about identity comes from
+  `claude auth status`, Codex's own app server, the folder names of Claude Desktop's Claude Code
+  sessions, and the active account in `~/.gemini/google_accounts.json` for `agy`.
 - The server is yours. There is no third-party service, analytics or tracking.
 
 ## Getting started
@@ -227,7 +230,7 @@ is published, `PUBLIC_URL` itself opens it instead of the console.
 - **Desktop:** macOS (Apple silicon and Intel) and Windows (x64 and ARM64)
 - **Command line:** Linux (x64 and ARM64), including machines used only over SSH
 - **Agents:** Claude Code with a Claude Pro/Max subscription; Codex CLI, desktop app and IDE extension
-  with a ChatGPT subscription
+  with a ChatGPT subscription; Antigravity's CLI (`agy`) with a Google account
 - **Server:** any Docker host, linux/amd64 or linux/arm64
 - **Interface:** Traditional Chinese
 

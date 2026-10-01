@@ -38,7 +38,7 @@ func (a *Agent) State(ctx context.Context) State {
 	for _, w := range a.settings.Widgets {
 		st.Pinned = append(st.Pinned, w.AccountID)
 	}
-	for _, p := range []account.Provider{account.ProviderAnthropic, account.ProviderOpenAI} {
+	for _, p := range []account.Provider{account.ProviderAnthropic, account.ProviderOpenAI, account.ProviderGoogle} {
 		st.Providers = append(st.Providers, *a.providers[p])
 	}
 	a.mu.Unlock()

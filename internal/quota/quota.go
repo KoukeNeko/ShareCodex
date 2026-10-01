@@ -18,19 +18,51 @@ const (
 	BucketWeekly   BucketKey = "weekly"
 )
 
-// weeklyModelPrefix starts the key of a weekly limit on one model family,
-// such as Claude's "weekly_fable" beside the all-models "weekly".
-const weeklyModelPrefix = "weekly_"
+// weeklyModelPrefix and fiveHourModelPrefix start the key of a limit on one
+// model family, such as Claude's "weekly_fable" beside the all-models
+// "weekly", or Antigravity's 5-hour "five_hour_gemini" and
+// "five_hour_claude".
+const (
+	weeklyModelPrefix   = "weekly_"
+	fiveHourModelPrefix = "five_hour_"
+)
 
 // WeeklyModelBucket is the key of the weekly limit on one model family.
 func WeeklyModelBucket(family string) BucketKey {
 	return BucketKey(weeklyModelPrefix + strings.ToLower(family))
 }
 
+// FiveHourModelBucket is the key of the 5-hour limit on one model family.
+func FiveHourModelBucket(family string) BucketKey {
+	return BucketKey(fiveHourModelPrefix + strings.ToLower(family))
+}
+
+// sharedFamilies lists the models outside a family's own name that draw on
+// its limit: Antigravity serves GPT-OSS from its Claude pool.
+var sharedFamilies = map[string][]string{"claude": {"gpt-oss-"}}
+
+// InFamily reports whether a model draws on a model family's limit:
+// claude-fable-5-1 on Claude's "fable", gemini-3.8-flash on Antigravity's
+// "gemini", and claude-sonnet-4-6 and gpt-oss-120b on its "claude".
+func InFamily(model, family string) bool {
+	if strings.HasPrefix(model, "claude-"+family+"-") || strings.HasPrefix(model, family+"-") {
+		return true
+	}
+	for _, prefix := range sharedFamilies[family] {
+		if strings.HasPrefix(model, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // ModelFamily is the model family a bucket limits, such as "fable", or ""
 // for a limit on all models.
 func (k BucketKey) ModelFamily() string {
 	family, ok := strings.CutPrefix(string(k), weeklyModelPrefix)
+	if !ok {
+		family, ok = strings.CutPrefix(string(k), fiveHourModelPrefix)
+	}
 	if !ok {
 		return ""
 	}
@@ -48,6 +80,9 @@ const (
 	// it needs no session, so it also reports usage that only Claude Desktop
 	// produces.
 	SourceClaudeOAuthUsage Source = "claude-oauth-usage"
+	// SourceAntigravity is the quota Google reports for the account
+	// Antigravity's CLI is signed into, read with its credential.
+	SourceAntigravity Source = "antigravity"
 )
 
 // Window lengths of the rate limits Claude reports. Codex reports each

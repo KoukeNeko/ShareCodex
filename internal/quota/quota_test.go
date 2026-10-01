@@ -86,3 +86,26 @@ func TestLatestTrustsCurrentReadingsOverStaleStatusLine(t *testing.T) {
 		t.Errorf("a late statusLine reading of the old window = %v, want 2", got)
 	}
 }
+
+func TestInFamily(t *testing.T) {
+	for _, tt := range []struct {
+		model, family string
+		want          bool
+	}{
+		{"claude-fable-5-1", "fable", true},
+		{"claude-fable-5", "fable", true},
+		{"claude-opus-5-5", "fable", false},
+		{"ocx-claude-fable-x", "fable", false},
+		// Antigravity's pools: Gemini models in one, other vendors' in another.
+		{"gemini-3.8-flash", "gemini", true},
+		{"claude-sonnet-4-6", "claude", true},
+		{"gpt-oss-120b-medium", "claude", true},
+		{"gemini-3.8-flash", "claude", false},
+		{"claude-sonnet-4-6", "gemini", false},
+		{"gpt-oss-120b-medium", "gemini", false},
+	} {
+		if got := InFamily(tt.model, tt.family); got != tt.want {
+			t.Errorf("InFamily(%q, %q) = %v, want %v", tt.model, tt.family, got, tt.want)
+		}
+	}
+}

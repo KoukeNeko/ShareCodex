@@ -12,8 +12,9 @@ import (
 type Product string
 
 const (
-	ProductClaudeCode Product = "claude-code"
-	ProductCodex      Product = "codex"
+	ProductClaudeCode  Product = "claude-code"
+	ProductCodex       Product = "codex"
+	ProductAntigravity Product = "antigravity"
 )
 
 // Tokens uses one convention across providers: Input excludes cached input,

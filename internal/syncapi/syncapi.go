@@ -161,6 +161,10 @@ type AccountOverview struct {
 	// ActiveUsers are the people whose CLI is signed into this account right
 	// now, the viewer first.
 	ActiveUsers []ActiveUser `json:"active_users"`
+	// Usage is the last 5 hours of an account with no quota reading yet,
+	// shown in place of its windows: models, members and chart, without
+	// any share of a quota (every UsedPercent is 0).
+	Usage *BucketOverview `json:"usage,omitempty"`
 }
 
 // ActiveUser is one person signed into an account, with the devices they

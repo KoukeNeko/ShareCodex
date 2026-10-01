@@ -35,8 +35,10 @@ ShareCodex 補上其餘的部分——**每個 5 小時與每週額度還剩多�
 使用的主機）則執行命令列 agent。它讀取電腦上原本就有的
 Claude Code 與 Codex 紀錄，透過官方 CLI 確認目前登入的帳號，再把 token 用量同步到你自架的 server。
 
-只計算 coding agent 的用量：Claude Code（包含 Claude Desktop 的 Code 分頁與 Cowork），以及 Codex CLI、
-桌面 app 與 IDE 擴充功能。不計算 Claude Desktop 或網頁版的聊天，也不計算 ChatGPT 網頁聊天。
+只計算 coding agent 的用量：Claude Code（包含 Claude Desktop 的 Code 分頁與 Cowork）、Codex CLI、
+桌面 app 與 IDE 擴充功能，以及 Antigravity 的 CLI（`agy`）。不計算 Claude Desktop 或網頁版的聊天、
+ChatGPT 網頁聊天，也不計算對話內容經過加密的 Antigravity IDE。Antigravity 帳號顯示 Gemini 與 Claude 的
+5 小時額度，讀到額度前改顯示近期用量。
 
 ## 實際畫面
 
@@ -141,9 +143,11 @@ admin 可以在 `/dashboard` 公開唯讀儀表板：每個帳號的額度視窗
 - 帳號以單向雜湊識別；server 只保留遮罩過的 email（例如 `al***@example.com`），讓 admin 分辨是哪個帳號。
 - 會讀取 Claude Code 自己的登入資訊（macOS 從 Keychain，其他平台從 `.credentials.json`），只用來向
   Anthropic 查詢該帳號的額度。在 **Claude 額度** 新增的帳號使用 ShareCodex 自己的登入，存放在系統的
-  憑證儲存區（Linux 為僅限擁有者讀取的檔案），用途相同。任何 token 都不會上傳、不會寫進 log，
-  也不會寫入帳本。其他帳號身分來自 `claude auth status`、Codex 自己的 app server，以及 Claude
-  Desktop 存放 Claude Code session 的資料夾名稱。
+  憑證儲存區（Linux 為僅限擁有者讀取的檔案），用途相同。`agy` 的登入資訊從系統憑證儲存區讀取，只用來向
+  Google 查詢該帳號的額度，不會刷新；macOS 第一次讀取前會先詢問。任何 token 都不會上傳、不會寫進 log，
+  也不會寫入帳本。其他帳號身分來自 `claude auth status`、Codex 自己的 app server、Claude
+  Desktop 存放 Claude Code session 的資料夾名稱，以及 `agy` 使用的 `~/.gemini/google_accounts.json`
+  中目前啟用的帳號。
 - server 由你自己架設，沒有第三方服務、分析或追蹤。
 
 ## 開始使用
@@ -194,7 +198,8 @@ docker compose up -d
 
 - **桌面：** macOS（Apple silicon 與 Intel）與 Windows（x64 與 ARM64）
 - **命令列：** Linux（x64 與 ARM64），包含只能透過 SSH 使用的主機
-- **Agent：** 使用 Claude Pro／Max 訂閱的 Claude Code；使用 ChatGPT 訂閱的 Codex CLI、桌面 app 與 IDE 擴充功能
+- **Agent：** 使用 Claude Pro／Max 訂閱的 Claude Code；使用 ChatGPT 訂閱的 Codex CLI、桌面 app 與 IDE 擴充功能；
+  使用 Google 帳號的 Antigravity CLI（`agy`）
 - **Server：** 任何 Docker 主機，linux/amd64 或 linux/arm64
 - **介面語言：** 繁體中文
 

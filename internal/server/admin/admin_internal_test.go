@@ -52,6 +52,9 @@ func TestBucketNameOfAModelFamily(t *testing.T) {
 	if got := bucketName("weekly_fable", 10080, en); got != "Weekly · Fable" {
 		t.Errorf("weekly_fable = %q, want Weekly · Fable", got)
 	}
+	if got := bucketName("five_hour_gemini", 300, en); got != "5 hours · Gemini" {
+		t.Errorf("five_hour_gemini = %q, want 5 hours · Gemini", got)
+	}
 	if got := bucketName("other", 120, en); got != "2 hours" {
 		t.Errorf("a 2-hour window = %q", got)
 	}
@@ -116,5 +119,24 @@ func TestChartWithoutUsage(t *testing.T) {
 	c := newChart(syncapi.Timeline{Start: start, BinMinutes: 1, Bins: 300}, nil, nil, start.Add(time.Hour))
 	if c == nil || c.Amount.Top != 0 || c.Cumulative.Top != 0 || len(c.Amount.Lines) != 0 || len(c.Ticks) != 3 {
 		t.Fatalf("chart = %+v, want an empty chart with its axis", c)
+	}
+}
+
+func TestAccountWithoutQuotaShowsRecentUsage(t *testing.T) {
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	o := syncapi.Overview{Accounts: []syncapi.AccountOverview{{ID: "a", Provider: "google", Usage: &syncapi.BucketOverview{
+		Key: "five_hour", WindowMinutes: 300,
+		Models: []syncapi.ModelUsage{{Model: "gemini-3-pro", Requests: 2, Tokens: 300}, {Model: "gemini-3-flash", Requests: 1, Tokens: 100}},
+	}}}}
+	views := accountViews(o, nil, now, dictionaries[defaultLang])
+	if len(views) != 1 || len(views[0].Buckets) != 1 {
+		t.Fatalf("views = %+v, want one account with its recent usage", views)
+	}
+	b := views[0].Buckets[0]
+	if !b.NoQuota || b.Name != dictionaries[defaultLang]["noQuota"] {
+		t.Fatalf("bucket = %q, NoQuota %v", b.Name, b.NoQuota)
+	}
+	if b.Models[0].Bar != 75 || b.Models[1].Bar != 25 {
+		t.Fatalf("bars = %v, %v, want shares of the tokens", b.Models[0].Bar, b.Models[1].Bar)
 	}
 }

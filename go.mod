@@ -8,6 +8,7 @@ require (
 	github.com/wailsapp/wails/v3 v3.0.0-beta.25
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/sys v0.47.0
+	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.59.0
 )
 

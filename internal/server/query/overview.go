@@ -5,7 +5,6 @@ import (
 	"context"
 	"slices"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/KoukeNeko/ShareCodex/internal/attribution"
@@ -73,7 +72,7 @@ func Overview(ctx context.Context, st *storage.Store, viewerPersonID string, now
 			// used only by that family's requests.
 			family := b.Key.ModelFamily()
 			if family != "" {
-				rows = slices.DeleteFunc(rows, func(r storage.UsageRow) bool { return !inFamily(r.Model, family) })
+				rows = slices.DeleteFunc(rows, func(r storage.UsageRow) bool { return !quota.InFamily(r.Model, family) })
 			}
 			bo := bucketOverview(b, now, members, rows, viewerPersonID)
 			if family == "" {
@@ -87,6 +86,11 @@ func Overview(ctx context.Context, st *storage.Store, viewerPersonID string, now
 				return syncapi.Overview{}, err
 			}
 			ao.Buckets = append(ao.Buckets, bo)
+		}
+		if len(ao.Buckets) == 0 {
+			if ao.Usage, err = recentUsage(ctx, st, a.ID, members, viewerPersonID, now); err != nil {
+				return syncapi.Overview{}, err
+			}
 		}
 		out.Accounts = append(out.Accounts, ao)
 	}
@@ -246,7 +250,7 @@ func timeline(ctx context.Context, st *storage.Store, accountID string, b quota.
 	tl := &syncapi.Timeline{Start: start.UTC(), BinMinutes: bin, Bins: bins, Points: []syncapi.TimelinePoint{}, Resets: resets}
 	family := b.Key.ModelFamily()
 	for _, r := range rows {
-		if family != "" && (r.ThirdParty || !inFamily(r.Model, family)) {
+		if family != "" && (r.ThirdParty || !quota.InFamily(r.Model, family)) {
 			continue
 		}
 		tl.Points = append(tl.Points, syncapi.TimelinePoint{Bin: r.Bin, PersonID: r.PersonID, Model: r.Model, ThirdParty: r.ThirdParty,
@@ -255,10 +259,28 @@ func timeline(ctx context.Context, st *storage.Store, accountID string, b quota.
 	return tl, nil
 }
 
-// inFamily reports whether a model belongs to a family, such as
-// claude-fable-5-1 to "fable".
-func inFamily(model, family string) bool {
-	return strings.HasPrefix(model, "claude-"+family+"-")
+// recentUsage is the last 5 hours of an account no quota reading is known
+// for: its models, members and chart as a window would show them, without
+// any share of a quota. It is nil when the account was not used.
+func recentUsage(ctx context.Context, st *storage.Store, accountID string, members []storage.Member, viewer string, now time.Time) (*syncapi.BucketOverview, error) {
+	window := quota.FiveHourMinutes
+	b := quota.Observed{Bucket: quota.Bucket{WindowMinutes: &window}, ObservedAt: now}
+	start, end := b.Window(now)
+	rows, err := st.Usage(ctx, accountID, start, end)
+	if err != nil {
+		return nil, err
+	}
+	bo := bucketOverview(b, now, members, rows, viewer)
+	if bo.ThirdPartyModels, err = thirdPartyModels(ctx, st, accountID, bo, start, end); err != nil {
+		return nil, err
+	}
+	if len(bo.Models) == 0 && len(bo.ThirdPartyModels) == 0 {
+		return nil, nil
+	}
+	if bo.Timeline, err = timeline(ctx, st, accountID, b, nil, now); err != nil {
+		return nil, err
+	}
+	return &bo, nil
 }
 
 // thirdPartyModels lists the window's third-party models, most tokens first;

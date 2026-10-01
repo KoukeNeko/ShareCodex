@@ -11,6 +11,7 @@ import (
 	"github.com/KoukeNeko/ShareCodex/internal/provider/anthropic/desktop"
 	"github.com/KoukeNeko/ShareCodex/internal/provider/anthropic/statusline"
 	"github.com/KoukeNeko/ShareCodex/internal/provider/anthropic/transcript"
+	"github.com/KoukeNeko/ShareCodex/internal/provider/google/antigravity"
 	"github.com/KoukeNeko/ShareCodex/internal/provider/openai/codex/rollout"
 	"github.com/KoukeNeko/ShareCodex/internal/provider/opencodex"
 	"github.com/KoukeNeko/ShareCodex/internal/quota"
@@ -27,18 +28,39 @@ type parsed struct {
 type source struct {
 	provider account.Provider
 	roots    func() []string
-	parse    func(*os.File) (parsed, error)
+	// list finds the session files under roots.
+	list  func([]string) (map[string]scan.FileState, error)
+	parse func(path string) (parsed, error)
 }
 
 var sources = []source{
-	{account.ProviderAnthropic, claudeRoots, func(f *os.File) (parsed, error) {
-		r, err := transcript.Parse(f)
-		return parsed{events: r.Events, badLines: r.BadLines}, err
+	{account.ProviderAnthropic, claudeRoots, scan.List, func(path string) (parsed, error) {
+		return parseFile(path, func(f *os.File) (parsed, error) {
+			r, err := transcript.Parse(f)
+			return parsed{events: r.Events, badLines: r.BadLines}, err
+		})
 	}},
-	{account.ProviderOpenAI, rollout.Roots, func(f *os.File) (parsed, error) {
-		r, err := rollout.Parse(f)
-		return parsed{events: r.Events, snapshots: r.Snapshots, badLines: r.BadLines}, err
+	{account.ProviderOpenAI, rollout.Roots, scan.List, func(path string) (parsed, error) {
+		return parseFile(path, func(f *os.File) (parsed, error) {
+			r, err := rollout.Parse(f)
+			return parsed{events: r.Events, snapshots: r.Snapshots, badLines: r.BadLines}, err
+		})
 	}},
+	// agy keeps each conversation in a SQLite database rather than a log.
+	{account.ProviderGoogle, antigravity.Roots, antigravity.List, func(path string) (parsed, error) {
+		events, err := antigravity.Parse(path)
+		return parsed{events: events}, err
+	}},
+}
+
+// parseFile opens a session log for a parser that reads it as a stream.
+func parseFile(path string, parse func(*os.File) (parsed, error)) (parsed, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return parsed{}, err
+	}
+	defer f.Close()
+	return parse(f)
 }
 
 func (a *Agent) scanAll(ctx context.Context) {
@@ -175,7 +197,7 @@ func (a *Agent) scanSource(ctx context.Context, src source, known map[string]sca
 	if !ac.pooled() {
 		return 0, nil
 	}
-	current, err := scan.List(src.roots())
+	current, err := src.list(src.roots())
 	if err != nil {
 		return 0, fmt.Errorf("list session logs: %w", err)
 	}
@@ -232,12 +254,7 @@ func (a *Agent) scanSource(ctx context.Context, src source, known map[string]sca
 }
 
 func (a *Agent) ingestFile(ctx context.Context, src source, path string, st scan.FileState, ac accounts) (int, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return 0, fmt.Errorf("open %s: %w", path, err)
-	}
-	res, err := src.parse(f)
-	f.Close()
+	res, err := src.parse(path)
 	if err != nil {
 		return 0, fmt.Errorf("parse %s: %w", path, err)
 	}

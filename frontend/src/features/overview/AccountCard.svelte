@@ -5,12 +5,14 @@
   import { bucketName, bucketTab, modelName, percent, providerName, resetsIn, tokens } from '../../lib/format'
   import { t } from '../../lib/i18n.svelte'
 
-  let { id = '', provider, label, planType, buckets, activeUsers, now, local = false, fineChart = false, onGrip, pinned = false, onPin, onClose }: {
+  let { id = '', provider, label, planType, buckets, usage, activeUsers, now, local = false, fineChart = false, onGrip, pinned = false, onPin, onClose }: {
     id?: string
     provider: string
     label: string
     planType: string
     buckets: BucketOverview[]
+    // An account with no quota reading shows its last 5 hours instead.
+    usage?: BucketOverview | null
     activeUsers: ActiveUser[]
     now: Date
     local?: boolean
@@ -31,7 +33,11 @@
   const widget = $derived(!!onClose)
 
   let selected = $state(0)
-  const bucket = $derived(buckets[Math.min(selected, buckets.length - 1)])
+  const noQuota = $derived(buckets.length === 0)
+  // Antigravity's quotas are pools of models rather than time windows; its
+  // switch sits beside the provider's name.
+  const poolSwitch = $derived(provider === 'google' && buckets.length > 1)
+  const bucket = $derived(noQuota ? usage : buckets[Math.min(selected, buckets.length - 1)])
   const expired = $derived(bucket?.reset || (bucket?.resets_at && new Date(bucket.resets_at) <= now))
 
   function tone(used: number): 'accent' | 'warn' | 'danger' {
@@ -69,7 +75,14 @@
   // window's own models used per token, so a few million tokens read as
   // small beside a billion. Without official usage there is no scale to
   // borrow, and a bar is its share of the third-party tokens instead.
+  // Without a quota, bars are each model's share of the window's tokens.
+  function tokenShare(tokensUsed: number): number {
+    const all = [...(bucket?.models ?? []), ...(bucket?.third_party_models ?? [])].reduce((sum, m) => sum + m.tokens, 0)
+    return all ? (tokensUsed / all) * 100 : 0
+  }
+
   function thirdPartyBar(tokensUsed: number): number {
+    if (noQuota) return tokenShare(tokensUsed)
     const models = bucket?.models ?? []
     const officialTokens = models.reduce((sum, m) => sum + m.tokens, 0)
     const officialPercent = models.reduce((sum, m) => sum + m.used_percent, 0)
@@ -95,6 +108,15 @@
       </button>
     {/if}
     <span class="provider">{providerName(provider)}</span>
+    {#if poolSwitch}
+      <div class="tabs pools" role="tablist">
+        {#each buckets as b, i (b.key)}
+          <button role="tab" aria-selected={i === selected} class:active={i === selected} onclick={() => (selected = i)}>
+            {bucketTab(b.key, b.window_minutes)}
+          </button>
+        {/each}
+      </div>
+    {/if}
     <span class="label">{label}</span>
     {#if planType}<span class="plan">{planType}</span>{/if}
     {#if onClose}
@@ -121,10 +143,9 @@
     </div>
   {/if}
 
-  {#if buckets.length === 0}
-    <p class="muted empty">{t('noQuota')}</p>
-  {:else}
-    {#if buckets.length > 1}
+  {#if noQuota}<p class="muted empty">{t('noQuota')}</p>{/if}
+  {#if bucket}
+    {#if buckets.length > 1 && !poolSwitch}
       <div class="tabs" role="tablist">
         {#each buckets as b, i (b.key)}
           <button role="tab" aria-selected={i === selected} class:active={i === selected} onclick={() => (selected = i)}>
@@ -148,16 +169,19 @@
       />
     {/if}
 
+    {#if !noQuota}
     <div class="total">
       <div class="row">
-        <span>{buckets.length === 1 ? bucketName(bucket.key, bucket.window_minutes) : t('account')}</span>
+        <span>{buckets.length === 1 || poolSwitch ? bucketName(bucket.key, bucket.window_minutes) : t('account')}</span>
         <span class="num strong">{expired ? '—' : percent(bucket.used_percent)}</span>
       </div>
       {#if !expired}<QuotaBar value={bucket.used_percent} tone={tone(bucket.used_percent)} />{/if}
       <div class="muted small">{expired ? t('reset') : resetsIn(bucket.resets_at, now)}</div>
     </div>
+    {/if}
 
     {#if !local && !expired}
+      {#if !noQuota}
       <ul class="members">
         {#each bucket.members ?? [] as m (m.person_id)}
           {@const over = m.used_percent > m.allotted_percent + 0.5}
@@ -196,6 +220,7 @@
           </li>
         {/if}
       </ul>
+      {/if}
 
       {#if (bucket.models ?? []).length > 0}
         <ul class="models">
@@ -205,9 +230,13 @@
             <li>
               <div class="row">
                 <span class="model" title={shown.title}><i class="swatch" style:background={modelColor.get(modelKey(model.model, model.gateway))}></i><span class="model-name">{shown.name}</span>{#if shown.via}<span class="via">{shown.via}</span>{/if}</span>
-                <span class="num usage"><span class="muted">{t('tokens', { count: tokens(model.tokens) })}</span>{t('estimated', { percent: percent(model.used_percent) })}</span>
+                <span class="num usage"><span class="muted">{t('tokens', { count: tokens(model.tokens) })}</span>{#if !noQuota}{t('estimated', { percent: percent(model.used_percent) })}{/if}</span>
               </div>
-              <QuotaBar value={model.used_percent} segments={segmentsFor([model])} thin />
+              {#if noQuota}
+                <QuotaBar value={tokenShare(model.tokens)} segments={[{ value: tokenShare(model.tokens), color: modelColor.get(modelKey(model.model, model.gateway)) ?? 'var(--model-other)', label: model.model }]} thin />
+              {:else}
+                <QuotaBar value={model.used_percent} segments={segmentsFor([model])} thin />
+              {/if}
             </li>
           {/each}
         </ul>
@@ -285,6 +314,8 @@
     gap: 6px;
     white-space: nowrap;
   }
+  .tabs.pools { flex: none; align-self: center; border-radius: 6px; }
+  .tabs.pools button { flex: none; padding: 1px 8px; border-radius: 4px; font-size: 11.5px; }
   .tabs button.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
   .total { display: grid; gap: 5px; }
   .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
