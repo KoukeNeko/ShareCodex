@@ -125,7 +125,16 @@ login, refreshes when you open it, and never opens a terminal window.
 ### Admin in the browser
 
 Members, join links, account names, allotment weights and devices are all managed at `/admin/` on
-your server. No shell access to the container is needed.
+your server. No shell access to the container is needed. The console shows everything the popup
+does for every member, plus everyone's usage over 24 hours, 7 days or 30 days by member, account and
+model.
+
+### A dashboard anyone can open
+
+An admin can publish a read-only dashboard at `/dashboard`: each account's windows, usage chart,
+members' estimated usage and models, refreshed every minute. It leaves out email addresses and
+device names; an account still named by its email shows as Account 1, Account 2 and so on. It is off
+until turned on under **Settings**.
 
 ## Privacy by design
 
@@ -184,12 +193,15 @@ Then open `PUBLIC_URL/admin/` and sign in with `ADMIN_PASSWORD`:
 
 | Page | What you do there |
 |---|---|
-| Overview | Every account's windows, each member's allotment and estimated usage, and usage by model |
-| Members | Add members and create single-use join links |
+| Overview | Everyone's usage over 24 hours and 30 days; every account's windows with who is signed in, a usage chart, each member's allotment and estimated usage by device, and usage by model, including third-party models |
+| Usage | Tokens, requests and estimated cost by member, account and model over 24 hours, 7 days or 30 days |
+| Members | Add members, create single-use join links, and see each member's last sync and 30-day usage |
 | Accounts | Rename accounts and set each member's allotment weight |
-| Devices | See each device's last sync and revoke devices |
+| Devices | See which account each device is signed into, its 30-day usage and last sync, and revoke devices |
+| Settings | Publish the dashboard at `PUBLIC_URL/dashboard`, or preview it first |
 
-Admin sessions are kept in memory, so restarting the server signs the admin out.
+Admin sessions are kept in memory, so restarting the server signs the admin out. Once the dashboard
+is published, `PUBLIC_URL` itself opens it instead of the console.
 
 ## Compatibility
 
