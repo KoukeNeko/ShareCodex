@@ -878,3 +878,22 @@ func TestThirdPartyUsageStaysOutOfTheQuota(t *testing.T) {
 		t.Errorf("after bob's resync max has %d third-party models, want 2", n)
 	}
 }
+
+// Members learn from the overview whether the admin published the
+// dashboard, so the app can offer it.
+func TestOverviewTellsWhetherTheDashboardIsPublished(t *testing.T) {
+	store := storagetest.New(t)
+	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	defer srv.Close()
+	alice := pair(t, store, srv.URL, "alice")
+
+	for _, published := range []bool{false, true} {
+		if err := store.SetPublicDashboard(context.Background(), published); err != nil {
+			t.Fatal(err)
+		}
+		var ov syncapi.Overview
+		if st := alice.do("GET", syncapi.PathOverview, nil, &ov); st != http.StatusOK || ov.DashboardPublished != published {
+			t.Errorf("published %v: overview = %d, dashboard_published %v", published, st, ov.DashboardPublished)
+		}
+	}
+}

@@ -6,9 +6,11 @@ package desktop
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"io/fs"
 	"net/url"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -361,6 +363,16 @@ func (s *Service) SignOutClaude(ctx context.Context, hint string) error {
 
 func (s *Service) SetLaunchAtLogin(enabled bool) error {
 	return s.agent.SetLaunchAtLogin(s.executable, enabled)
+}
+
+// OpenDashboard opens the server's public dashboard in the browser, once
+// the admin has published it; never an arbitrary URL from the frontend.
+func (s *Service) OpenDashboard(ctx context.Context) error {
+	st := s.agent.State(ctx)
+	if st.Overview == nil || !st.Overview.DashboardPublished {
+		return errors.New("the dashboard is not published")
+	}
+	return s.app.Browser.OpenURL(strings.TrimRight(st.ServerURL, "/") + "/dashboard")
 }
 
 // OpenReleasePage opens the release the agent reported, never an arbitrary

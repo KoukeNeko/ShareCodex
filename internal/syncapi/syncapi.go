@@ -129,6 +129,9 @@ type Overview struct {
 	Accounts    []AccountOverview `json:"accounts"`
 	// You is the viewer's own usage across every account.
 	You *PersonalUsage `json:"you,omitempty"`
+	// DashboardPublished is set once an admin publishes the read-only
+	// dashboard at /dashboard; older servers never set it.
+	DashboardPublished bool `json:"dashboard_published,omitempty"`
 }
 
 // PersonalUsage sums the viewer's requests since the start of their day

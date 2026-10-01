@@ -36,6 +36,27 @@
     }
   }
 
+  // A short notice over the bottom of the popup.
+  let toast = $state('')
+  let toastTimer: ReturnType<typeof setTimeout> | undefined
+  function showToast(text: string) {
+    toast = text
+    clearTimeout(toastTimer)
+    toastTimer = setTimeout(() => (toast = ''), 2500)
+  }
+
+  async function openDashboard() {
+    if (!app?.overview?.dashboard_published) {
+      showToast(t('dashboardNotPublished'))
+      return
+    }
+    try {
+      await Desktop.OpenDashboard()
+    } catch (err) {
+      showToast(t('openDashboardFailed', { error: errorMessage(err) }))
+    }
+  }
+
   function providerIssue(p: ProviderState): string {
     if (p.status === 'error') return p.error ?? t('error')
     if (p.status === 'not_installed') return t('notInstalled')
@@ -136,6 +157,11 @@
     <h1>{view === 'settings' ? t('settings') : 'ShareCodex'}</h1>
     <div class="tools">
       {#if view === 'overview'}
+        {#if app?.paired}
+          <button class="icon" title={t('openDashboard')} aria-label={t('openDashboard')} onclick={openDashboard}>
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.2" /><path d="M1.8 8h12.4M8 1.8c1.7 1.8 2.5 3.9 2.5 6.2s-.8 4.4-2.5 6.2M8 1.8C6.3 3.6 5.5 5.7 5.5 8s.8 4.4 2.5 6.2" /></svg>
+          </button>
+        {/if}
         <button class="icon" title={t('copyImage')} aria-label={t('copyImage')} disabled={sharing || !app} onclick={share}>
           {#if shared}
             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 6.5 12 13 4.5" /></svg>
@@ -213,6 +239,8 @@
     {/if}
   </div>
 
+  {#if toast}<div class="toast" role="status">{toast}</div>{/if}
+
   {#if app && view === 'overview' && app.paired}
     <footer class="muted">
       <div class="status">
@@ -233,7 +261,22 @@
 </main>
 
 <style>
-  main { height: 100%; display: flex; flex-direction: column; }
+  main { height: 100%; display: flex; flex-direction: column; position: relative; }
+  .toast {
+    position: absolute;
+    left: 50%;
+    bottom: 44px;
+    transform: translateX(-50%);
+    max-width: calc(100% - 28px);
+    padding: 7px 12px;
+    border-radius: 8px;
+    background: var(--text);
+    color: var(--bg);
+    font-size: 12px;
+    box-shadow: 0 4px 16px rgb(0 0 0 / .2);
+    pointer-events: none;
+    z-index: 2;
+  }
   header {
     display: flex;
     justify-content: space-between;

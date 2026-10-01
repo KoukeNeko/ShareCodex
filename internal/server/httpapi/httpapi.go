@@ -133,6 +133,10 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, "build overview", err)
 		return
 	}
+	if o.DashboardPublished, err = s.store.PublicDashboard(r.Context()); err != nil {
+		s.internalError(w, "read dashboard setting", err)
+		return
+	}
 	writeJSON(w, http.StatusOK, o)
 }
 
