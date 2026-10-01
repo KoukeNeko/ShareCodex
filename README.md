@@ -132,7 +132,8 @@ model.
 ### A dashboard anyone can open
 
 An admin can publish a read-only dashboard at `/dashboard`: each account's windows, usage chart,
-members' estimated usage and models, refreshed every minute. It leaves out email addresses and
+members' estimated usage and models, side by side on a wide screen and refreshed every minute. Like
+the popup's, its charts switch between tokens per span and running totals with **Cumulative**. It leaves out email addresses and
 device names; an account still named by its email shows as Account 1, Account 2 and so on. It is off
 until turned on under **Settings**.
 
@@ -195,8 +196,8 @@ Then open `PUBLIC_URL/admin/` and sign in with `ADMIN_PASSWORD`:
 |---|---|
 | Overview | Everyone's usage over 24 hours and 30 days; every account's windows with who is signed in, a usage chart, each member's allotment and estimated usage by device, and usage by model, including third-party models |
 | Usage | Tokens, requests and estimated cost by member, account and model over 24 hours, 7 days or 30 days |
-| Members | Add members, create single-use join links, and see each member's last sync and 30-day usage |
-| Accounts | Rename accounts and set each member's allotment weight |
+| Members | Add members, create single-use join links, see each member's last sync and 30-day usage, and delete members along with their devices and usage |
+| Accounts | Rename accounts, set each member's allotment weight, and delete accounts along with their usage |
 | Devices | See which account each device is signed into, its 30-day usage and last sync, and revoke devices |
 | Settings | Publish the dashboard at `PUBLIC_URL/dashboard`, or preview it first |
 
