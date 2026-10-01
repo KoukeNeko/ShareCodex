@@ -60,6 +60,8 @@ func run(ctx context.Context) error {
 	mux.Handle("GET /dashboard", console)
 	mux.Handle("GET /dashboard/usage", console)
 	mux.Handle("GET /lang/{lang}", console)
+	mux.Handle("GET /manifest.webmanifest", console)
+	mux.Handle("GET /icons/{name}", console)
 	// The root opens the public dashboard once it is published, else the
 	// console.
 	mux.Handle("GET /{$}", console)

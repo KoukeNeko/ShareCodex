@@ -109,6 +109,8 @@ func New(store *storage.Store, log *slog.Logger, cfg Config) (http.Handler, erro
 	mux.HandleFunc("GET /{$}", c.root)
 	mux.HandleFunc("GET "+dashboardPath, c.dashboard)
 	mux.HandleFunc("GET "+dashboardUsagePath, c.dashboardUsage)
+	mux.HandleFunc("GET /manifest.webmanifest", c.manifest)
+	mux.HandleFunc("GET /icons/{name}", c.icon)
 
 	// Forms post with the session cookie; reject cross-site requests.
 	return http.NewCrossOriginProtection().Handler(mux), nil

@@ -4,7 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}} · {{if .Public}}ShareCodex{{else}}{{.T.appTitle}}{{end}}</title>
-{{if .Public}}<meta http-equiv="refresh" content="60">{{end}}
+<link rel="icon" href="/icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+{{if .Public}}<meta http-equiv="refresh" content="60">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#fafaf9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c0c0d" media="(prefers-color-scheme: dark)">{{end}}
 <style>
 /* Straight lines: square corners, hairline rules between sections instead
    of floating cards, and monospace labels. */

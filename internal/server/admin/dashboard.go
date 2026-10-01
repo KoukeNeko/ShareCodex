@@ -2,6 +2,8 @@ package admin
 
 import (
 	"context"
+	"embed"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"slices"
@@ -58,6 +60,54 @@ func (c *ttlCache[T]) get(ctx context.Context, key string, build func(context.Co
 	}
 	c.entries[key] = ttlEntry[T]{at: time.Now(), value: v}
 	return v, nil
+}
+
+//go:embed static/*.png
+var staticFS embed.FS
+
+// manifest lets a phone install the public dashboard as an app of its own.
+func (c *Console) manifest(w http.ResponseWriter, r *http.Request) {
+	type icon struct {
+		Src     string `json:"src"`
+		Sizes   string `json:"sizes"`
+		Type    string `json:"type"`
+		Purpose string `json:"purpose,omitempty"`
+	}
+	m := struct {
+		Name            string `json:"name"`
+		ShortName       string `json:"short_name"`
+		StartURL        string `json:"start_url"`
+		Scope           string `json:"scope"`
+		Display         string `json:"display"`
+		BackgroundColor string `json:"background_color"`
+		ThemeColor      string `json:"theme_color"`
+		Icons           []icon `json:"icons"`
+	}{
+		Name: "ShareCodex", ShortName: "ShareCodex", StartURL: dashboardPath, Scope: "/", Display: "standalone",
+		// The dark theme's background, the one installed apps open on.
+		BackgroundColor: "#0c0c0d", ThemeColor: "#0c0c0d",
+		Icons: []icon{
+			{Src: "/icons/icon-192.png", Sizes: "192x192", Type: "image/png"},
+			{Src: "/icons/icon-512.png", Sizes: "512x512", Type: "image/png"},
+			{Src: "/icons/icon-maskable-512.png", Sizes: "512x512", Type: "image/png", Purpose: "maskable"},
+		},
+	}
+	w.Header().Set("Content-Type", "application/manifest+json")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	if err := json.NewEncoder(w).Encode(m); err != nil {
+		c.log.Error("write manifest", "err", err)
+	}
+}
+
+func (c *Console) icon(w http.ResponseWriter, r *http.Request) {
+	b, err := staticFS.ReadFile("static/" + r.PathValue("name"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Write(b)
 }
 
 // root sends visitors to the dashboard when it is published, else to the

@@ -2,6 +2,7 @@ package admin_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -44,6 +45,8 @@ func newServer(t *testing.T) (*storage.Store, browser) {
 	mux.Handle("GET /dashboard", console)
 	mux.Handle("GET /dashboard/usage", console)
 	mux.Handle("GET /lang/{lang}", console)
+	mux.Handle("GET /manifest.webmanifest", console)
+	mux.Handle("GET /icons/{name}", console)
 	mux.Handle("GET /{$}", console)
 	mux.Handle("/", httpapi.New(store, log))
 
@@ -500,5 +503,50 @@ func TestAccountOrder(t *testing.T) {
 	}
 	if !strings.Contains(page, `data-five-hour="40"`) || !strings.Contains(page, `data-weekly="-1"`) {
 		t.Error("cards lack the window use the sort control orders them by")
+	}
+}
+
+// The public dashboard can be installed on a phone: its pages link a
+// manifest Chrome accepts, and every icon the manifest names is served.
+func TestDashboardIsInstallable(t *testing.T) {
+	store, b := newServer(t)
+	if err := store.SetPublicDashboard(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	if _, page := b.get("/dashboard"); !strings.Contains(page, `rel="manifest" href="/manifest.webmanifest"`) {
+		t.Fatal("the dashboard does not link its manifest")
+	}
+	resp, err := b.c.Get(b.base + "/manifest.webmanifest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var m struct {
+		Name     string `json:"name"`
+		StartURL string `json:"start_url"`
+		Display  string `json:"display"`
+		Icons    []struct {
+			Src   string `json:"src"`
+			Sizes string `json:"sizes"`
+		} `json:"icons"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
+		t.Fatal(err)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "application/manifest+json" || m.Name == "" || m.StartURL != "/dashboard" || m.Display != "standalone" {
+		t.Fatalf("manifest = %+v (%s)", m, ct)
+	}
+	sizes := map[string]bool{}
+	for _, icon := range m.Icons {
+		sizes[icon.Sizes] = true
+		if st, _ := b.get(icon.Src); st != http.StatusOK {
+			t.Errorf("%s returned %d", icon.Src, st)
+		}
+	}
+	if !sizes["192x192"] || !sizes["512x512"] {
+		t.Errorf("icon sizes = %v, want 192 and 512", sizes)
+	}
+	if st, _ := b.get("/icons/../admin.go"); st == http.StatusOK {
+		t.Error("the icon route serves files outside the icons")
 	}
 }
