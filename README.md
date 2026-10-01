@@ -92,7 +92,8 @@ up on the account it last used for Claude Code, for 15 minutes after that use.
 ### Which models used it
 
 Each window also breaks usage down by model — requests, tokens, and an estimated share — so you can
-tell whether the week went to Opus or to a long run of Sonnet.
+tell whether the week went to Opus or to a long run of Sonnet. Models are listed by estimated share,
+which weighs tokens by price; **Model order** in Settings lists them by tokens instead.
 
 ### Usage over time
 

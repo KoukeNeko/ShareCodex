@@ -4,8 +4,9 @@
   import type { ActiveUser, BucketOverview } from '../../lib/api'
   import { bucketName, bucketTab, modelName, percent, providerName, resetsIn, tokens } from '../../lib/format'
   import { t } from '../../lib/i18n.svelte'
+  import { sortModels } from '../../lib/sort'
 
-  let { id = '', provider, label, planType, buckets, usage, activeUsers, now, local = false, fineChart = false, onGrip, pinned = false, onPin, onClose }: {
+  let { id = '', provider, label, planType, buckets, usage, activeUsers, now, local = false, fineChart = false, modelSort = '', onGrip, pinned = false, onPin, onClose }: {
     id?: string
     provider: string
     label: string
@@ -17,6 +18,8 @@
     now: Date
     local?: boolean
     fineChart?: boolean
+    // settings.Settings.ModelSort: how the window's models are ordered.
+    modelSort?: string
     // Starts dragging the card to reorder the list; without it the card
     // has no grip.
     onGrip?: (e: PointerEvent) => void
@@ -49,9 +52,10 @@
   // Colors follow the model's rank in this window; past the fourth, models
   // share the "other" color so hues are never generated.
   const modelSlots = 4
+  const sortedModels = $derived(sortModels(bucket?.models ?? [], modelSort))
   const modelColor = $derived.by(() => {
     const colors = new Map<string, string>()
-    ;(bucket?.models ?? []).forEach((m, i) =>
+    sortedModels.forEach((m, i) =>
       colors.set(modelKey(m.model, m.gateway), i < modelSlots ? `var(--model-${i + 1})` : 'var(--model-other)'),
     )
     return colors
@@ -147,7 +151,7 @@
     {#if !local && bucket.timeline}
       <UsageChart
         timeline={bucket.timeline}
-        models={(bucket.models ?? []).map((m) => ({ model: m.model, gateway: m.gateway ?? '' }))}
+        models={sortedModels.map((m) => ({ model: m.model, gateway: m.gateway ?? '' }))}
         thirdPartyModels={(bucket.third_party_models ?? []).map((m) => ({ model: m.model, gateway: m.gateway ?? '' }))}
         color={(model, thirdParty, gateway) =>
           (thirdParty ? thirdPartyColor : modelColor).get(modelKey(model, gateway)) ?? 'var(--model-other)'}
@@ -210,10 +214,10 @@
       </ul>
       {/if}
 
-      {#if (bucket.models ?? []).length > 0}
+      {#if sortedModels.length > 0}
         <ul class="models">
           <li class="muted small">{t('models')}</li>
-          {#each bucket.models ?? [] as model (modelKey(model.model, model.gateway))}
+          {#each sortedModels as model (modelKey(model.model, model.gateway))}
             {@const shown = modelName(model.model, model.gateway)}
             <li>
               <div class="row">

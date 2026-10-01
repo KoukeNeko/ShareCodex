@@ -36,6 +36,10 @@ type Settings struct {
 	// AccountOrder, the account IDs in the order they were dragged into.
 	AccountSort  string   `json:"account_sort,omitempty"`
 	AccountOrder []string `json:"account_order,omitempty"`
+	// ModelSort orders the models listed under a quota window: "" keeps the
+	// server's order, the most estimated quota use first, and "tokens" puts
+	// the most tokens first.
+	ModelSort string `json:"model_sort,omitempty"`
 	// Widgets are the accounts pinned to the screen, each in an always-on-top
 	// window of its own, reopened at launch.
 	Widgets []Widget `json:"widgets,omitempty"`

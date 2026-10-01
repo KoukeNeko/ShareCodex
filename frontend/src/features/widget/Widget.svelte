@@ -44,7 +44,7 @@
 <div bind:this={box}>
   {#if account}
     <AccountCard id={account.id} provider={account.provider} label={account.label} planType={account.plan_type}
-      buckets={account.buckets ?? []} usage={account.usage} activeUsers={account.active_users ?? []} {now} fineChart={app?.fine_chart}
+      buckets={account.buckets ?? []} usage={account.usage} activeUsers={account.active_users ?? []} {now} fineChart={app?.fine_chart} modelSort={app?.model_sort}
       onClose={close} />
   {:else}
     <section class="gone">

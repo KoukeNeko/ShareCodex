@@ -62,6 +62,26 @@ func (a *Agent) SetAccountSort(sort string) error {
 	return nil
 }
 
+// modelSorts are the orders the popup can list a window's models in; see
+// settings.Settings.ModelSort.
+var modelSorts = []string{"", "tokens"}
+
+// SetModelSort saves the order the popup lists a window's models in.
+func (a *Agent) SetModelSort(sort string) error {
+	if !slices.Contains(modelSorts, sort) {
+		return fmt.Errorf("unsupported model order %q", sort)
+	}
+	a.mu.Lock()
+	a.settings.ModelSort = sort
+	st := a.settings
+	a.mu.Unlock()
+	if err := settings.Save(st); err != nil {
+		return err
+	}
+	a.changed()
+	return nil
+}
+
 // SetAccountOrder saves the order accounts were dragged into and lists
 // them in it.
 func (a *Agent) SetAccountOrder(ids []string) error {

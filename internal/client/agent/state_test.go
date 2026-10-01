@@ -63,6 +63,18 @@ func TestStateCarriesLanguageAndUpdate(t *testing.T) {
 	if err := a.SetAccountSort("name"); err == nil {
 		t.Error("an unsupported account order must be rejected")
 	}
+	if st := a.State(ctx); st.ModelSort != "" {
+		t.Fatalf("fresh model sort = %q; want the server's order", st.ModelSort)
+	}
+	if err := a.SetModelSort("tokens"); err != nil || a.State(ctx).ModelSort != "tokens" {
+		t.Fatalf("model sort = %q, %v; want tokens", a.State(ctx).ModelSort, err)
+	}
+	if saved, err := settings.Load(); err != nil || saved.ModelSort != "tokens" {
+		t.Fatalf("saved model sort = %q, %v; want it persisted", saved.ModelSort, err)
+	}
+	if err := a.SetModelSort("name"); err == nil {
+		t.Error("an unsupported model order must be rejected")
+	}
 	// Dragging lists the accounts in the dragged order.
 	if err := a.SetAccountOrder([]string{"b", "a"}); err != nil {
 		t.Fatal(err)

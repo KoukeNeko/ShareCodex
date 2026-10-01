@@ -32,6 +32,7 @@ func (a *Agent) State(ctx context.Context) State {
 		FineChart:     a.settings.FineChart,
 		AccountSort:   a.settings.AccountSort,
 		AccountOrder:  slices.Clone(a.settings.AccountOrder),
+		ModelSort:     a.settings.ModelSort,
 		Update:        a.update,
 	}
 	st.Pinned = []string{}

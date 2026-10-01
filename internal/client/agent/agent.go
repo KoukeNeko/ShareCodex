@@ -80,6 +80,7 @@ type State struct {
 	FineChart     bool            `json:"fine_chart"`
 	AccountSort   string          `json:"account_sort"`
 	AccountOrder  []string        `json:"account_order"`
+	ModelSort     string          `json:"model_sort"`
 	Update        *update.Release `json:"update,omitempty"`
 	// Pinned are the IDs of the accounts pinned to the screen.
 	Pinned []string `json:"pinned"`

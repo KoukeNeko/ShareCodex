@@ -1,4 +1,4 @@
-import type { AccountOverview } from './api'
+import type { AccountOverview, ModelUsage } from './api'
 
 // A window's use, or -1 when it is unknown: no reading, or one that reset.
 function used(a: AccountOverview, key: string, now: Date): number {
@@ -24,4 +24,12 @@ export function sortAccounts(accounts: AccountOverview[], sort: string, order: s
     .map((a, i) => ({ a, i, rank: rank(a) }))
     .sort((x, y) => x.rank - y.rank || x.i - y.i)
     .map((x) => x.a)
+}
+
+/**
+ * A window's models in the order settings.Settings.ModelSort names. The server lists them by estimated quota
+ * use; "tokens" puts the most tokens first, ties keeping the server's order.
+ */
+export function sortModels(models: ModelUsage[], sort: string): ModelUsage[] {
+  return sort === 'tokens' ? [...models].sort((a, b) => b.tokens - a.tokens) : models
 }

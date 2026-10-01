@@ -435,6 +435,10 @@ func (s *Service) SetAccountSort(sort string) error {
 	return s.agent.SetAccountSort(sort)
 }
 
+func (s *Service) SetModelSort(sort string) error {
+	return s.agent.SetModelSort(sort)
+}
+
 func (s *Service) SetAccountOrder(ids []string) error {
 	return s.agent.SetAccountOrder(ids)
 }

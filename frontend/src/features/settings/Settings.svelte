@@ -150,6 +150,14 @@
       </select>
     </label>
     <label class="row">
+      <span>{t('modelOrder')}</span>
+      <select value={app.model_sort ?? ''} disabled={busy}
+        onchange={(e) => run(() => Desktop.SetModelSort(e.currentTarget.value))}>
+        <option value="">{t('sortDefault')}</option>
+        <option value="tokens">{t('sortTokens')}</option>
+      </select>
+    </label>
+    <label class="row">
       <span>{t('fineChart')}</span>
       <input type="checkbox" checked={app.fine_chart} disabled={busy}
         onchange={(e) => run(() => Desktop.SetFineChart(e.currentTarget.checked))} />

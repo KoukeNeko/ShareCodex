@@ -222,7 +222,7 @@
       {#if app.paired && accounts.length > 0}
         {#each shown as a (a.id)}
           <div class="account" class:dragging={dragging === a.id} data-account={a.id} animate:flip={{ duration: 150 }}>
-            <AccountCard id={a.id} provider={a.provider} label={a.label} planType={a.plan_type} buckets={a.buckets ?? []} usage={a.usage} activeUsers={a.active_users ?? []} {now} fineChart={app.fine_chart}
+            <AccountCard id={a.id} provider={a.provider} label={a.label} planType={a.plan_type} buckets={a.buckets ?? []} usage={a.usage} activeUsers={a.active_users ?? []} {now} fineChart={app.fine_chart} modelSort={app.model_sort}
               onGrip={accounts.length > 1 ? (e) => startDrag(e, a.id) : undefined}
               pinned={(app.pinned ?? []).includes(a.id)}
               onPin={() => togglePin(a.id)} />
