@@ -50,6 +50,11 @@ Claude Code 與 Codex 紀錄，透過官方 CLI 確認目前登入的帳號，�
   <img src="docs/images/admin-accounts.png" width="49%" alt="管理介面帳號（深色）">
 </p>
 
+<p align="center">
+  <img src="docs/images/dashboard.png" width="49%" alt="公開儀表板（深色）">
+  <img src="docs/images/dashboard-usage.png" width="49%" alt="公開儀表板用量">
+</p>
+
 ## 能看到什麼
 
 ### 自己的用量

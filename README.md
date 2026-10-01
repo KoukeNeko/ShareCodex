@@ -53,6 +53,11 @@ chat, is not tracked.
   <img src="docs/images/admin-accounts.png" width="49%" alt="Admin console accounts, dark">
 </p>
 
+<p align="center">
+  <img src="docs/images/dashboard.png" width="49%" alt="Public dashboard, dark">
+  <img src="docs/images/dashboard-usage.png" width="49%" alt="Public dashboard usage">
+</p>
+
 ## What it shows
 
 ### Your own usage
