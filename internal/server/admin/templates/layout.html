@@ -263,14 +263,17 @@ try { if (localStorage.getItem('sharecodex.cumulative') === '1') document.docume
     })
     document.querySelectorAll('[data-sort]').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.sort === mode) })
   }
+  // Each page keeps its own choice: the console's overview and the public
+  // dashboard are sorted for different readers.
+  var key = 'sharecodex.accountSort:' + location.pathname
   var mode = 'custom'
-  try { mode = localStorage.getItem('sharecodex.accountSort') || mode } catch (e) { /* storage blocked: the arranged order */ }
+  try { mode = localStorage.getItem(key) || mode } catch (e) { /* storage blocked: the arranged order */ }
   apply(modes.indexOf(mode) < 0 ? 'custom' : mode)
   document.addEventListener('click', function (e) {
     var b = e.target.closest('[data-sort]')
     if (!b) return
     apply(b.dataset.sort)
-    try { localStorage.setItem('sharecodex.accountSort', b.dataset.sort) } catch (err) { /* not remembered; the page still sorts */ }
+    try { localStorage.setItem(key, b.dataset.sort) } catch (err) { /* not remembered; the page still sorts */ }
   })
 })();
 
