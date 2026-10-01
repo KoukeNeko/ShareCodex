@@ -69,6 +69,16 @@ nav.langs { flex: none; }
   .bar > nav:not(.langs) { order: 1; flex-basis: calc(100% + 48px); margin: 0 -24px; padding: 0 12px; height: 40px; border-top: 1px solid var(--line); }
 }
 .spacer { flex: 1; }
+/* Its rule overlaps the last band's when the page fills the frame, and has
+   the header's marks at the frame's sides. */
+footer { position: relative; margin-top: -1px; border-top: 1px solid var(--line); }
+footer::before, footer::after { content: ""; position: absolute; top: -4px; width: 7px; height: 7px;
+  background: var(--bg); border: 1px solid var(--muted); }
+footer::before { left: -4px; }
+footer::after { right: -4px; }
+footer.bar { align-items: center; height: 48px; font: 12px var(--mono); letter-spacing: .04em; color: var(--muted); }
+footer a { color: inherit; text-decoration: none; }
+footer a:hover { color: var(--text); }
 .bar > form.inline { display: flex; align-items: center; }
 main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; }
 /* Each block of a page is a band between rules. */
@@ -237,6 +247,11 @@ try { if (localStorage.getItem('sharecodex.cumulative') === '1') document.docume
   {{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
   {{template "content" .}}
 </main>
+<footer class="bar">
+  <span class="num">ShareCodex {{if eq .Version "dev"}}dev{{else}}v{{.Version}}{{end}}</span>
+  <span class="spacer"></span>
+  <a href="https://github.com/KoukeNeko/ShareCodex">GitHub</a>
+</footer>
 </div>
 </div>
 <script>

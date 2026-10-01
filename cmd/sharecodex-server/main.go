@@ -26,6 +26,9 @@ import (
 	"github.com/KoukeNeko/ShareCodex/internal/server/storage"
 )
 
+// version is set at build time with -ldflags "-X main.version=...".
+var version = "dev"
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -51,6 +54,7 @@ func run(ctx context.Context) error {
 	console, err := admin.New(store, log, admin.Config{
 		Password:  os.Getenv("ADMIN_PASSWORD"),
 		PublicURL: os.Getenv("PUBLIC_URL"),
+		Version:   version,
 	})
 	if err != nil {
 		return err

@@ -48,6 +48,8 @@ type Config struct {
 	// PublicURL is the base URL members reach the server at; join links and
 	// the Secure cookie flag derive from it.
 	PublicURL string
+	// Version is the server's release, shown in the page footer.
+	Version string
 }
 
 type Console struct {
@@ -55,6 +57,7 @@ type Console struct {
 	log       *slog.Logger
 	password  [32]byte
 	publicURL string
+	version   string
 	pages     map[string]*template.Template
 
 	mu       sync.Mutex
@@ -82,6 +85,7 @@ func New(store *storage.Store, log *slog.Logger, cfg Config) (http.Handler, erro
 		log:       log,
 		password:  sha256.Sum256([]byte(cfg.Password)),
 		publicURL: strings.TrimRight(cfg.PublicURL, "/"),
+		version:   cfg.Version,
 		pages:     pages,
 		sessions:  map[string]time.Time{},
 	}
@@ -195,6 +199,8 @@ type page struct {
 	Languages []struct{ ID, Label string }
 	// Here is the GET path of the current page, for the language switch.
 	Here string
+
+	Version string
 }
 
 var navPaths = map[string]string{
@@ -207,6 +213,7 @@ func (c *Console) render(w http.ResponseWriter, r *http.Request, name string, st
 	p.Lang = requestLang(r)
 	p.T = dictionaries[p.Lang]
 	p.Languages = langNames
+	p.Version = c.version
 	p.Title = p.T[p.Title]
 	if p.Error != "" {
 		p.Error = p.T[p.Error]
