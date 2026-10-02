@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -739,44 +740,64 @@ func (c *Console) devices(w http.ResponseWriter, r *http.Request) {
 	c.render(w, r, "devices", http.StatusOK, page{Title: "navDevices", Nav: "devices", Authed: true, Data: rows})
 }
 
-// usagePeriod is a span the usage report covers.
-type usagePeriod struct {
-	ID          string
-	Hours, Days int
-}
-
-func (p usagePeriod) span() time.Duration {
-	return time.Duration(p.Hours)*time.Hour + time.Duration(p.Days)*24*time.Hour
-}
-
-var usagePeriods = []usagePeriod{{"24h", 24, 0}, {"7d", 0, 7}, {"30d", 0, 30}}
-
 // periodOf is the period a request asks for, 30 days by default.
-func periodOf(r *http.Request) usagePeriod {
-	for _, p := range usagePeriods {
-		if p.ID == r.URL.Query().Get("period") {
-			return p
-		}
-	}
-	return usagePeriods[len(usagePeriods)-1]
+func periodOf(r *http.Request) query.Period {
+	return query.PeriodByID(r.URL.Query().Get(syncapi.QueryPeriod))
 }
 
 // usageData is a usage report and its period switch, which links to Path.
 type usageData struct {
 	Path    string
 	Period  string
-	Periods []usagePeriod
+	Periods []query.Period
 	Report  query.UsageReport
+	// Member is set when the report is one member's.
+	Member *identity.Person
+	// ShowDevices lists a member's devices by name, which only the console
+	// may.
+	ShowDevices bool
+}
+
+// requestedMember is the member a usage page asks for with ?member=, nil
+// when it asks for everyone. ok is false once it has answered the request.
+func (c *Console) requestedMember(w http.ResponseWriter, r *http.Request) (member *identity.Person, ok bool) {
+	id := r.URL.Query().Get("member")
+	if id == "" {
+		return nil, true
+	}
+	p, err := c.store.Person(r.Context(), id)
+	if errors.Is(err, storage.ErrNotFound) {
+		http.NotFound(w, r)
+		return nil, false
+	}
+	if err != nil {
+		c.fail(w, "find member", err)
+		return nil, false
+	}
+	return &p, true
+}
+
+// usageReport is the usage report of a member, or of everyone when member is
+// nil.
+func (c *Console) usageReport(ctx context.Context, member *identity.Person, since time.Time) (query.UsageReport, error) {
+	if member != nil {
+		return query.UsageBy(ctx, c.store, since, member.ID)
+	}
+	return query.Usage(ctx, c.store, since)
 }
 
 func (c *Console) usage(w http.ResponseWriter, r *http.Request) {
+	member, ok := c.requestedMember(w, r)
+	if !ok {
+		return
+	}
 	period := periodOf(r)
-	report, err := query.Usage(r.Context(), c.store, time.Now().Add(-period.span()))
+	report, err := c.usageReport(r.Context(), member, time.Now().Add(-period.Span()))
 	if err != nil {
 		c.fail(w, "build usage report", err)
 		return
 	}
-	data := usageData{Path: "/admin/usage", Period: period.ID, Periods: usagePeriods, Report: report}
+	data := usageData{Path: "/admin/usage", Period: period.ID, Periods: query.Periods, Report: report, Member: member, ShowDevices: true}
 	c.render(w, r, "usage", http.StatusOK, page{Title: "navUsage", Nav: "usage", Authed: true, Data: data})
 }
 

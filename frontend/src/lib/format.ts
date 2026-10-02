@@ -1,3 +1,4 @@
+import type { UsageTotals } from './api'
 import { locale, t } from './i18n.svelte'
 
 /** A bucket's tab label: a limit on one model family is just the family. */
@@ -78,6 +79,16 @@ export function modelName(id: string, gateway = ''): { name: string; via?: strin
   const g = gatewayTags[ocx ? 'opencodex' : gateway]
   if (!g) return { name: id, title: id }
   return { name: ocx ? ocx[2] : id, via: g.tag, title: [g.name, ocx?.[1], id].filter(Boolean).join(' · ') }
+}
+
+/** The tokens a request's prompt used: input, cached input and cache writes. */
+export function inputTokens(u: UsageTotals): number {
+  return u.input + u.cached_input + u.cache_write
+}
+
+/** Every token a request used, as the models' totals count them. */
+export function totalTokens(u: UsageTotals): number {
+  return inputTokens(u) + u.output
 }
 
 /** An estimated price in US dollars; cents only below $100. */

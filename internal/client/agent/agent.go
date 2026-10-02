@@ -60,6 +60,7 @@ type State struct {
 	Version        string          `json:"version"`
 	Paired         bool            `json:"paired"`
 	Revoked        bool            `json:"revoked"`
+	PersonID       string          `json:"person_id"`
 	PersonName     string          `json:"person_name"`
 	DeviceName     string          `json:"device_name"`
 	ServerURL      string          `json:"server_url"`

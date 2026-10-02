@@ -6,7 +6,7 @@
   import { t } from '../../lib/i18n.svelte'
   import { sortModels } from '../../lib/sort'
 
-  let { id = '', provider, label, planType, buckets, usage, activeUsers, now, local = false, fineChart = false, modelSort = '', onGrip, pinned = false, onPin, onClose }: {
+  let { id = '', provider, label, planType, buckets, usage, activeUsers, now, local = false, fineChart = false, modelSort = '', onMember, onGrip, pinned = false, onPin, onClose }: {
     id?: string
     provider: string
     label: string
@@ -20,6 +20,8 @@
     fineChart?: boolean
     // settings.Settings.ModelSort: how the window's models are ordered.
     modelSort?: string
+    // Opens a member's usage; without it, names are plain text.
+    onMember?: (personId: string, name: string) => void
     // Starts dragging the card to reorder the list; without it the card
     // has no grip.
     onGrip?: (e: PointerEvent) => void
@@ -179,7 +181,10 @@
           {@const over = m.used_percent > m.allotted_percent + 0.5}
           <li>
             <div class="row">
-              <span class="name">{m.name}{#if m.is_you}<span class="you">{t('you')}</span>{/if}</span>
+              <span class="name">
+                {#if onMember}<button class="member" onclick={() => onMember(m.person_id, m.name)}>{m.name}</button>{:else}{m.name}{/if}
+                {#if m.is_you}<span class="you">{t('you')}</span>{/if}
+              </span>
               <span class="num">
                 {#if over}<span class="tag">{t('overAllotment')}</span>{/if}
                 {t('estimated', { percent: percent(m.used_percent) })}<span class="muted allot">{t('allotted', { percent: percent(m.allotted_percent) })}</span>
@@ -344,6 +349,8 @@
   /* The dashed swatch has no text baseline to line the row up by. */
   .third-list .row { align-items: center; }
   .name { display: flex; align-items: center; gap: 6px; }
+  .member { border: none; background: none; padding: 0; color: inherit; }
+  .member:hover:not(:disabled) { text-decoration: underline; }
   .you {
     font-size: 10.5px;
     color: var(--accent);

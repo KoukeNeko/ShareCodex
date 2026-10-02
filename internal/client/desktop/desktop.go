@@ -21,6 +21,7 @@ import (
 	"github.com/KoukeNeko/ShareCodex/internal/client/agent"
 	"github.com/KoukeNeko/ShareCodex/internal/client/settings"
 	"github.com/KoukeNeko/ShareCodex/internal/provider/anthropic/oauthusage"
+	"github.com/KoukeNeko/ShareCodex/internal/syncapi"
 )
 
 // StateEvent carries a fresh agent.State to the frontend.
@@ -425,6 +426,11 @@ func (s *Service) OpenReleasePage(ctx context.Context) error {
 		return nil
 	}
 	return s.app.Browser.OpenURL(rel.URL)
+}
+
+// MemberUsage is one member's usage over a period, for the member view.
+func (s *Service) MemberUsage(ctx context.Context, personID, period string) (syncapi.MemberUsage, error) {
+	return s.agent.MemberUsage(ctx, personID, period)
 }
 
 func (s *Service) SetFineChart(enabled bool) error {

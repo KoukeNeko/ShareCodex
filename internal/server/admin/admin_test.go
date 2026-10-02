@@ -416,6 +416,96 @@ func TestPublicDashboard(t *testing.T) {
 	}
 }
 
+// A member's usage page holds that member's requests alone, with their
+// devices named in the console and left out of the public dashboard.
+func TestMemberUsagePages(t *testing.T) {
+	ctx := context.Background()
+	store, admin := newServer(t)
+	seedUsage(t, store)
+	bobPerson, err := store.AddPerson(ctx, "bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, err := store.CreateInvite(ctx, bobPerson.ID, storage.InviteTTL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bobDevice, _, err := store.Pair(ctx, code, "bob-phone", "darwin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	_, err = store.Ingest(ctx, bobDevice, syncapi.SyncRequest{Version: syncapi.Version,
+		Events: []syncapi.Event{{DedupeKey: "b1", AccountRefHash: "acct", Provider: "anthropic", Product: "claude-code",
+			Model: "claude-sonnet-5-5", OccurredAt: now.Add(-10 * time.Minute), Input: 2000, Output: 100}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var aliceID string
+	people, err := store.Persons(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range people {
+		if p.DisplayName == "alice" {
+			aliceID = p.ID
+		}
+	}
+	member := "&member=" + aliceID
+	// The pages link with the ampersand escaped.
+	linked := "&amp;member=" + aliceID
+
+	admin.post("/admin/login", url.Values{"password": {password}})
+	if _, page := admin.get("/admin/people"); !strings.Contains(page, "/admin/usage?member="+aliceID) {
+		t.Error("members page does not link alice's usage")
+	}
+	// Everyone's page links each member to theirs.
+	if _, page := admin.get("/admin/usage?period=24h"); !strings.Contains(page, "period=24h"+linked) || !strings.Contains(page, "claude-sonnet-5-5") {
+		t.Error("usage page does not link alice's usage, or lacks bob's model")
+	}
+	st, page := admin.get("/admin/usage?period=24h" + member)
+	if st != http.StatusOK {
+		t.Fatalf("alice's usage returned %d", st)
+	}
+	for _, want := range []string{"alice", "All members", "alice-laptop", "gpt-6-sol", "OCX", "4.0K", "period=7d" + linked} {
+		if !strings.Contains(page, want) {
+			t.Errorf("alice's usage lacks %q", want)
+		}
+	}
+	for _, other := range []string{"bob", "bob-phone", "claude-sonnet-5-5"} {
+		if strings.Contains(page, other) {
+			t.Errorf("alice's usage shows %q, which is not hers", other)
+		}
+	}
+	if st, _ := admin.get("/admin/usage?member=no-such-member"); st != http.StatusNotFound {
+		t.Errorf("unknown member returned %d, want 404", st)
+	}
+
+	jar, _ := cookiejar.New(nil)
+	visitor := browser{t: t, base: admin.base, c: &http.Client{Jar: jar, CheckRedirect: admin.c.CheckRedirect}}
+	if st, _ := visitor.get("/dashboard/usage?member=" + aliceID); st != http.StatusNotFound {
+		t.Fatalf("unpublished dashboard returned %d for a member's usage, want 404", st)
+	}
+	admin.post("/admin/settings", url.Values{"public_dashboard": {"on"}})
+	st, page = visitor.get("/dashboard/usage?period=24h" + member)
+	if st != http.StatusOK {
+		t.Fatalf("alice's public usage returned %d", st)
+	}
+	for _, want := range []string{"alice", "All members", "Account 1", "gpt-6-sol", "4.0K"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("alice's public usage lacks %q", want)
+		}
+	}
+	for _, private := range []string{"al***@example.com", "alice-laptop", "bob", "claude-sonnet-5-5"} {
+		if strings.Contains(page, private) {
+			t.Errorf("alice's public usage shows %q", private)
+		}
+	}
+	if st, _ := visitor.get("/dashboard/usage?member=no-such-member"); st != http.StatusNotFound {
+		t.Errorf("unknown member returned %d on the dashboard, want 404", st)
+	}
+}
+
 func TestConsoleShowsUsageDetails(t *testing.T) {
 	store, b := newServer(t)
 	seedUsage(t, store)

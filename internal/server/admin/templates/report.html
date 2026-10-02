@@ -1,11 +1,17 @@
 {{define "usagenav"}}
 <nav class="periods" aria-label="{{.T.navUsage}}">
-    {{range .U.Periods}}<a href="{{$.U.Path}}?period={{.ID}}" class="{{if eq .ID $.U.Period}}active{{end}}">{{if .Days}}{{tf $.T.days .Days}}{{else}}{{tf $.T.hours .Hours}}{{end}}</a>{{end}}
+    {{range .U.Periods}}<a href="{{$.U.Path}}?period={{.ID}}{{with $.U.Member}}&amp;member={{.ID}}{{end}}" class="{{if eq .ID $.U.Period}}active{{end}}">{{if .Days}}{{tf $.T.days .Days}}{{else}}{{tf $.T.hours .Hours}}{{end}}</a>{{end}}
   </nav>
 {{end}}
 
 {{define "usagereport"}}
 {{with .U.Report}}
+{{with $.U.Member}}
+<div class="row spread">
+  <h2 style="margin:0">{{.DisplayName}}</h2>
+  <a href="{{$.U.Path}}?period={{$.U.Period}}">{{$.T.allMembers}}</a>
+</div>
+{{end}}
 <div class="cells tiles">
   <div class="tile"><span class="label">{{$.T.totalTokens}}</span><strong class="num">{{tokensOf .Total}}</strong></div>
   <div class="tile"><span class="label">{{$.T.input}}</span><strong class="num">{{inputOf .Total}}</strong><span class="muted small">{{tf $.T.cachedShare (pct (cachedOf .Total))}}</span></div>
@@ -14,19 +20,21 @@
   <div class="tile"><span class="label">{{$.T.requests}}</span><strong class="num">{{.Total.Requests}}</strong></div>
 </div>
 
+{{if not $.U.Member}}
 <section class="card">
   <h2>{{$.T.navPeople}}</h2>
   <div class="table-wrap"><table>
     <thead><tr><th>{{$.T.member}}</th><th class="num">{{$.T.totalTokens}}</th><th class="num detail">{{$.T.input}}</th><th class="num detail">{{$.T.output}}</th><th class="num">{{$.T.requests}}</th><th class="num">{{$.T.estCost}}</th></tr></thead>
     <tbody>
     {{range .Members}}
-      <tr><td>{{.Name}}</td><td class="num">{{tokensOf .UsageTotals}}</td><td class="num detail">{{inputOf .UsageTotals}}</td><td class="num detail">{{tokens .Output}}</td><td class="num">{{.Requests}}</td><td class="num">{{usd .CostUSD}}</td></tr>
+      <tr><td><a href="{{$.U.Path}}?period={{$.U.Period}}&amp;member={{.ID}}">{{.Name}}</a></td><td class="num">{{tokensOf .UsageTotals}}</td><td class="num detail">{{inputOf .UsageTotals}}</td><td class="num detail">{{tokens .Output}}</td><td class="num">{{.Requests}}</td><td class="num">{{usd .CostUSD}}</td></tr>
     {{else}}
       <tr><td colspan="6" class="muted">{{$.T.noUsage}}</td></tr>
     {{end}}
     </tbody>
   </table></div>
 </section>
+{{end}}
 
 <section class="card">
   <h2>{{$.T.navAccounts}}</h2>
@@ -55,6 +63,22 @@
     </tbody>
   </table></div>
 </section>
+
+{{if and $.U.ShowDevices $.U.Member}}
+<section class="card">
+  <h2>{{$.T.devices}}</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>{{$.T.device}}</th><th class="num">{{$.T.totalTokens}}</th><th class="num detail">{{$.T.input}}</th><th class="num detail">{{$.T.output}}</th><th class="num">{{$.T.requests}}</th><th class="num">{{$.T.estCost}}</th></tr></thead>
+    <tbody>
+    {{range .DeviceLines}}
+      <tr><td>{{.Name}}</td><td class="num">{{tokensOf .UsageTotals}}</td><td class="num detail">{{inputOf .UsageTotals}}</td><td class="num detail">{{tokens .Output}}</td><td class="num">{{.Requests}}</td><td class="num">{{usd .CostUSD}}</td></tr>
+    {{else}}
+      <tr><td colspan="6" class="muted">{{$.T.noUsage}}</td></tr>
+    {{end}}
+    </tbody>
+  </table></div>
+</section>
+{{end}}
 
 {{if .ThirdParty}}
 <section class="card">

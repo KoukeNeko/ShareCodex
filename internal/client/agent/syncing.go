@@ -189,6 +189,21 @@ func (a *Agent) CreateInvite(ctx context.Context) (Invite, error) {
 	return Invite{Link: strings.TrimRight(base, "/") + syncapi.PathJoin + resp.Code, ExpiresAt: resp.ExpiresAt}, nil
 }
 
+// MemberUsage fetches one member's usage over a period (24h, 7d or 30d) for
+// the popup's member view.
+func (a *Agent) MemberUsage(ctx context.Context, personID, period string) (syncapi.MemberUsage, error) {
+	a.mu.Lock()
+	client, revoked := a.client, a.revoked
+	a.mu.Unlock()
+	if client == nil {
+		return syncapi.MemberUsage{}, errors.New("join a server first")
+	}
+	if revoked {
+		return syncapi.MemberUsage{}, sync.ErrRevoked
+	}
+	return client.MemberUsage(ctx, personID, period)
+}
+
 // LeaveAccount takes this person out of a shared account's allotment; the
 // server then leaves it off their overview.
 func (a *Agent) LeaveAccount(ctx context.Context, accountID string) error {

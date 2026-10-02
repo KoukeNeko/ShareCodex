@@ -30,7 +30,7 @@ const dashboardTTL = 30 * time.Second
 
 type dashboardCache struct {
 	overview ttlCache[syncapi.Overview]
-	// usage holds a report per period ID.
+	// usage holds a report per period ID, and per member and period.
 	usage ttlCache[query.UsageReport]
 }
 
@@ -192,9 +192,19 @@ func (c *Console) dashboardUsage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	member, ok := c.requestedMember(w, r)
+	if !ok {
+		return
+	}
 	period := periodOf(r)
-	report, err := c.dash.usage.get(r.Context(), period.ID, func(ctx context.Context) (query.UsageReport, error) {
-		return query.Usage(ctx, c.store, time.Now().Add(-period.span()))
+	// A member's report is cached apart from everyone's; the member exists,
+	// so the cache holds at most a report per member and period.
+	key := period.ID
+	if member != nil {
+		key += "/" + member.ID
+	}
+	report, err := c.dash.usage.get(r.Context(), key, func(ctx context.Context) (query.UsageReport, error) {
+		return c.usageReport(ctx, member, time.Now().Add(-period.Span()))
 	})
 	if err != nil {
 		c.fail(w, "build dashboard usage", err)
@@ -205,7 +215,7 @@ func (c *Console) dashboardUsage(w http.ResponseWriter, r *http.Request) {
 	for i, a := range report.Accounts {
 		report.Accounts[i].Name = names[a.ID]
 	}
-	data := dashboardUsageData{publicData: pd, Usage: usageData{Path: dashboardUsagePath, Period: period.ID, Periods: usagePeriods, Report: report}}
+	data := dashboardUsageData{publicData: pd, Usage: usageData{Path: dashboardUsagePath, Period: period.ID, Periods: query.Periods, Report: report, Member: member}}
 	c.render(w, r, "dashboardusage", http.StatusOK, page{Title: "navUsage", Nav: "dashboardUsage", Public: true, Data: data})
 }
 

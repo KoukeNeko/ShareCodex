@@ -207,6 +207,89 @@ func TestSyncDropsOutOfRangeRecords(t *testing.T) {
 	}
 }
 
+// Any member can read another member's usage over a period; it holds only
+// that member's requests, and the quota's own models are totalled apart from
+// third-party ones.
+func TestMemberUsage(t *testing.T) {
+	ctx := context.Background()
+	store := storagetest.New(t)
+	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	defer srv.Close()
+	alicePerson, err := store.AddPerson(ctx, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	laptop := pairDevice(t, store, srv.URL, alicePerson, "alice-laptop", identity.PlatformDarwin)
+	desktop := pairDevice(t, store, srv.URL, alicePerson, "alice-desktop", identity.PlatformDarwin)
+	bob := pair(t, store, srv.URL, "bob")
+
+	now := time.Now().UTC().Truncate(time.Second)
+	obs := []syncapi.Observation{
+		{Provider: "openai", AccountRefHash: "plus", Hint: "plus", ObservedAt: now.Add(-40 * 24 * time.Hour)},
+		{Provider: "anthropic", AccountRefHash: "max", Hint: "max", ObservedAt: now.Add(-40 * 24 * time.Hour)},
+	}
+	event := func(key, provider, ref, model string, at time.Time, input, output int64) syncapi.Event {
+		return syncapi.Event{DedupeKey: key, AccountRefHash: ref, Provider: provider, Product: "codex", Model: model,
+			OccurredAt: at, Input: input, CachedInput: 3 * input, Output: output}
+	}
+	thirdParty := event("claude:tp", "anthropic", "max", "deepseek-v4.1-flash", now.Add(-30*time.Minute), 50, 5)
+	thirdParty.ThirdParty, thirdParty.Gateway = true, "opencodex"
+	for c, events := range map[client][]syncapi.Event{
+		laptop: {
+			event("codex:1", "openai", "plus", "gpt-5.5", now.Add(-time.Hour), 100, 10),
+			thirdParty,
+			event("codex:old", "openai", "plus", "gpt-5.5", now.Add(-10*24*time.Hour), 1000, 100), // within 30 days only
+		},
+		desktop: {event("claude:1", "anthropic", "max", "claude-opus-5-5", now.Add(-2*time.Hour), 1000, 500)},
+		bob:     {event("codex:b1", "openai", "plus", "gpt-5.5", now.Add(-time.Hour), 7, 1)},
+	} {
+		if st := c.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version, Observations: obs, Events: events}, nil); st != http.StatusOK {
+			t.Fatalf("sync = %d", st)
+		}
+	}
+
+	usage := func(c client, personID, period string) (int, syncapi.MemberUsage) {
+		var u syncapi.MemberUsage
+		st := c.do("GET", syncapi.PathPeople+personID+"/usage?"+url.Values{syncapi.QueryPeriod: {period}}.Encode(), nil, &u)
+		return st, u
+	}
+
+	st, u := usage(bob, alicePerson.ID, "7d")
+	if st != http.StatusOK || u.Name != "alice" || u.IsYou || u.Period != "7d" {
+		t.Fatalf("alice's usage seen by bob = %d, %+v", st, u)
+	}
+	// Two quota requests, without bob's, the third-party one or the old one:
+	// 100 + 1,000 input, 3 x that cached, 10 + 500 output.
+	if want := (syncapi.UsageTotals{Input: 1100, CachedInput: 3300, Output: 510, Requests: 2}); u.Total.Input != want.Input ||
+		u.Total.CachedInput != want.CachedInput || u.Total.Output != want.Output || u.Total.Requests != want.Requests {
+		t.Errorf("total = %+v, want %+v", u.Total, want)
+	}
+	if len(u.Accounts) != 2 || len(u.Models) != 2 {
+		t.Errorf("accounts %+v, models %+v; want two of each", u.Accounts, u.Models)
+	}
+	if len(u.ThirdParty) != 1 || u.ThirdParty[0].Model != "deepseek-v4.1-flash" || u.ThirdParty[0].Gateway != "opencodex" || u.ThirdParty[0].Totals.Input != 50 {
+		t.Errorf("third-party = %+v", u.ThirdParty)
+	}
+	devices := map[string]int{}
+	for _, d := range u.Devices {
+		devices[d.Name] = d.Totals.Requests
+	}
+	if len(devices) != 2 || devices["alice-laptop"] != 1 || devices["alice-desktop"] != 1 {
+		t.Errorf("devices = %+v; want one request on each of alice's devices", u.Devices)
+	}
+
+	// An unknown period is 30 days, which reaches the older request.
+	if st, u := usage(laptop, alicePerson.ID, "nope"); st != http.StatusOK || !u.IsYou || u.Period != "30d" || u.Total.Requests != 3 {
+		t.Errorf("30 days seen by alice = %d, is you %v, period %q, %d requests; want 200, true, 30d, 3", st, u.IsYou, u.Period, u.Total.Requests)
+	}
+	if st, _ := usage(bob, "no-such-person", "7d"); st != http.StatusNotFound {
+		t.Errorf("unknown member = %d, want 404", st)
+	}
+	if st, _ := usage(client{t: t, base: srv.URL}, alicePerson.ID, "7d"); st != http.StatusUnauthorized {
+		t.Errorf("without a device token = %d, want 401", st)
+	}
+}
+
 // An account read through a ShareCodex sign-in has no observation to name it.
 // Its snapshot names it instead, without marking anyone as signed into it.
 func TestSnapshotNamesAccountKnownOnlyFromSignIn(t *testing.T) {

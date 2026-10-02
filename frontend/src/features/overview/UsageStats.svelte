@@ -1,46 +1,46 @@
 <script lang="ts">
-  import type { PersonalUsage, UsageTotals } from '../../lib/api'
-  import { percent, tokens, usd } from '../../lib/format'
+  import type { UsageTotals } from '../../lib/api'
+  import { inputTokens, percent, tokens, totalTokens, usd } from '../../lib/format'
   import { t } from '../../lib/i18n.svelte'
 
-  let { usage }: { usage: PersonalUsage } = $props()
-
-  const periods = $derived([usage.today, usage.last_30_days])
-
-  function input(u: UsageTotals): number {
-    return u.input + u.cached_input + u.cache_write
-  }
+  // Each column is the totals of one span; onDetails, when given, opens a
+  // member's view from the empty corner.
+  let { columns, onDetails }: { columns: { label: string; totals: UsageTotals }[]; onDetails?: () => void } = $props()
 
   function cached(u: UsageTotals): string {
-    return input(u) > 0 ? t('cachedShare', { percent: percent((u.cached_input / input(u)) * 100) }) : ''
+    const input = inputTokens(u)
+    return input > 0 ? t('cachedShare', { percent: percent((u.cached_input / input) * 100) }) : ''
   }
 </script>
 
 <section class="card">
   <table>
     <thead>
-      <tr><th></th><th class="muted">{t('today')}</th><th class="muted">{t('last30Days')}</th></tr>
+      <tr>
+        <th>{#if onDetails}<button class="details" onclick={onDetails}>{t('details')}</button>{/if}</th>
+        {#each columns as c (c.label)}<th class="muted">{c.label}</th>{/each}
+      </tr>
     </thead>
     <tbody>
       <tr class="total">
         <th class="muted">{t('totalTokens')}</th>
-        {#each periods as u, i (i)}<td class="num">{tokens(input(u) + u.output)}</td>{/each}
+        {#each columns as c (c.label)}<td class="num">{tokens(totalTokens(c.totals))}</td>{/each}
       </tr>
       <tr>
         <th class="muted">{t('input')}</th>
-        {#each periods as u, i (i)}<td class="num">{tokens(input(u))}<span class="sub muted">{cached(u)}</span></td>{/each}
+        {#each columns as c (c.label)}<td class="num">{tokens(inputTokens(c.totals))}<span class="sub muted">{cached(c.totals)}</span></td>{/each}
       </tr>
       <tr>
         <th class="muted">{t('output')}</th>
-        {#each periods as u, i (i)}<td class="num">{tokens(u.output)}</td>{/each}
+        {#each columns as c (c.label)}<td class="num">{tokens(c.totals.output)}</td>{/each}
       </tr>
       <tr>
         <th class="muted">{t('estCost')}</th>
-        {#each periods as u, i (i)}<td class="num">{usd(u.cost_usd)}</td>{/each}
+        {#each columns as c (c.label)}<td class="num">{usd(c.totals.cost_usd)}</td>{/each}
       </tr>
       <tr>
         <th class="muted">{t('requests')}</th>
-        {#each periods as u, i (i)}<td class="num">{tokens(u.requests)}</td>{/each}
+        {#each columns as c (c.label)}<td class="num">{tokens(c.totals.requests)}</td>{/each}
       </tr>
     </tbody>
   </table>
@@ -58,7 +58,9 @@
   th { text-align: left; white-space: nowrap; }
   td, thead th { text-align: right; white-space: nowrap; }
   thead th { padding-bottom: 6px; font-size: 11.5px; }
+  thead th:first-child { text-align: left; }
   tbody th { width: 38%; }
   .total td { font-size: 16px; font-weight: 600; }
   .sub { display: block; font-size: 11px; }
+  .details { padding: 1px 8px; font-size: 11.5px; color: var(--muted); }
 </style>

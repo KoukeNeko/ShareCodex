@@ -90,6 +90,17 @@ func (c *Client) Invite(ctx context.Context) (syncapi.InviteResponse, error) {
 	return resp, err
 }
 
+// MemberUsage fetches one member's usage over a period: 24h, 7d or 30d.
+func (c *Client) MemberUsage(ctx context.Context, personID, period string) (syncapi.MemberUsage, error) {
+	var u syncapi.MemberUsage
+	q := url.Values{syncapi.QueryPeriod: {period}}
+	err := c.do(ctx, http.MethodGet, syncapi.PathPeople+url.PathEscape(personID)+"/usage?"+q.Encode(), nil, &u)
+	if errors.Is(err, errNotFound) {
+		return syncapi.MemberUsage{}, ErrServerTooOld
+	}
+	return u, err
+}
+
 // LeaveAccount takes this person out of a shared account.
 func (c *Client) LeaveAccount(ctx context.Context, accountID string) error {
 	err := c.do(ctx, http.MethodPost, syncapi.PathAccounts+url.PathEscape(accountID)+"/leave", nil, &struct{}{})

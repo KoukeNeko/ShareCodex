@@ -771,15 +771,15 @@ type SummaryRow struct {
 	Requests   int
 }
 
-// UsageSummary sums every request since a time, for the console's usage
-// report.
-func (s *Store) UsageSummary(ctx context.Context, since time.Time) ([]SummaryRow, error) {
+// UsageSummary sums every request since a time, for the usage reports. A
+// person ID limits it to that member's requests.
+func (s *Store) UsageSummary(ctx context.Context, since time.Time, personID string) ([]SummaryRow, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT e.person_id, p.display_name, e.device_id, e.account_id, e.model, e.gateway, e.third_party,
 			sum(e.input), sum(e.cached_input), sum(e.cache_write), sum(e.output), sum(e.reasoning_output), count(*)
 		FROM usage_events e JOIN persons p ON p.id = e.person_id
-		WHERE e.occurred_at >= $1
-		GROUP BY e.person_id, p.display_name, e.device_id, e.account_id, e.model, e.gateway, e.third_party`, since)
+		WHERE e.occurred_at >= $1 AND ($2 = '' OR e.person_id = $2)
+		GROUP BY e.person_id, p.display_name, e.device_id, e.account_id, e.model, e.gateway, e.third_party`, since, personID)
 	if err != nil {
 		return nil, err
 	}

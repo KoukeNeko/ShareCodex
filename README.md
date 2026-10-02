@@ -80,7 +80,8 @@ weekly window first instead, and dragging a card by its grip arranges them your 
 Each member has a bar for their estimated usage and a tick mark at their allotment. Anyone past their
 share is marked **over allotment**. Quota used with no matching record from anyone is shown as
 **unattributed** instead of being pinned on someone. Under each member, their usage is split by the
-computer it came from.
+computer it came from. Click a member's name for their usage over 24 hours, 7 days or 30 days by account,
+model and device; **Details** beside your own totals opens yours.
 
 ### Who is signed in where
 
@@ -145,7 +146,7 @@ login, refreshes when you open it, and never opens a terminal window.
 Members, join links, account names, allotment weights and devices are all managed at `/admin/` on
 your server. No shell access to the container is needed. The console shows everything the popup
 does for every member, plus everyone's usage over 24 hours, 7 days or 30 days by member, account and
-model.
+model. Click a member on the Usage page or in Members for theirs, down to each device.
 
 ### A dashboard anyone can open
 
@@ -155,7 +156,7 @@ beside its lists. Like
 the popup's, its charts switch between tokens per span and running totals with **Cumulative**. Accounts
 follow the order set in the console, or put the most used 5-hour or weekly window first. Its Usage
 page, at `/dashboard/usage`, has everyone's usage by member, account and model over 24 hours, 7 days
-or 30 days. On a phone, Chrome can install the dashboard as an app of its own. It leaves out email addresses and
+or 30 days, and each member's by account and model. On a phone, Chrome can install the dashboard as an app of its own. It leaves out email addresses and
 device names; an account still named by its email shows as Account 1, Account 2 and so on. It is off
 until turned on under **Settings**.
 
@@ -218,7 +219,7 @@ Then open `PUBLIC_URL/admin/` and sign in with `ADMIN_PASSWORD`:
 | Page | What you do there |
 |---|---|
 | Overview | Everyone's usage over 24 hours and 30 days; every account's windows with who is signed in, a usage chart, each member's allotment and estimated usage by device, and usage by model, including third-party models |
-| Usage | Tokens, requests and estimated cost by member, account and model over 24 hours, 7 days or 30 days |
+| Usage | Tokens, requests and estimated cost by member, account and model over 24 hours, 7 days or 30 days; open a member for theirs by account, model and device |
 | Members | Add members, create single-use join links, see each member's last sync and 30-day usage, and delete members along with their devices and usage |
 | Accounts | Rename accounts, drag them into the order the console, dashboard and popup list them in, set each member's allotment weight, and delete accounts along with their usage |
 | Devices | See which account each device is signed into, its 30-day usage and last sync, and revoke devices |

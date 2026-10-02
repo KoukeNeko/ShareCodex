@@ -1,6 +1,15 @@
 package sync
 
-import "testing"
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/KoukeNeko/ShareCodex/internal/syncapi"
+)
 
 func TestParseJoinLink(t *testing.T) {
 	tests := []struct {
@@ -19,5 +28,32 @@ func TestParseJoinLink(t *testing.T) {
 		if (err == nil) != tt.ok || base != tt.base || code != tt.code {
 			t.Errorf("ParseJoinLink(%q) = %q, %q, %v", tt.link, base, code, err)
 		}
+	}
+}
+
+func TestMemberUsage(t *testing.T) {
+	var gotPath, gotPeriod, gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotPeriod, gotAuth = r.URL.EscapedPath(), r.URL.Query().Get(syncapi.QueryPeriod), r.Header.Get("Authorization")
+		if r.URL.Path == syncapi.PathPeople+"gone/usage" {
+			http.NotFound(w, r)
+			return
+		}
+		json.NewEncoder(w).Encode(syncapi.MemberUsage{PersonID: "a/b", Name: "alice", Period: gotPeriod})
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "token")
+
+	u, err := c.MemberUsage(context.Background(), "a/b", "7d")
+	if err != nil || u.Name != "alice" || u.Period != "7d" {
+		t.Fatalf("usage = %+v, %v", u, err)
+	}
+	// The ID is one path segment, whatever it holds, and the call is signed.
+	if gotPath != syncapi.PathPeople+"a%2Fb/usage" || gotPeriod != "7d" || gotAuth != "Bearer token" {
+		t.Errorf("request = path %q, period %q, auth %q", gotPath, gotPeriod, gotAuth)
+	}
+	// A server without the endpoint answers 404, which means it is too old.
+	if _, err := c.MemberUsage(context.Background(), "gone", "7d"); !errors.Is(err, ErrServerTooOld) {
+		t.Errorf("missing endpoint error = %v, want ErrServerTooOld", err)
 	}
 }

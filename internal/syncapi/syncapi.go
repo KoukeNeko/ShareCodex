@@ -23,10 +23,15 @@ const (
 	// PathAccounts prefixes per-account actions: <id>/leave.
 	PathAccounts = "/internal/api/v1/accounts/"
 	PathJoin     = "/join/"
+	// PathPeople prefixes per-member reads: <id>/usage.
+	PathPeople = "/internal/api/v1/people/"
 
 	// QueryToday is the overview's optional start of the viewer's day, in
 	// RFC 3339, so "today" follows the client's time zone.
 	QueryToday = "today"
+	// QueryPeriod names the span of a member's usage: 24h, 7d or 30d, the
+	// last by default.
+	QueryPeriod = "period"
 )
 
 type Event struct {
@@ -150,6 +155,43 @@ type UsageTotals struct {
 	// CostUSD is the API-equivalent price from the embedded price table, an
 	// estimate rather than a bill.
 	CostUSD float64 `json:"cost_usd"`
+}
+
+// MemberUsage is one member's usage over a period, for the popup's member
+// view. Like the console's usage report, the totals, accounts and devices
+// count only the quota's own models; third-party models never count against
+// a quota, so they are listed apart.
+type MemberUsage struct {
+	PersonID string      `json:"person_id"`
+	Name     string      `json:"name"`
+	IsYou    bool        `json:"is_you"`
+	Period   string      `json:"period"`
+	Total    UsageTotals `json:"total"`
+	// Accounts, Models and Devices are the member's busiest first.
+	Accounts   []AccountUsage `json:"accounts"`
+	Models     []ModelTotals  `json:"models"`
+	ThirdParty []ModelTotals  `json:"third_party_models"`
+	Devices    []DeviceUsage  `json:"devices"`
+}
+
+type AccountUsage struct {
+	ID       string      `json:"id"`
+	Provider string      `json:"provider"`
+	Label    string      `json:"label"`
+	Totals   UsageTotals `json:"totals"`
+}
+
+// ModelTotals is the totals of one model, with the gateway it was reached
+// through when known.
+type ModelTotals struct {
+	Model   string      `json:"model"`
+	Gateway string      `json:"gateway,omitempty"`
+	Totals  UsageTotals `json:"totals"`
+}
+
+type DeviceUsage struct {
+	Name   string      `json:"name"`
+	Totals UsageTotals `json:"totals"`
 }
 
 type AccountOverview struct {

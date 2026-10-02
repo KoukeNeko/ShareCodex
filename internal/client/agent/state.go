@@ -20,6 +20,7 @@ func (a *Agent) State(ctx context.Context) State {
 		Version:       a.version,
 		Paired:        a.settings.Paired(),
 		Revoked:       a.revoked,
+		PersonID:      a.settings.PersonID,
 		PersonName:    a.settings.PersonName,
 		DeviceName:    a.settings.DeviceName,
 		ServerURL:     a.settings.ServerURL,

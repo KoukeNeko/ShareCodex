@@ -4,6 +4,7 @@
   import { Events } from '@wailsio/runtime'
   import AccountCard from './features/overview/AccountCard.svelte'
   import JoinForm from './features/overview/JoinForm.svelte'
+  import MemberUsage from './features/overview/MemberUsage.svelte'
   import UsageStats from './features/overview/UsageStats.svelte'
   import Settings from './features/settings/Settings.svelte'
   import { Desktop, errorMessage, type ActiveUser, type ProviderState, type State } from './lib/api'
@@ -13,7 +14,13 @@
   import { setLocale, t } from './lib/i18n.svelte'
 
   let app = $state<State | null>(null)
-  let view = $state<'overview' | 'settings'>('overview')
+  let view = $state<'overview' | 'settings' | 'member'>('overview')
+  let member = $state<{ id: string; name: string } | null>(null)
+
+  function openMember(id: string, name: string) {
+    member = { id, name }
+    view = 'member'
+  }
   let loadError = $state('')
   let now = $state(new Date())
   let main: HTMLElement
@@ -154,7 +161,7 @@
 
 <main bind:this={main}>
   <header>
-    <h1>{view === 'settings' ? t('settings') : 'ShareCodex'}</h1>
+    <h1>{view === 'settings' ? t('settings') : view === 'member' && member ? member.name : 'ShareCodex'}</h1>
     <div class="tools">
       {#if view === 'overview'}
         {#if app?.paired}
@@ -188,6 +195,8 @@
       <p class="muted">{t('loading')}</p>
     {:else if view === 'settings'}
       <Settings {app} />
+    {:else if view === 'member' && member}
+      <MemberUsage personId={member.id} />
     {:else}
       {#if app.update}
         <p class="banner update">
@@ -210,7 +219,12 @@
       {/each}
 
       {#if app.paired && app.overview?.you}
-        <UsageStats usage={app.overview.you} />
+        <UsageStats
+          columns={[
+            { label: t('today'), totals: app.overview.you.today },
+            { label: t('last30Days'), totals: app.overview.you.last_30_days },
+          ]}
+          onDetails={app.person_id ? () => openMember(app!.person_id, app!.person_name) : undefined} />
       {/if}
 
       {#if orderError}
@@ -222,7 +236,7 @@
       {#if app.paired && accounts.length > 0}
         {#each shown as a (a.id)}
           <div class="account" class:dragging={dragging === a.id} data-account={a.id} animate:flip={{ duration: 150 }}>
-            <AccountCard id={a.id} provider={a.provider} label={a.label} planType={a.plan_type} buckets={a.buckets ?? []} usage={a.usage} activeUsers={a.active_users ?? []} {now} fineChart={app.fine_chart} modelSort={app.model_sort}
+            <AccountCard id={a.id} provider={a.provider} label={a.label} planType={a.plan_type} buckets={a.buckets ?? []} usage={a.usage} activeUsers={a.active_users ?? []} {now} fineChart={app.fine_chart} modelSort={app.model_sort} onMember={openMember}
               onGrip={accounts.length > 1 ? (e) => startDrag(e, a.id) : undefined}
               pinned={(app.pinned ?? []).includes(a.id)}
               onPin={() => togglePin(a.id)} />

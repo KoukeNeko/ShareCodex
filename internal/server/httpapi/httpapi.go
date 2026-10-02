@@ -44,6 +44,7 @@ func New(store *storage.Store, log *slog.Logger) http.Handler {
 	mux.HandleFunc("GET "+syncapi.PathOverview, s.authed(s.overview))
 	mux.HandleFunc("POST "+syncapi.PathInvite, s.authed(s.invite))
 	mux.HandleFunc("POST "+syncapi.PathAccounts+"{id}/leave", s.authed(s.leaveAccount))
+	mux.HandleFunc("GET "+syncapi.PathPeople+"{id}/usage", s.authed(s.memberUsage))
 	return mux
 }
 
@@ -178,6 +179,22 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, o)
+}
+
+// memberUsage serves any member's usage to any member, as the overview
+// already shows each member's share of an account.
+func (s *Server) memberUsage(w http.ResponseWriter, r *http.Request) {
+	period := query.PeriodByID(r.URL.Query().Get(syncapi.QueryPeriod))
+	u, err := query.MemberUsage(r.Context(), s.store, deviceFrom(r).PersonID, r.PathValue("id"), period, time.Now())
+	if errors.Is(err, storage.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "member not found")
+		return
+	}
+	if err != nil {
+		s.internalError(w, "build member usage", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, u)
 }
 
 // startOfDay reads the client's start of day, falling back to UTC midnight
