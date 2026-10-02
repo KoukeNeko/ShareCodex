@@ -232,9 +232,10 @@ type BucketOverview struct {
 	UnattributedPercent float64       `json:"unattributed_percent"`
 	Members             []MemberShare `json:"members"`
 	Models              []ModelUsage  `json:"models"`
-	// ThirdPartyModels are other vendors' models used from Claude clients
-	// on this account within the window. They never count against the
-	// quota, so they have no share: UsedPercent is always 0.
+	// ThirdPartyModels are other vendors' models used on this account over
+	// the span the Timeline covers, not only within the window. They never
+	// count against the quota, so they have no share: UsedPercent is always
+	// 0.
 	ThirdPartyModels []ModelUsage `json:"third_party_models"`
 	// Timeline is the tokens over the last window length, up to now.
 	Timeline *Timeline `json:"timeline,omitempty"`

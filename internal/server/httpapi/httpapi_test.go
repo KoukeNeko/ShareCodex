@@ -207,6 +207,46 @@ func TestSyncDropsOutOfRangeRecords(t *testing.T) {
 	}
 }
 
+// Third-party usage never counts against a quota, so its list covers what the
+// chart shows, not only the current window: an idle account's window restarts
+// at every reading, which would otherwise hide a model used a while ago.
+func TestThirdPartyModelsFollowTheChartSpan(t *testing.T) {
+	store := storagetest.New(t)
+	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	defer srv.Close()
+	alice := pair(t, store, srv.URL, "alice")
+
+	now := time.Now().UTC().Truncate(time.Second)
+	// An idle window: the reading shows 0% and a reset a full window away, so
+	// the window starts now.
+	resets := now.Add(5 * time.Hour)
+	snap := syncapi.Snapshot{Provider: "openai", AccountRefHash: "plus", Source: "codex-rollout", ObservedAt: now,
+		Buckets: []syncapi.Bucket{{Key: "five_hour", UsedPercent: ptr(0.0), ResetsAt: &resets, WindowMinutes: ptr(300)}}}
+	obs := syncapi.Observation{Provider: "openai", AccountRefHash: "plus", Hint: "plus", ObservedAt: now.Add(-24 * time.Hour)}
+	event := syncapi.Event{DedupeKey: "codex:tp", AccountRefHash: "plus", Provider: "openai", Product: "codex",
+		Model: "ollama-cloud/deepseek-v4.1-flash", ThirdParty: true, Gateway: "opencodex",
+		OccurredAt: now.Add(-2 * time.Hour), Input: 1000, Output: 100}
+	if st := alice.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version,
+		Observations: []syncapi.Observation{obs}, Events: []syncapi.Event{event}, Snapshots: []syncapi.Snapshot{snap}}, nil); st != http.StatusOK {
+		t.Fatalf("sync = %d", st)
+	}
+
+	var ov syncapi.Overview
+	if st := alice.do("GET", syncapi.PathOverview, nil, &ov); st != http.StatusOK || len(ov.Accounts) != 1 || len(ov.Accounts[0].Buckets) != 1 {
+		t.Fatalf("overview = %d, %+v", st, ov)
+	}
+	b := ov.Accounts[0].Buckets[0]
+	if len(b.Models) != 0 {
+		t.Errorf("models = %+v; the window just started, so it holds no usage", b.Models)
+	}
+	if len(b.ThirdPartyModels) != 1 || b.ThirdPartyModels[0].Model != "ollama-cloud/deepseek-v4.1-flash" || b.ThirdPartyModels[0].Tokens != 1100 {
+		t.Errorf("third-party models = %+v; want the model used two hours ago", b.ThirdPartyModels)
+	}
+	if b.Timeline == nil || !slices.ContainsFunc(b.Timeline.Points, func(p syncapi.TimelinePoint) bool { return p.ThirdParty }) {
+		t.Errorf("timeline = %+v; want the third-party request on the chart", b.Timeline)
+	}
+}
+
 // Any member can read another member's usage over a period; it holds only
 // that member's requests, and the quota's own models are totalled apart from
 // third-party ones.

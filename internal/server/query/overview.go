@@ -75,15 +75,19 @@ func Overview(ctx context.Context, st *storage.Store, viewerPersonID string, now
 				rows = slices.DeleteFunc(rows, func(r storage.UsageRow) bool { return !quota.InFamily(r.Model, family) })
 			}
 			bo := bucketOverview(b, now, members, rows, viewerPersonID)
+			if bo.Timeline, err = timeline(ctx, st, a.ID, b, snaps, now); err != nil {
+				return syncapi.Overview{}, err
+			}
 			if family == "" {
-				if bo.ThirdPartyModels, err = thirdPartyModels(ctx, st, a.ID, bo, start, end); err != nil {
+				from, to := start, end
+				if bo.Timeline != nil {
+					from, to = bo.Timeline.Start, now
+				}
+				if bo.ThirdPartyModels, err = thirdPartyModels(ctx, st, a.ID, from, to); err != nil {
 					return syncapi.Overview{}, err
 				}
 			} else {
 				bo.ThirdPartyModels = []syncapi.ModelUsage{}
-			}
-			if bo.Timeline, err = timeline(ctx, st, a.ID, b, snaps, now); err != nil {
-				return syncapi.Overview{}, err
 			}
 			ao.Buckets = append(ao.Buckets, bo)
 		}
@@ -271,7 +275,7 @@ func recentUsage(ctx context.Context, st *storage.Store, accountID string, membe
 		return nil, err
 	}
 	bo := bucketOverview(b, now, members, rows, viewer)
-	if bo.ThirdPartyModels, err = thirdPartyModels(ctx, st, accountID, bo, start, end); err != nil {
+	if bo.ThirdPartyModels, err = thirdPartyModels(ctx, st, accountID, start, end); err != nil {
 		return nil, err
 	}
 	if len(bo.Models) == 0 && len(bo.ThirdPartyModels) == 0 {
@@ -283,14 +287,12 @@ func recentUsage(ctx context.Context, st *storage.Store, accountID string, membe
 	return &bo, nil
 }
 
-// thirdPartyModels lists the window's third-party models, most tokens first;
-// like the quota's own breakdown, none after a reset.
-func thirdPartyModels(ctx context.Context, st *storage.Store, accountID string, bo syncapi.BucketOverview, start, end time.Time) ([]syncapi.ModelUsage, error) {
+// thirdPartyModels lists the third-party models used within a span, most
+// tokens first. They never count against a quota, so a window's start or
+// reset does not cut them off; the overview gives the span its chart covers.
+func thirdPartyModels(ctx context.Context, st *storage.Store, accountID string, from, to time.Time) ([]syncapi.ModelUsage, error) {
 	out := []syncapi.ModelUsage{}
-	if bo.Reset {
-		return out, nil
-	}
-	rows, err := st.ThirdPartyUsage(ctx, accountID, start, end)
+	rows, err := st.ThirdPartyUsage(ctx, accountID, from, to)
 	if err != nil {
 		return nil, err
 	}

@@ -110,8 +110,9 @@ a single member, and hover to read the values. **Full chart detail** in Settings
 Claude Code and Claude Desktop can be pointed at other vendors' models through a gateway. Those
 requests are recorded against the account the client used and shown as dashed lines on its chart and
 in a separate **Third-party models** list, with bars on the same scale as its own models, but they
-never count toward the quota, the estimates or the allotments. Models used through OpenCodex or
-Ollama (`ollama launch claude`) are tagged **OCX** or **Ollama**.
+never count toward the quota, the estimates or the allotments. The list covers the same span as the
+chart, not only the current window. Models used through OpenCodex or Ollama (`ollama launch claude`)
+are tagged **OCX** or **Ollama**.
 
 ChatGPT used from Claude Code or Claude Desktop through OpenCodex does draw on a ChatGPT subscription,
 so it counts on the Codex account the computer is signed into, as its own OCX row. When OpenCodex's

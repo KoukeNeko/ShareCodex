@@ -100,8 +100,8 @@ Desktop 最近一次使用 Claude Code 後的 15 分鐘內，會列在那次使�
 
 Claude Code 與 Claude Desktop 可以透過閘道使用其他廠商的模型。這些請求會記在客戶端當時使用的帳號下，
 在折線圖上以虛線顯示，並列在獨立的**第三方模型**清單，進度列與該帳號自己的模型同一比例，
-但不計入額度、估計用量或分配。透過 OpenCodex 或 Ollama（`ollama launch claude`）使用的模型會標上
-**OCX** 或 **Ollama**。
+但不計入額度、估計用量或分配。清單涵蓋的時間與折線圖相同，不只是目前的額度視窗。透過 OpenCodex 或
+Ollama（`ollama launch claude`）使用的模型會標上 **OCX** 或 **Ollama**。
 
 從 Claude Code 或 Claude Desktop 經 OpenCodex 使用的 ChatGPT 模型會用到 ChatGPT 訂閱，因此計入這台電腦
 Codex 登入的帳號，以獨立的 OCX 列顯示。若 OpenCodex 自己的請求紀錄顯示是由池中另一個帳號處理，
