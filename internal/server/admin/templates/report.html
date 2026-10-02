@@ -9,7 +9,7 @@
 {{with $.U.Member}}
 <div class="row spread">
   <h2 style="margin:0">{{.DisplayName}}</h2>
-  <a href="{{$.U.Path}}?period={{$.U.Period}}">{{$.T.allMembers}}</a>
+  <a class="back" href="{{$.U.Path}}?period={{$.U.Period}}">{{$.T.allMembers}}</a>
 </div>
 {{end}}
 <div class="cells tiles">
@@ -27,7 +27,7 @@
     <thead><tr><th>{{$.T.member}}</th><th class="num">{{$.T.totalTokens}}</th><th class="num detail">{{$.T.input}}</th><th class="num detail">{{$.T.output}}</th><th class="num">{{$.T.requests}}</th><th class="num">{{$.T.estCost}}</th></tr></thead>
     <tbody>
     {{range .Members}}
-      <tr><td><a href="{{$.U.Path}}?period={{$.U.Period}}&amp;member={{.ID}}">{{.Name}}</a></td><td class="num">{{tokensOf .UsageTotals}}</td><td class="num detail">{{inputOf .UsageTotals}}</td><td class="num detail">{{tokens .Output}}</td><td class="num">{{.Requests}}</td><td class="num">{{usd .CostUSD}}</td></tr>
+      <tr><td><a class="member-link" href="{{$.U.Path}}?period={{$.U.Period}}&amp;member={{.ID}}">{{.Name}}</a></td><td class="num">{{tokensOf .UsageTotals}}</td><td class="num detail">{{inputOf .UsageTotals}}</td><td class="num detail">{{tokens .Output}}</td><td class="num">{{.Requests}}</td><td class="num">{{usd .CostUSD}}</td></tr>
     {{else}}
       <tr><td colspan="6" class="muted">{{$.T.noUsage}}</td></tr>
     {{end}}

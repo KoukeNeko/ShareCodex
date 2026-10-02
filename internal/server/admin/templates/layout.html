@@ -207,6 +207,12 @@ button.grip:hover { color: var(--text); }
 .dragging { outline: 1px solid var(--accent); outline-offset: -1px; position: relative; z-index: 1; }
 .notice { background: var(--warn-soft); }
 a { color: var(--accent); }
+/* A member's name in a table reads as text and underlines on hover; the way
+   back to everyone's usage sits quiet like the navigation. */
+a.member-link { color: inherit; text-decoration: none; }
+a.member-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+a.back { color: var(--muted); text-decoration: none; font-size: 12px; }
+a.back:hover { color: var(--text); }
 </style>
 <script>
 // Apply the remembered chart mode before the page draws.

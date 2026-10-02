@@ -17,7 +17,7 @@
     <tbody>
     {{range .Data.People}}
       <tr>
-        <td><a href="/admin/usage?member={{.ID}}">{{.DisplayName}}</a></td>
+        <td><a class="member-link" href="/admin/usage?member={{.ID}}">{{.DisplayName}}</a></td>
         <td class="num">{{.ActiveDevices}}</td>
         <td class="num muted">{{when .LastSeenAt}}</td>
         <td class="num">{{tokensOf .Month}}</td>
