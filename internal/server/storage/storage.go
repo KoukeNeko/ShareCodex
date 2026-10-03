@@ -32,10 +32,12 @@ import (
 var migrations embed.FS
 
 var (
-	ErrNotFound      = errors.New("not found")
-	ErrInvalidInvite = errors.New("invite is invalid, expired or already used")
-	ErrUnauthorized  = errors.New("device token is invalid or revoked")
-	ErrDuplicate     = errors.New("already exists")
+	ErrNotFound            = errors.New("not found")
+	ErrInvalidInvite       = errors.New("invite is invalid, expired or already used")
+	ErrUnauthorized        = errors.New("device token is invalid or revoked")
+	ErrDuplicate           = errors.New("already exists")
+	ErrInvalidPlanInterval = errors.New("invalid plan interval")
+	ErrPlanIntervalOverlap = errors.New("plan interval overlaps with existing interval")
 )
 
 type Store struct {
@@ -323,20 +325,26 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 			reported = append(reported, e)
 			res, err := tx.ExecContext(ctx, `
 				INSERT INTO usage_events (dedupe_key, account_id, person_id, device_id, product, originator, session_id,
-					model, occurred_at, input, cached_input, cache_write, output, reasoning_output, third_party, gateway)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $17, $18)
+					model, occurred_at, input, cached_input, cache_write, output, reasoning_output, third_party, gateway,
+					request_id, parent_request_id, effort, status, aggregated)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $17, $18, $19, $20, $21, $22, $23)
 				ON CONFLICT (dedupe_key) DO UPDATE SET
 					account_id = excluded.account_id,
 					output = GREATEST(usage_events.output, excluded.output),
-					reasoning_output = GREATEST(usage_events.reasoning_output, excluded.reasoning_output)
+					reasoning_output = GREATEST(usage_events.reasoning_output, excluded.reasoning_output),
+					request_id = CASE WHEN usage_events.request_id = '' THEN excluded.request_id ELSE usage_events.request_id END,
+					parent_request_id = CASE WHEN usage_events.parent_request_id = '' THEN excluded.parent_request_id ELSE usage_events.parent_request_id END,
+					effort = CASE WHEN usage_events.effort = '' THEN excluded.effort ELSE usage_events.effort END,
+					status = CASE WHEN usage_events.status = '' THEN excluded.status ELSE usage_events.status END,
+					aggregated = usage_events.aggregated OR excluded.aggregated
 				WHERE usage_events.person_id = excluded.person_id AND
-					((usage_events.account_id = excluded.account_id AND excluded.output > usage_events.output) OR
+					((usage_events.account_id = excluded.account_id AND (excluded.output > usage_events.output OR (usage_events.request_id = '' AND excluded.request_id != ''))) OR
 					 (usage_events.session_id = excluded.session_id AND usage_events.originator = excluded.originator AND
 					  usage_events.account_id != excluded.account_id AND $16 != '' AND
 					  usage_events.account_id = (SELECT id FROM accounts WHERE provider = $15 AND ref_hash = $16)))`,
 				e.DedupeKey, id, d.PersonID, d.ID, e.Product, e.Originator, e.SessionID, e.Model, e.OccurredAt,
 				e.Input, e.CachedInput, e.CacheWrite, e.Output, e.ReasoningOutput, e.Provider, e.PreviousAccountRefHash, e.ThirdParty,
-				e.Gateway)
+				e.Gateway, e.RequestID, e.ParentRequestID, e.Effort, e.Status, e.Aggregated)
 			if err != nil {
 				return fmt.Errorf("save event %s: %w", e.DedupeKey, err)
 			}
@@ -409,11 +417,34 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 				accepted += rowsAffected(res)
 			}
 			res, err := tx.ExecContext(ctx, `
-				INSERT INTO quota_snapshots (account_id, device_id, source, observed_at, buckets)
-				VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING`,
-				id, d.ID, snap.Source, snap.ObservedAt, buckets)
+				INSERT INTO quota_snapshots (account_id, device_id, source, observed_at, buckets, plan_type)
+				VALUES ($1, $2, $3, $4, $5, $6)
+				ON CONFLICT (account_id, device_id, source, observed_at) DO UPDATE SET
+					plan_type = CASE WHEN quota_snapshots.plan_type = '' THEN excluded.plan_type ELSE quota_snapshots.plan_type END`,
+				id, d.ID, snap.Source, snap.ObservedAt, buckets, snap.PlanType)
 			if err != nil {
 				return fmt.Errorf("save snapshot: %w", err)
+			}
+			accepted += rowsAffected(res)
+		}
+
+		for _, l := range req.LimitEvents {
+			if l.AccountRefHash == "" || l.DedupeKey == "" {
+				continue
+			}
+			id, err := ensure(l.Provider, l.AccountRefHash, "", "", time.Time{})
+			if err != nil {
+				return err
+			}
+			res, err := tx.ExecContext(ctx, `
+				INSERT INTO limit_events (dedupe_key, account_id, person_id, device_id, provider,
+					occurred_at, observed_at, session_id, request_id, kind, source, evidence, http_status)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+				ON CONFLICT (dedupe_key) DO NOTHING`,
+				l.DedupeKey, id, d.PersonID, d.ID, l.Provider,
+				l.OccurredAt, l.ObservedAt, l.SessionID, l.RequestID, l.Kind, l.Source, l.Evidence, l.HTTPStatus)
+			if err != nil {
+				return fmt.Errorf("save limit event %s: %w", l.DedupeKey, err)
 			}
 			accepted += rowsAffected(res)
 		}
@@ -563,7 +594,7 @@ func (s *Store) Members(ctx context.Context, accountID string) ([]Member, error)
 
 func (s *Store) Snapshots(ctx context.Context, accountID string, since time.Time) ([]quota.Snapshot, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT source, observed_at, buckets FROM quota_snapshots
+		SELECT source, observed_at, buckets, plan_type FROM quota_snapshots
 		WHERE account_id = $1 AND observed_at >= $2`, accountID, since)
 	if err != nil {
 		return nil, err
@@ -573,7 +604,7 @@ func (s *Store) Snapshots(ctx context.Context, accountID string, since time.Time
 	for rows.Next() {
 		var dto syncapi.Snapshot
 		var buckets []byte
-		if err := rows.Scan(&dto.Source, &dto.ObservedAt, &buckets); err != nil {
+		if err := rows.Scan(&dto.Source, &dto.ObservedAt, &buckets, &dto.PlanType); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(buckets, &dto.Buckets); err != nil {
@@ -851,4 +882,222 @@ func newSecret() string {
 func hashSecret(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])
+}
+
+// PlanHistory returns all recorded plan intervals for an account, chronological by effective_at.
+func (s *Store) PlanHistory(ctx context.Context, accountID string) ([]account.PlanInterval, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, account_id, plan_type, effective_at, ended_at, reason, source, precision, created_at
+		FROM plan_intervals
+		WHERE account_id = $1
+		ORDER BY effective_at ASC`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []account.PlanInterval
+	for rows.Next() {
+		var in account.PlanInterval
+		var endedAt sql.NullTime
+		if err := rows.Scan(&in.ID, &in.AccountID, &in.PlanType, &in.EffectiveAt, &endedAt,
+			&in.Reason, &in.Source, &in.Precision, &in.CreatedAt); err != nil {
+			return nil, err
+		}
+		if endedAt.Valid {
+			in.EndedAt = &endedAt.Time
+		}
+		out = append(out, in)
+	}
+	return out, rows.Err()
+}
+
+// SavePlanInterval inserts or updates a plan interval, validating that it does not
+// overlap with other intervals for the same account.
+func (s *Store) SavePlanInterval(ctx context.Context, in account.PlanInterval) (account.PlanInterval, error) {
+	in.PlanType = strings.TrimSpace(in.PlanType)
+	if in.AccountID == "" || in.PlanType == "" {
+		return account.PlanInterval{}, ErrInvalidPlanInterval
+	}
+	if in.EndedAt != nil && !in.EndedAt.After(in.EffectiveAt) {
+		return account.PlanInterval{}, ErrInvalidPlanInterval
+	}
+	if in.Precision == "" {
+		in.Precision = account.PrecisionConfirmed
+	}
+
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		var dummy string
+		if err := tx.QueryRowContext(ctx, `SELECT id FROM accounts WHERE id = $1 FOR UPDATE`, in.AccountID).Scan(&dummy); err != nil {
+			return err
+		}
+
+		rows, err := tx.QueryContext(ctx, `
+			SELECT id, effective_at, ended_at FROM plan_intervals WHERE account_id = $1 AND ($2 = '' OR id != $2)`,
+			in.AccountID, in.ID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			var eff time.Time
+			var end sql.NullTime
+			if err := rows.Scan(&id, &eff, &end); err != nil {
+				return err
+			}
+			aStart := in.EffectiveAt
+			aEnd := in.EndedAt
+			bStart := eff
+			var bEnd *time.Time
+			if end.Valid {
+				bEnd = &end.Time
+			}
+
+			aBeforeBEnd := bEnd == nil || aStart.Before(*bEnd)
+			bBeforeAEnd := aEnd == nil || bStart.Before(*aEnd)
+			if aBeforeBEnd && bBeforeAEnd {
+				return ErrPlanIntervalOverlap
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+
+		var endedAt sql.NullTime
+		if in.EndedAt != nil {
+			endedAt = sql.NullTime{Time: *in.EndedAt, Valid: true}
+		}
+
+		if in.ID == "" {
+			in.ID = newID()
+			return tx.QueryRowContext(ctx, `
+				INSERT INTO plan_intervals (id, account_id, plan_type, effective_at, ended_at, reason, source, precision)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+				RETURNING created_at`,
+				in.ID, in.AccountID, in.PlanType, in.EffectiveAt, endedAt, in.Reason, in.Source, in.Precision).Scan(&in.CreatedAt)
+		}
+
+		res, err := tx.ExecContext(ctx, `
+			UPDATE plan_intervals
+			SET plan_type = $2, effective_at = $3, ended_at = $4, reason = $5, source = $6, precision = $7
+			WHERE id = $1 AND account_id = $8`,
+			in.ID, in.PlanType, in.EffectiveAt, endedAt, in.Reason, in.Source, in.Precision, in.AccountID)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return ErrNotFound
+		}
+		return tx.QueryRowContext(ctx, `SELECT created_at FROM plan_intervals WHERE id = $1`, in.ID).Scan(&in.CreatedAt)
+	})
+	return in, err
+}
+
+func (s *Store) DeletePlanInterval(ctx context.Context, accountID, intervalID string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM plan_intervals WHERE id = $1 AND account_id = $2`, intervalID, accountID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// HistoricalSnapshots returns an account's quota snapshots between start and end, chronological.
+func (s *Store) HistoricalSnapshots(ctx context.Context, accountID string, start, end time.Time) ([]quota.Snapshot, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT source, observed_at, buckets, plan_type FROM quota_snapshots
+		WHERE account_id = $1 AND observed_at >= $2 AND observed_at < $3
+		ORDER BY observed_at ASC`, accountID, start, end)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []quota.Snapshot
+	for rows.Next() {
+		var dto syncapi.Snapshot
+		var buckets []byte
+		if err := rows.Scan(&dto.Source, &dto.ObservedAt, &buckets, &dto.PlanType); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(buckets, &dto.Buckets); err != nil {
+			return nil, fmt.Errorf("decode stored buckets: %w", err)
+		}
+		out = append(out, dto.ToDomain())
+	}
+	return out, rows.Err()
+}
+
+type StoredLimitEvent struct {
+	usage.LimitEvent
+	PersonName string
+	DeviceName string
+}
+
+// HistoricalLimitEvents returns limit and refusal events for an account between start and end.
+func (s *Store) HistoricalLimitEvents(ctx context.Context, accountID string, start, end time.Time) ([]StoredLimitEvent, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT l.dedupe_key, l.account_id, l.person_id, p.display_name, l.device_id, d.name,
+			l.provider, l.occurred_at, l.observed_at, l.session_id, l.request_id, l.kind,
+			l.source, l.evidence, l.http_status
+		FROM limit_events l
+		JOIN persons p ON p.id = l.person_id
+		JOIN devices d ON d.id = l.device_id
+		WHERE l.account_id = $1 AND l.occurred_at >= $2 AND l.occurred_at < $3
+		ORDER BY l.occurred_at ASC`, accountID, start, end)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []StoredLimitEvent
+	for rows.Next() {
+		var l StoredLimitEvent
+		var kind string
+		if err := rows.Scan(&l.DedupeKey, &l.AccountRefHash, &l.PersonID, &l.PersonName, &l.DeviceID, &l.DeviceName,
+			&l.Provider, &l.OccurredAt, &l.ObservedAt, &l.SessionID, &l.RequestID, &kind,
+			&l.Source, &l.Evidence, &l.HTTPStatus); err != nil {
+			return nil, err
+		}
+		l.Kind = usage.LimitKind(kind)
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+// DemandEvent is a recorded request with its timestamp, person, model, and tokens.
+type DemandEvent struct {
+	OccurredAt time.Time
+	PersonID   string
+	DeviceID   string
+	Model      string
+	Gateway    string
+	ThirdParty bool
+	Tokens     usage.Tokens
+}
+
+// AccountDemandEvents returns requests on an account between start and end, chronological,
+// for rolling demand analysis.
+func (s *Store) AccountDemandEvents(ctx context.Context, accountID string, start, end time.Time) ([]DemandEvent, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT occurred_at, person_id, device_id, model, gateway, third_party,
+			input, cached_input, cache_write, output, reasoning_output
+		FROM usage_events
+		WHERE account_id = $1 AND occurred_at >= $2 AND occurred_at < $3
+		ORDER BY occurred_at ASC`, accountID, start, end)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DemandEvent
+	for rows.Next() {
+		var d DemandEvent
+		var t = &d.Tokens
+		if err := rows.Scan(&d.OccurredAt, &d.PersonID, &d.DeviceID, &d.Model, &d.Gateway, &d.ThirdParty,
+			&t.Input, &t.CachedInput, &t.CacheWrite, &t.Output, &t.ReasoningOutput); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }

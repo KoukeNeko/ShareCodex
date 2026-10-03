@@ -134,6 +134,7 @@ func Parse(r io.Reader) (Result, error) {
 			Product:    usage.ProductClaudeCode,
 			Originator: l.Entrypoint,
 			SessionID:  l.SessionID,
+			RequestID:  l.RequestID,
 			Model:      l.Message.Model,
 			OccurredAt: l.Timestamp,
 			// Claude Code can be pointed at other vendors' models through a

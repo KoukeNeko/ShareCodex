@@ -433,6 +433,11 @@ func (s *Service) MemberUsage(ctx context.Context, personID, period string) (syn
 	return s.agent.MemberUsage(ctx, personID, period)
 }
 
+// AccountCapacity is an account's capacity analysis and scenario simulation over a period.
+func (s *Service) AccountCapacity(ctx context.Context, accountID, period string, ratio float64) (syncapi.CapacityReport, error) {
+	return s.agent.AccountCapacity(ctx, accountID, period, ratio)
+}
+
 func (s *Service) SetFineChart(enabled bool) error {
 	return s.agent.SetFineChart(enabled)
 }

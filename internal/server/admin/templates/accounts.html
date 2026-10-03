@@ -8,6 +8,8 @@
   <div class="row spread">
     <div class="row"><button type="button" class="grip" data-grip aria-label="{{$.T.reorder}}" title="{{$.T.reorder}}">⠿</button><h2>{{provider .Provider}}</h2>{{if .PlanType}}<span class="tag">{{.PlanType}}</span>{{end}}<span class="muted small">{{.Hint}}</span></div>
     <div class="row">
+      <a class="button secondary small" href="/admin/accounts/{{.ID}}/plans">{{$.T.planHistory}}</a>
+      <a class="button secondary small" href="/admin/accounts/{{.ID}}/capacity">{{$.T.capacity}}</a>
       <form class="row" method="post" action="/admin/accounts/{{.ID}}/label">
         <input class="grow" type="text" name="label" value="{{.Label}}" maxlength="50" required aria-label="{{$.T.accountName}}">
         <button type="submit">{{$.T.rename}}</button>

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,6 +45,7 @@ func New(store *storage.Store, log *slog.Logger) http.Handler {
 	mux.HandleFunc("GET "+syncapi.PathOverview, s.authed(s.overview))
 	mux.HandleFunc("POST "+syncapi.PathInvite, s.authed(s.invite))
 	mux.HandleFunc("POST "+syncapi.PathAccounts+"{id}/leave", s.authed(s.leaveAccount))
+	mux.HandleFunc("GET "+syncapi.PathAccounts+"{id}/capacity", s.authed(s.accountCapacity))
 	mux.HandleFunc("GET "+syncapi.PathPeople+"{id}/usage", s.authed(s.memberUsage))
 	return mux
 }
@@ -144,7 +146,7 @@ func (s *Server) sync(w http.ResponseWriter, r *http.Request) {
 // many it removed. Rejecting the batch instead would leave one bad record
 // blocking everything the device has queued behind it.
 func dropInvalid(req *syncapi.SyncRequest) int {
-	before := len(req.Observations) + len(req.Events) + len(req.Snapshots)
+	before := len(req.Observations) + len(req.Events) + len(req.Snapshots) + len(req.LimitEvents)
 	req.Observations = slices.DeleteFunc(req.Observations, func(o syncapi.Observation) bool {
 		return tooLong(o.Provider, o.Source, o.AccountRefHash, o.Hint, o.PlanType)
 	})
@@ -155,12 +157,15 @@ func dropInvalid(req *syncapi.SyncRequest) int {
 			}
 		}
 		return tooLong(e.DedupeKey, e.AccountRefHash, e.PreviousAccountRefHash, e.Provider, e.Product,
-			e.Originator, e.SessionID, e.Model, e.Gateway)
+			e.Originator, e.SessionID, e.Model, e.Gateway, e.RequestID, e.ParentRequestID, e.Effort, e.Status)
 	})
 	req.Snapshots = slices.DeleteFunc(req.Snapshots, func(sn syncapi.Snapshot) bool {
 		return tooLong(sn.AccountRefHash, sn.PreviousAccountRefHash, sn.AccountHint, sn.PlanType, sn.Provider, sn.Source)
 	})
-	return before - len(req.Observations) - len(req.Events) - len(req.Snapshots)
+	req.LimitEvents = slices.DeleteFunc(req.LimitEvents, func(l syncapi.LimitEvent) bool {
+		return tooLong(l.DedupeKey, l.AccountRefHash, l.Provider, l.SessionID, l.RequestID, l.Kind, l.Source, l.Evidence)
+	})
+	return before - len(req.Observations) - len(req.Events) - len(req.Snapshots) - len(req.LimitEvents)
 }
 
 func tooLong(fields ...string) bool {
@@ -195,6 +200,43 @@ func (s *Server) memberUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, u)
+}
+
+func (s *Server) accountCapacity(w http.ResponseWriter, r *http.Request) {
+	period := query.PeriodByID(r.URL.Query().Get(syncapi.QueryPeriod))
+	ratio := 4.0
+	if raw := r.URL.Query().Get(syncapi.QueryRatio); raw != "" {
+		if v, err := strconv.ParseFloat(raw, 64); err == nil && v > 0 {
+			ratio = v
+		}
+	}
+	accountID := r.PathValue("id")
+	if _, err := s.store.Account(r.Context(), accountID); errors.Is(err, storage.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "account not found")
+		return
+	} else if err != nil {
+		s.internalError(w, "read account", err)
+		return
+	}
+	members, err := s.store.Members(r.Context(), accountID)
+	if err != nil {
+		s.internalError(w, "read account members", err)
+		return
+	}
+	viewerID := deviceFrom(r).PersonID
+	if slices.ContainsFunc(members, func(m storage.Member) bool {
+		return m.PersonID == viewerID && m.ShareWeight == 0
+	}) {
+		writeError(w, http.StatusNotFound, "account not found")
+		return
+	}
+
+	report, err := query.AccountCapacity(r.Context(), s.store, accountID, period, ratio, time.Now())
+	if err != nil {
+		s.internalError(w, "build account capacity", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
 }
 
 // startOfDay reads the client's start of day, falling back to UTC midnight

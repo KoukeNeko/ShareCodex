@@ -40,6 +40,35 @@ type Membership struct {
 	ShareWeight float64
 }
 
+const (
+	PrecisionConfirmed = "confirmed"
+	PrecisionInferred  = "inferred"
+)
+
+// PlanInterval records when an account was subscribed to a particular plan.
+type PlanInterval struct {
+	ID          string     `json:"id"`
+	AccountID   string     `json:"account_id"`
+	PlanType    string     `json:"plan_type"`
+	EffectiveAt time.Time  `json:"effective_at"`
+	EndedAt     *time.Time `json:"ended_at,omitempty"`
+	Reason      string     `json:"reason"`
+	Source      string     `json:"source"`
+	Precision   string     `json:"precision"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
+// ResolvePlanAt returns the plan active at t from a set of non-overlapping intervals,
+// or "" when none covers t.
+func ResolvePlanAt(intervals []PlanInterval, t time.Time) string {
+	for _, in := range intervals {
+		if !t.Before(in.EffectiveAt) && (in.EndedAt == nil || t.Before(*in.EndedAt)) {
+			return in.PlanType
+		}
+	}
+	return ""
+}
+
 // HashExternalRef is the single place that turns a provider-reported account
 // identifier into the value stored and compared across devices.
 func HashExternalRef(provider Provider, ref string) string {

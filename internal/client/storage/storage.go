@@ -31,6 +31,7 @@ const (
 	KindObservation = "observation"
 	KindEvent       = "event"
 	KindSnapshot    = "snapshot"
+	KindLimitEvent  = "limit_event"
 )
 
 type Store struct {
@@ -150,17 +151,24 @@ func (s *Store) IngestFile(ctx context.Context, path string, st scan.FileState, 
 			}
 			res, err := tx.ExecContext(ctx, `
 				INSERT INTO events (dedupe_key, account_ref_hash, provider, product, originator, session_id, model,
-					occurred_at, input, cached_input, cache_write, output, reasoning_output, third_party, gateway)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					occurred_at, input, cached_input, cache_write, output, reasoning_output, third_party, gateway,
+					request_id, parent_request_id, effort, status, aggregated)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT (dedupe_key) DO UPDATE SET
 					account_ref_hash = excluded.account_ref_hash, output = max(events.output, excluded.output),
-					reasoning_output = max(events.reasoning_output, excluded.reasoning_output)
-				WHERE (excluded.account_ref_hash = events.account_ref_hash AND excluded.output > events.output) OR
+					reasoning_output = max(events.reasoning_output, excluded.reasoning_output),
+					request_id = CASE WHEN events.request_id = '' THEN excluded.request_id ELSE events.request_id END,
+					parent_request_id = CASE WHEN events.parent_request_id = '' THEN excluded.parent_request_id ELSE events.parent_request_id END,
+					effort = CASE WHEN events.effort = '' THEN excluded.effort ELSE events.effort END,
+					status = CASE WHEN events.status = '' THEN excluded.status ELSE events.status END,
+					aggregated = events.aggregated OR excluded.aggregated
+				WHERE (excluded.account_ref_hash = events.account_ref_hash AND (excluded.output > events.output OR (events.request_id = '' AND excluded.request_id != ''))) OR
 					(excluded.account_ref_hash != events.account_ref_hash AND
 					 excluded.session_id = events.session_id AND excluded.originator = events.originator)`,
 				e.DedupeKey, e.AccountRefHash, e.Provider, e.Product, e.Originator, e.SessionID, e.Model,
 				e.OccurredAt.UnixMilli(), e.Tokens.Input, e.Tokens.CachedInput, e.Tokens.CacheWrite,
-				e.Tokens.Output, e.Tokens.ReasoningOutput, e.ThirdParty, e.Gateway)
+				e.Tokens.Output, e.Tokens.ReasoningOutput, e.ThirdParty, e.Gateway,
+				e.RequestID, e.ParentRequestID, e.Effort, e.Status, e.Aggregated)
 			if err != nil {
 				return fmt.Errorf("save event %s: %w", e.DedupeKey, err)
 			}
@@ -262,8 +270,8 @@ func insertSnapshot(ctx context.Context, tx *sql.Tx, snap quota.Snapshot) (int, 
 		return 0, err
 	}
 	res, err := tx.ExecContext(ctx,
-		`INSERT OR IGNORE INTO snapshots (provider, account_ref_hash, source, observed_at, buckets) VALUES (?, ?, ?, ?, ?)`,
-		snap.Provider, snap.AccountRefHash, snap.Source, snap.ObservedAt.UnixMilli(), string(buckets))
+		`INSERT OR IGNORE INTO snapshots (provider, account_ref_hash, source, observed_at, buckets, plan_type, account_hint) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		snap.Provider, snap.AccountRefHash, snap.Source, snap.ObservedAt.UnixMilli(), string(buckets), snap.PlanType, snap.AccountHint)
 	if err != nil {
 		return 0, fmt.Errorf("save snapshot: %w", err)
 	}
@@ -316,7 +324,7 @@ func (s *Store) LastUse(ctx context.Context, provider account.Provider, originat
 // showing local quota while the server is unreachable.
 func (s *Store) LatestSnapshots(ctx context.Context, since time.Time) ([]quota.Snapshot, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT provider, account_ref_hash, source, observed_at, buckets FROM snapshots
+		`SELECT provider, account_ref_hash, source, observed_at, buckets, plan_type, account_hint FROM snapshots
 		 WHERE observed_at >= ? ORDER BY observed_at DESC`, since.UnixMilli())
 	if err != nil {
 		return nil, err
@@ -327,7 +335,7 @@ func (s *Store) LatestSnapshots(ctx context.Context, since time.Time) ([]quota.S
 		var dto syncapi.Snapshot
 		var at int64
 		var buckets string
-		if err := rows.Scan(&dto.Provider, &dto.AccountRefHash, &dto.Source, &at, &buckets); err != nil {
+		if err := rows.Scan(&dto.Provider, &dto.AccountRefHash, &dto.Source, &at, &buckets, &dto.PlanType, &dto.AccountHint); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(buckets), &dto.Buckets); err != nil {
@@ -384,12 +392,15 @@ func (s *Store) DeleteOutboxThrough(ctx context.Context, id int64) error {
 // server ignores the ones it still has.
 func (s *Store) ResetLedger(ctx context.Context) error {
 	return s.inTx(ctx, func(tx *sql.Tx) error {
-		for _, table := range []string{"events", "files", "outbox"} {
+		for _, table := range []string{"events", "files", "outbox", "limit_events"} {
 			if _, err := tx.ExecContext(ctx, `DELETE FROM `+table); err != nil {
 				return fmt.Errorf("clear %s: %w", table, err)
 			}
 		}
 		if err := requeueObservations(ctx, tx); err != nil {
+			return err
+		}
+		if err := requeueLimitEvents(ctx, tx); err != nil {
 			return err
 		}
 		return requeueSnapshots(ctx, tx)
@@ -426,7 +437,7 @@ func requeueObservations(ctx context.Context, tx *sql.Tx) error {
 }
 
 func requeueSnapshots(ctx context.Context, tx *sql.Tx) error {
-	rows, err := tx.QueryContext(ctx, `SELECT provider, account_ref_hash, source, observed_at, buckets FROM snapshots ORDER BY observed_at`)
+	rows, err := tx.QueryContext(ctx, `SELECT provider, account_ref_hash, source, observed_at, buckets, plan_type, account_hint FROM snapshots ORDER BY observed_at`)
 	if err != nil {
 		return err
 	}
@@ -435,7 +446,7 @@ func requeueSnapshots(ctx context.Context, tx *sql.Tx) error {
 		var dto syncapi.Snapshot
 		var at int64
 		var buckets string
-		if err := rows.Scan(&dto.Provider, &dto.AccountRefHash, &dto.Source, &at, &buckets); err != nil {
+		if err := rows.Scan(&dto.Provider, &dto.AccountRefHash, &dto.Source, &at, &buckets, &dto.PlanType, &dto.AccountHint); err != nil {
 			rows.Close()
 			return err
 		}
@@ -456,6 +467,57 @@ func requeueSnapshots(ctx context.Context, tx *sql.Tx) error {
 		}
 	}
 	return nil
+}
+
+func requeueLimitEvents(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `SELECT dedupe_key, provider, account_ref_hash, occurred_at, observed_at,
+		session_id, request_id, kind, source, evidence, http_status FROM limit_events ORDER BY occurred_at`)
+	if err != nil {
+		return err
+	}
+	var events []syncapi.LimitEvent
+	for rows.Next() {
+		var l syncapi.LimitEvent
+		var occ, obs int64
+		if err := rows.Scan(&l.DedupeKey, &l.Provider, &l.AccountRefHash, &occ, &obs,
+			&l.SessionID, &l.RequestID, &l.Kind, &l.Source, &l.Evidence, &l.HTTPStatus); err != nil {
+			rows.Close()
+			return err
+		}
+		l.OccurredAt = time.UnixMilli(occ).UTC()
+		l.ObservedAt = time.UnixMilli(obs).UTC()
+		events = append(events, l)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, l := range events {
+		if err := enqueue(ctx, tx, KindLimitEvent, l); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RecordLimitEvent stores a rate-limit, refusal, or failure event in the local ledger
+// and enqueues it for the server.
+func (s *Store) RecordLimitEvent(ctx context.Context, l usage.LimitEvent) error {
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `
+			INSERT OR IGNORE INTO limit_events (dedupe_key, provider, account_ref_hash, occurred_at, observed_at,
+				session_id, request_id, kind, source, evidence, http_status)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			l.DedupeKey, l.Provider, l.AccountRefHash, l.OccurredAt.UnixMilli(), l.ObservedAt.UnixMilli(),
+			l.SessionID, l.RequestID, string(l.Kind), l.Source, l.Evidence, l.HTTPStatus)
+		if err != nil {
+			return fmt.Errorf("save limit event: %w", err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return nil
+		}
+		return enqueue(ctx, tx, KindLimitEvent, syncapi.FromLimitEvent(l))
+	})
 }
 
 func (s *Store) EventCount(ctx context.Context) (int, error) {

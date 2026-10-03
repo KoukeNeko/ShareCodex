@@ -63,6 +63,12 @@ type Event struct {
 	// otherwise.
 	Gateway string
 
+	RequestID       string
+	ParentRequestID string
+	Effort          string
+	Status          string
+	Aggregated      bool
+
 	Tokens Tokens
 }
 

@@ -32,6 +32,8 @@ const (
 	// QueryPeriod names the span of a member's usage: 24h, 7d or 30d, the
 	// last by default.
 	QueryPeriod = "period"
+	// QueryRatio is the scenario multiplier (e.g. 4 for 20x -> 5x).
+	QueryRatio = "ratio"
 )
 
 type Event struct {
@@ -49,6 +51,11 @@ type Event struct {
 	ThirdParty bool `json:"third_party,omitempty"`
 	// Gateway is the service a third-party request went through, when known.
 	Gateway         string `json:"gateway,omitempty"`
+	RequestID       string `json:"request_id,omitempty"`
+	ParentRequestID string `json:"parent_request_id,omitempty"`
+	Effort          string `json:"effort,omitempty"`
+	Status          string `json:"status,omitempty"`
+	Aggregated      bool   `json:"aggregated,omitempty"`
 	Input           int64  `json:"input"`
 	CachedInput     int64  `json:"cached_input"`
 	CacheWrite      int64  `json:"cache_write"`
@@ -86,11 +93,26 @@ type Observation struct {
 	ObservedAt     time.Time `json:"observed_at"`
 }
 
+type LimitEvent struct {
+	DedupeKey      string    `json:"dedupe_key"`
+	AccountRefHash string    `json:"account_ref_hash"`
+	Provider       string    `json:"provider"`
+	OccurredAt     time.Time `json:"occurred_at"`
+	ObservedAt     time.Time `json:"observed_at"`
+	SessionID      string    `json:"session_id,omitempty"`
+	RequestID      string    `json:"request_id,omitempty"`
+	Kind           string    `json:"kind"`
+	Source         string    `json:"source,omitempty"`
+	Evidence       string    `json:"evidence,omitempty"`
+	HTTPStatus     int       `json:"http_status,omitempty"`
+}
+
 type SyncRequest struct {
 	Version      int           `json:"version"`
 	Observations []Observation `json:"observations"`
 	Events       []Event       `json:"events"`
 	Snapshots    []Snapshot    `json:"snapshots"`
+	LimitEvents  []LimitEvent  `json:"limit_events,omitempty"`
 }
 
 type SyncResponse struct {
@@ -320,6 +342,11 @@ func FromEvent(e usage.Event) Event {
 		OccurredAt:      e.OccurredAt.UTC(),
 		ThirdParty:      e.ThirdParty,
 		Gateway:         e.Gateway,
+		RequestID:       e.RequestID,
+		ParentRequestID: e.ParentRequestID,
+		Effort:          e.Effort,
+		Status:          e.Status,
+		Aggregated:      e.Aggregated,
 		Input:           e.Tokens.Input,
 		CachedInput:     e.Tokens.CachedInput,
 		CacheWrite:      e.Tokens.CacheWrite,
@@ -330,16 +357,21 @@ func FromEvent(e usage.Event) Event {
 
 func (e Event) ToDomain() usage.Event {
 	return usage.Event{
-		DedupeKey:      e.DedupeKey,
-		AccountRefHash: e.AccountRefHash,
-		Provider:       account.Provider(e.Provider),
-		Product:        usage.Product(e.Product),
-		Originator:     e.Originator,
-		SessionID:      e.SessionID,
-		Model:          e.Model,
-		OccurredAt:     e.OccurredAt,
-		ThirdParty:     e.ThirdParty,
-		Gateway:        e.Gateway,
+		DedupeKey:       e.DedupeKey,
+		AccountRefHash:  e.AccountRefHash,
+		Provider:        account.Provider(e.Provider),
+		Product:         usage.Product(e.Product),
+		Originator:      e.Originator,
+		SessionID:       e.SessionID,
+		Model:           e.Model,
+		OccurredAt:      e.OccurredAt,
+		ThirdParty:      e.ThirdParty,
+		Gateway:         e.Gateway,
+		RequestID:       e.RequestID,
+		ParentRequestID: e.ParentRequestID,
+		Effort:          e.Effort,
+		Status:          e.Status,
+		Aggregated:      e.Aggregated,
 		Tokens: usage.Tokens{
 			Input:           e.Input,
 			CachedInput:     e.CachedInput,
@@ -347,6 +379,38 @@ func (e Event) ToDomain() usage.Event {
 			Output:          e.Output,
 			ReasoningOutput: e.ReasoningOutput,
 		},
+	}
+}
+
+func FromLimitEvent(l usage.LimitEvent) LimitEvent {
+	return LimitEvent{
+		DedupeKey:      l.DedupeKey,
+		AccountRefHash: l.AccountRefHash,
+		Provider:       string(l.Provider),
+		OccurredAt:     l.OccurredAt.UTC(),
+		ObservedAt:     l.ObservedAt.UTC(),
+		SessionID:      l.SessionID,
+		RequestID:      l.RequestID,
+		Kind:           string(l.Kind),
+		Source:         l.Source,
+		Evidence:       l.Evidence,
+		HTTPStatus:     l.HTTPStatus,
+	}
+}
+
+func (l LimitEvent) ToDomain() usage.LimitEvent {
+	return usage.LimitEvent{
+		DedupeKey:      l.DedupeKey,
+		AccountRefHash: l.AccountRefHash,
+		Provider:       account.Provider(l.Provider),
+		OccurredAt:     l.OccurredAt,
+		ObservedAt:     l.ObservedAt,
+		SessionID:      l.SessionID,
+		RequestID:      l.RequestID,
+		Kind:           usage.LimitKind(l.Kind),
+		Source:         l.Source,
+		Evidence:       l.Evidence,
+		HTTPStatus:     l.HTTPStatus,
 	}
 }
 
@@ -373,6 +437,8 @@ func FromSnapshot(s quota.Snapshot) Snapshot {
 func (s Snapshot) ToDomain() quota.Snapshot {
 	out := quota.Snapshot{
 		AccountRefHash: s.AccountRefHash,
+		AccountHint:    s.AccountHint,
+		PlanType:       s.PlanType,
 		Provider:       account.Provider(s.Provider),
 		Source:         quota.Source(s.Source),
 		ObservedAt:     s.ObservedAt,
@@ -397,4 +463,83 @@ func FromObservation(o account.Observation) Observation {
 		PlanType:       o.PlanType,
 		ObservedAt:     o.ObservedAt.UTC(),
 	}
+}
+
+type CapacityScenario struct {
+	Name        string   `json:"name"`
+	Label       string   `json:"label"`
+	Capacity    float64  `json:"capacity"`
+	PeakDemand  float64  `json:"peak_demand"`
+	PeakPercent float64  `json:"peak_percent"`
+	Headroom    float64  `json:"headroom_percent"`
+	Exceedances []Span   `json:"exceedances"`
+	Fit         string   `json:"fit"`
+}
+
+type PersonCapacity struct {
+	PersonID    string             `json:"person_id"`
+	Name        string             `json:"name"`
+	Tokens      int64              `json:"tokens"`
+	CostUSD     float64            `json:"cost_usd"`
+	Requests    int                `json:"requests"`
+	PeakRolling float64            `json:"peak_rolling_cost"`
+	PeakAt      time.Time          `json:"peak_at"`
+	P50         float64            `json:"p50_rolling_cost"`
+	P90         float64            `json:"p90_rolling_cost"`
+	P95         float64            `json:"p95_rolling_cost"`
+	Scenarios   []CapacityScenario `json:"scenarios"`
+}
+
+type Span struct {
+	Start time.Time `json:"start"`
+	End   time.Time `json:"end"`
+}
+
+type PlanIntervalDTO struct {
+	ID          string     `json:"id"`
+	PlanType    string     `json:"plan_type"`
+	EffectiveAt time.Time  `json:"effective_at"`
+	EndedAt     *time.Time `json:"ended_at,omitempty"`
+	Reason      string     `json:"reason"`
+	Source      string     `json:"source"`
+	Precision   string     `json:"precision"`
+}
+
+type LimitEventDTO struct {
+	OccurredAt time.Time `json:"occurred_at"`
+	PersonName string    `json:"person_name,omitempty"`
+	Kind       string    `json:"kind"`
+	Source     string    `json:"source"`
+	Evidence   string    `json:"evidence"`
+	HTTPStatus int       `json:"http_status,omitempty"`
+}
+
+type SaturationStatsDTO struct {
+	FiveHourSaturatedCount int        `json:"five_hour_saturated_count"`
+	WeeklySaturatedCount   int        `json:"weekly_saturated_count"`
+	FirstFiveHour100       *time.Time `json:"first_five_hour_100,omitempty"`
+	FirstWeekly100         *time.Time `json:"first_weekly_100,omitempty"`
+}
+
+type CapacityReport struct {
+	AccountID       string             `json:"account_id"`
+	AccountLabel    string             `json:"account_label"`
+	Provider        string             `json:"provider"`
+	CurrentPlan     string             `json:"current_plan"`
+	Period          string             `json:"period"`
+	Start           time.Time          `json:"start"`
+	End             time.Time          `json:"end"`
+	Ratio           float64            `json:"ratio"`
+	TotalTokens     int64              `json:"total_tokens"`
+	TotalCostUSD    float64            `json:"total_cost_usd"`
+	CombinedPeak    float64            `json:"combined_peak_cost"`
+	CombinedPeakAt  time.Time          `json:"combined_peak_at"`
+	CombinedP50     float64            `json:"combined_p50_cost"`
+	CombinedP95     float64            `json:"combined_p95_cost"`
+	Members         []PersonCapacity   `json:"members"`
+	Scenarios       []CapacityScenario `json:"scenarios"`
+	ObservedPlans   []PlanIntervalDTO  `json:"observed_plans"`
+	LimitEvents     []LimitEventDTO    `json:"limit_events"`
+	SaturationStats SaturationStatsDTO `json:"saturation_stats"`
+	DataNotes       []string           `json:"data_notes"`
 }

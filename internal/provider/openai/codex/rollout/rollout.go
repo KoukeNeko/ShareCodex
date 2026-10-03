@@ -182,6 +182,7 @@ func Parse(r io.Reader) (Result, error) {
 			records = append(records, usage.Event{
 				DedupeKey:  key,
 				SessionID:  cmp.Or(rec.SessionID, res.SessionID),
+				RequestID:  rec.ResponseID,
 				Model:      model,
 				OccurredAt: l.Timestamp,
 				Tokens:     rec.Usage.tokens(),
@@ -211,6 +212,7 @@ func Parse(r io.Reader) (Result, error) {
 			fallback = append(fallback, usage.Event{
 				DedupeKey:  fmt.Sprintf("codex:%s:tc:%d", res.SessionID, total.TotalTokens),
 				SessionID:  res.SessionID,
+				Aggregated: true,
 				Model:      model,
 				OccurredAt: l.Timestamp,
 				Tokens:     total.sub(*prevTotal).tokens(),

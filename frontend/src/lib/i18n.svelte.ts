@@ -113,6 +113,10 @@ const en = {
   resetsInDays: 'Resets in {days}d {hours}h',
   resetsInHours: 'Resets in {hours}h {minutes}m',
   resetsInMinutes: 'Resets in {minutes}m',
+  capacity: 'Capacity',
+  rollingPeak: 'Peak rolling 5h',
+  headroom: 'Headroom',
+  scenarios: 'Scenarios',
 }
 
 export type MessageKey = keyof typeof en
@@ -221,6 +225,10 @@ const zhTW: Record<MessageKey, string> = {
   resetsInDays: '{days} 天 {hours} 小時後重置',
   resetsInHours: '{hours} 小時 {minutes} 分後重置',
   resetsInMinutes: '{minutes} 分後重置',
+  capacity: '容量模擬',
+  rollingPeak: '5 小時滾動尖峰',
+  headroom: '剩餘容量',
+  scenarios: '情境模擬',
 }
 
 const messages: Record<Locale, Record<MessageKey, string>> = { en, 'zh-TW': zhTW }

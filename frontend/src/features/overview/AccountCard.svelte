@@ -6,7 +6,7 @@
   import { t } from '../../lib/i18n.svelte'
   import { sortModels } from '../../lib/sort'
 
-  let { id = '', provider, label, planType, buckets, usage, activeUsers, now, local = false, fineChart = false, modelSort = '', onMember, onGrip, pinned = false, onPin, onClose }: {
+  let { id = '', provider, label, planType, buckets, usage, activeUsers, now, local = false, fineChart = false, modelSort = '', onMember, onCapacity, onGrip, pinned = false, onPin, onClose }: {
     id?: string
     provider: string
     label: string
@@ -22,6 +22,8 @@
     modelSort?: string
     // Opens a member's usage; without it, names are plain text.
     onMember?: (personId: string, name: string) => void
+    // Opens an account's capacity analysis.
+    onCapacity?: (accountId: string, accountLabel: string) => void
     // Starts dragging the card to reorder the list; without it the card
     // has no grip.
     onGrip?: (e: PointerEvent) => void
@@ -112,7 +114,13 @@
     {/if}
     <span class="provider">{providerName(provider)}</span>
     <span class="label">{label}</span>
-    {#if planType}<span class="plan">{planType}</span>{/if}
+    {#if planType}
+      {#if onCapacity && id}
+        <button class="plan" title={t('capacity')} onclick={() => onCapacity(id, label)}>{planType}</button>
+      {:else}
+        <span class="plan">{planType}</span>
+      {/if}
+    {/if}
     {#if onClose}
       <button class="corner" title={t('close')} aria-label={t('close')} onclick={onClose}>
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" /></svg>

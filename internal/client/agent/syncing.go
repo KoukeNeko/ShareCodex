@@ -114,6 +114,10 @@ func batchRequest(items []storage.OutboxItem) (syncapi.SyncRequest, error) {
 			var s syncapi.Snapshot
 			err = json.Unmarshal(it.Payload, &s)
 			req.Snapshots = append(req.Snapshots, s)
+		case storage.KindLimitEvent:
+			var l syncapi.LimitEvent
+			err = json.Unmarshal(it.Payload, &l)
+			req.LimitEvents = append(req.LimitEvents, l)
 		default:
 			err = fmt.Errorf("unknown outbox kind %q", it.Kind)
 		}
@@ -202,6 +206,20 @@ func (a *Agent) MemberUsage(ctx context.Context, personID, period string) (synca
 		return syncapi.MemberUsage{}, sync.ErrRevoked
 	}
 	return client.MemberUsage(ctx, personID, period)
+}
+
+// AccountCapacity fetches an account's capacity analysis and scenario simulation over a period.
+func (a *Agent) AccountCapacity(ctx context.Context, accountID, period string, ratio float64) (syncapi.CapacityReport, error) {
+	a.mu.Lock()
+	client, revoked := a.client, a.revoked
+	a.mu.Unlock()
+	if client == nil {
+		return syncapi.CapacityReport{}, errors.New("join a server first")
+	}
+	if revoked {
+		return syncapi.CapacityReport{}, sync.ErrRevoked
+	}
+	return client.AccountCapacity(ctx, accountID, period, ratio)
 }
 
 // LeaveAccount takes this person out of a shared account's allotment; the

@@ -104,6 +104,10 @@ func New(store *storage.Store, log *slog.Logger, cfg Config) (http.Handler, erro
 	mux.HandleFunc("GET /admin/accounts", c.authed(c.accounts))
 	mux.HandleFunc("POST /admin/accounts/{id}/label", c.authed(c.setLabel))
 	mux.HandleFunc("POST /admin/accounts/{id}/shares", c.authed(c.setShares))
+	mux.HandleFunc("GET /admin/accounts/{id}/plans", c.authed(c.accountPlans))
+	mux.HandleFunc("POST /admin/accounts/{id}/plans", c.authed(c.saveAccountPlan))
+	mux.HandleFunc("POST /admin/accounts/{id}/plans/{pid}/delete", c.authed(c.deleteAccountPlan))
+	mux.HandleFunc("GET /admin/accounts/{id}/capacity", c.authed(c.accountCapacity))
 	mux.HandleFunc("POST /admin/accounts/{id}/delete", c.authed(c.deleteAccount))
 	mux.HandleFunc("POST /admin/accounts/order", c.authed(c.setAccountOrder))
 	mux.HandleFunc("GET /admin/devices", c.authed(c.devices))
@@ -159,7 +163,7 @@ func parsePages() (map[string]*template.Template, error) {
 		"timeText": func(format string, t time.Time) string { return t.Local().Format(timeFormats[format]) },
 	}
 	pages := map[string]*template.Template{}
-	for _, name := range []string{"login", "overview", "people", "accounts", "devices", "usage", "settings", "dashboard", "dashboardusage"} {
+	for _, name := range []string{"login", "overview", "people", "accounts", "devices", "usage", "settings", "dashboard", "dashboardusage", "plans", "capacity"} {
 		t, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS,
 			"templates/layout.html", "templates/account.html", "templates/report.html", "templates/"+name+".html")
 		if err != nil {
@@ -675,6 +679,120 @@ func (c *Console) deleteAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	c.log.Info("account deleted", "account", id)
 	http.Redirect(w, r, "/admin/accounts", http.StatusSeeOther)
+}
+
+type plansData struct {
+	Account account.Account
+	Plans   []account.PlanInterval
+}
+
+func (c *Console) accountPlans(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	accID := r.PathValue("id")
+	acc, err := c.store.Account(ctx, accID)
+	if errors.Is(err, storage.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		c.fail(w, "find account", err)
+		return
+	}
+	plans, err := c.store.PlanHistory(ctx, accID)
+	if err != nil {
+		c.fail(w, "list plan history", err)
+		return
+	}
+	c.render(w, r, "plans", http.StatusOK, page{
+		Title: "planHistory", Nav: "accounts", Authed: true,
+		Data: plansData{Account: acc, Plans: plans},
+	})
+}
+
+func (c *Console) saveAccountPlan(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
+	accID := r.PathValue("id")
+	planType := strings.TrimSpace(r.PostFormValue("plan_type"))
+	effRaw := strings.TrimSpace(r.PostFormValue("effective_at"))
+	endRaw := strings.TrimSpace(r.PostFormValue("ended_at"))
+	reason := strings.TrimSpace(r.PostFormValue("reason"))
+	precision := strings.TrimSpace(r.PostFormValue("precision"))
+	if precision == "" {
+		precision = account.PrecisionConfirmed
+	}
+
+	eff, err := time.Parse("2006-01-02T15:04", effRaw)
+	if err != nil {
+		eff, err = time.Parse(time.RFC3339, effRaw)
+	}
+	if err != nil {
+		http.Redirect(w, r, "/admin/accounts/"+accID+"/plans", http.StatusSeeOther)
+		return
+	}
+
+	var endedAt *time.Time
+	if endRaw != "" {
+		endT, err := time.Parse("2006-01-02T15:04", endRaw)
+		if err != nil {
+			endT, err = time.Parse(time.RFC3339, endRaw)
+		}
+		if err != nil {
+			http.Redirect(w, r, "/admin/accounts/"+accID+"/plans", http.StatusSeeOther)
+			return
+		}
+		endedAt = &endT
+	}
+
+	in := account.PlanInterval{
+		ID:          strings.TrimSpace(r.PostFormValue("interval_id")),
+		AccountID:   accID,
+		PlanType:    planType,
+		EffectiveAt: eff,
+		EndedAt:     endedAt,
+		Reason:      reason,
+		Source:      "admin",
+		Precision:   precision,
+	}
+
+	if _, err := c.store.SavePlanInterval(r.Context(), in); err != nil {
+		c.log.Warn("save plan interval failed", "err", err)
+		http.Redirect(w, r, "/admin/accounts/"+accID+"/plans", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/admin/accounts/"+accID+"/plans", http.StatusSeeOther)
+}
+
+func (c *Console) deleteAccountPlan(w http.ResponseWriter, r *http.Request) {
+	accID := r.PathValue("id")
+	intervalID := r.PathValue("pid")
+	if err := c.store.DeletePlanInterval(r.Context(), accID, intervalID); err != nil {
+		c.log.Warn("delete plan interval failed", "err", err)
+	}
+	http.Redirect(w, r, "/admin/accounts/"+accID+"/plans", http.StatusSeeOther)
+}
+
+func (c *Console) accountCapacity(w http.ResponseWriter, r *http.Request) {
+	accID := r.PathValue("id")
+	period := query.PeriodByID(r.URL.Query().Get(syncapi.QueryPeriod))
+	ratio := 4.0
+	if raw := r.URL.Query().Get(syncapi.QueryRatio); raw != "" {
+		if v, err := strconv.ParseFloat(raw, 64); err == nil && v > 0 {
+			ratio = v
+		}
+	}
+	rep, err := query.AccountCapacity(r.Context(), c.store, accID, period, ratio, time.Now())
+	if errors.Is(err, storage.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		c.fail(w, "build capacity report", err)
+		return
+	}
+	c.render(w, r, "capacity", http.StatusOK, page{
+		Title: "capacity", Nav: "accounts", Authed: true,
+		Data: rep,
+	})
 }
 
 func parseWeight(s string) (float64, bool) {

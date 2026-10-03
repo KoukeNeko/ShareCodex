@@ -1,0 +1,120 @@
+{{define "content"}}
+<div class="row spread" style="align-items: baseline; margin-bottom: 1rem;">
+  <div>
+    <p class="muted small" style="margin: 0;"><a class="back" href="/admin/accounts">← {{.T.navAccounts}}</a></p>
+    <h1 style="margin: 4px 0 0 0;">{{.Data.AccountLabel}} · {{.T.capacity}}</h1>
+  </div>
+  <div class="row" style="gap: 8px;">
+    <a class="button secondary small" href="/admin/accounts/{{.Data.AccountID}}/plans">{{.T.planHistory}}</a>
+    <div class="periods">
+      <a class="button small {{if eq .Data.Period "24h"}}active{{end}}" href="/admin/accounts/{{.Data.AccountID}}/capacity?period=24h&ratio={{.Data.Ratio}}">24h</a>
+      <a class="button small {{if eq .Data.Period "7d"}}active{{end}}" href="/admin/accounts/{{.Data.AccountID}}/capacity?period=7d&ratio={{.Data.Ratio}}">7d</a>
+      <a class="button small {{if eq .Data.Period "30d"}}active{{end}}" href="/admin/accounts/{{.Data.AccountID}}/capacity?period=30d&ratio={{.Data.Ratio}}">30d</a>
+    </div>
+  </div>
+</div>
+
+<div class="cells" style="margin-bottom: 1.5rem;">
+  <section class="card">
+    <span class="muted small">{{.T.totalTokens}}</span>
+    <p class="big-num" style="margin: 4px 0 0 0; font-size: 24px; font-weight: bold;">{{tokens .Data.TotalTokens}}</p>
+  </section>
+  <section class="card">
+    <span class="muted small">{{.T.rollingPeak}}</span>
+    <p class="big-num" style="margin: 4px 0 0 0; font-size: 24px; font-weight: bold;">{{usd .Data.CombinedPeak}}</p>
+    <span class="muted small">{{when .Data.CombinedPeakAt}}</span>
+  </section>
+  <section class="card">
+    <span class="muted small">P50 / P95 (5h)</span>
+    <p class="big-num" style="margin: 4px 0 0 0; font-size: 24px; font-weight: bold;">{{usd .Data.CombinedP50}} / {{usd .Data.CombinedP95}}</p>
+  </section>
+  <section class="card">
+    <span class="muted small">5h 100% / Weekly 100%</span>
+    <p class="big-num" style="margin: 4px 0 0 0; font-size: 24px; font-weight: bold;">{{.Data.SaturationStats.FiveHourSaturatedCount}} / {{.Data.SaturationStats.WeeklySaturatedCount}}</p>
+  </section>
+</div>
+
+<section class="card" style="margin-bottom: 1.5rem;">
+  <h2>{{.T.scenarios}} (5h {{.Data.Ratio}}x)</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>{{.T.scenarios}}</th><th class="num">Capacity</th><th class="num">Peak Demand</th><th class="num">Peak %</th><th class="num">{{.T.headroom}}</th><th>Fit</th></tr></thead>
+    <tbody>
+    {{range .Data.Scenarios}}
+      <tr>
+        <td><strong>{{.Label}}</strong></td>
+        <td class="num">{{usd .Capacity}}</td>
+        <td class="num">{{usd .PeakDemand}}</td>
+        <td class="num">{{.PeakPercent}}%</td>
+        <td class="num">{{.Headroom}}%</td>
+        <td>
+          {{if eq .Fit "fit"}}<span class="tag" style="color: var(--accent);">Fit</span>
+          {{else if eq .Fit "borderline"}}<span class="tag" style="color: #eab308;">Borderline</span>
+          {{else}}<span class="tag off" style="color: #ef4444;">Exceeded</span>{{end}}
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="card" style="margin-bottom: 1.5rem;">
+  <h2>{{.T.member}} Breakdown & Separate Max 5x Replay</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>{{.T.member}}</th><th class="num">{{.T.tokens}}</th><th class="num">Cost · est.</th><th class="num">{{.T.requests}}</th><th class="num">{{.T.rollingPeak}}</th><th class="num">Separate 5x Peak %</th><th class="num">{{.T.headroom}}</th><th>Fit</th></tr></thead>
+    <tbody>
+    {{range .Data.Members}}
+      <tr>
+        <td><strong>{{.Name}}</strong></td>
+        <td class="num">{{tokens .Tokens}}</td>
+        <td class="num">{{usd .CostUSD}}</td>
+        <td class="num">{{.Requests}}</td>
+        <td class="num">{{usd .PeakRolling}}</td>
+        {{range .Scenarios}}
+          <td class="num">{{.PeakPercent}}%</td>
+          <td class="num">{{.Headroom}}%</td>
+          <td>
+            {{if eq .Fit "fit"}}<span class="tag" style="color: var(--accent);">Fit</span>
+            {{else if eq .Fit "borderline"}}<span class="tag" style="color: #eab308;">Borderline</span>
+            {{else}}<span class="tag off" style="color: #ef4444;">Exceeded</span>{{end}}
+          </td>
+        {{else}}
+          <td colspan="3" class="muted">—</td>
+        {{end}}
+      </tr>
+    {{else}}
+      <tr><td colspan="8" class="muted">{{.T.noPeople}}</td></tr>
+    {{end}}
+    </tbody>
+  </table></div>
+</section>
+
+{{if .Data.LimitEvents}}
+<section class="card" style="margin-bottom: 1.5rem;">
+  <h2>Recorded Limit & Rejection Events</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Time</th><th>{{.T.member}}</th><th>Kind</th><th>Source</th><th>Evidence</th><th>Status</th></tr></thead>
+    <tbody>
+    {{range .Data.LimitEvents}}
+      <tr>
+        <td>{{when .OccurredAt}}</td>
+        <td>{{if .PersonName}}{{.PersonName}}{{else}}—{{end}}</td>
+        <td><span class="tag">{{.Kind}}</span></td>
+        <td class="muted">{{.Source}}</td>
+        <td class="small">{{.Evidence}}</td>
+        <td class="num">{{if .HTTPStatus}}{{.HTTPStatus}}{{else}}—{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table></div>
+</section>
+{{end}}
+
+<section class="card">
+  <h2>Methodology & Data Notes</h2>
+  <ul style="margin: 0; padding-left: 20px;">
+  {{range .Data.DataNotes}}
+    <li class="muted small" style="margin-bottom: 4px;">{{.}}</li>
+  {{end}}
+  </ul>
+</section>
+{{end}}

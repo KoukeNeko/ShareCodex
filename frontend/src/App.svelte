@@ -3,6 +3,7 @@
   import { flip } from 'svelte/animate'
   import { Events } from '@wailsio/runtime'
   import AccountCard from './features/overview/AccountCard.svelte'
+  import CapacityAnalysis from './features/overview/CapacityAnalysis.svelte'
   import JoinForm from './features/overview/JoinForm.svelte'
   import MemberUsage from './features/overview/MemberUsage.svelte'
   import UsageStats from './features/overview/UsageStats.svelte'
@@ -14,12 +15,18 @@
   import { setLocale, t } from './lib/i18n.svelte'
 
   let app = $state<State | null>(null)
-  let view = $state<'overview' | 'settings' | 'member'>('overview')
+  let view = $state<'overview' | 'settings' | 'member' | 'capacity'>('overview')
   let member = $state<{ id: string; name: string } | null>(null)
+  let capacityAccount = $state<{ id: string; label: string } | null>(null)
 
   function openMember(id: string, name: string) {
     member = { id, name }
     view = 'member'
+  }
+
+  function openCapacity(id: string, label: string) {
+    capacityAccount = { id, label }
+    view = 'capacity'
   }
   let loadError = $state('')
   let now = $state(new Date())
@@ -161,7 +168,7 @@
 
 <main bind:this={main}>
   <header>
-    <h1>{view === 'settings' ? t('settings') : view === 'member' && member ? member.name : 'ShareCodex'}</h1>
+    <h1>{view === 'settings' ? t('settings') : view === 'member' && member ? member.name : view === 'capacity' && capacityAccount ? `${capacityAccount.label} · ${t('capacity')}` : 'ShareCodex'}</h1>
     <div class="tools">
       {#if view === 'overview'}
         {#if app?.paired}
@@ -197,6 +204,8 @@
       <Settings {app} />
     {:else if view === 'member' && member}
       <MemberUsage personId={member.id} />
+    {:else if view === 'capacity' && capacityAccount}
+      <CapacityAnalysis accountId={capacityAccount.id} accountLabel={capacityAccount.label} />
     {:else}
       {#if app.update}
         <p class="banner update">
@@ -236,7 +245,7 @@
       {#if app.paired && accounts.length > 0}
         {#each shown as a (a.id)}
           <div class="account" class:dragging={dragging === a.id} data-account={a.id} animate:flip={{ duration: 150 }}>
-            <AccountCard id={a.id} provider={a.provider} label={a.label} planType={a.plan_type} buckets={a.buckets ?? []} usage={a.usage} activeUsers={a.active_users ?? []} {now} fineChart={app.fine_chart} modelSort={app.model_sort} onMember={openMember}
+            <AccountCard id={a.id} provider={a.provider} label={a.label} planType={a.plan_type} buckets={a.buckets ?? []} usage={a.usage} activeUsers={a.active_users ?? []} {now} fineChart={app.fine_chart} modelSort={app.model_sort} onMember={openMember} onCapacity={openCapacity}
               onGrip={accounts.length > 1 ? (e) => startDrag(e, a.id) : undefined}
               pinned={(app.pinned ?? []).includes(a.id)}
               onPin={() => togglePin(a.id)} />

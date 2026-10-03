@@ -1,0 +1,67 @@
+{{define "content"}}
+<div class="row spread" style="align-items: baseline; margin-bottom: 1rem;">
+  <div>
+    <p class="muted small" style="margin: 0;"><a class="back" href="/admin/accounts">← {{.T.navAccounts}}</a></p>
+    <h1 style="margin: 4px 0 0 0;">{{.Data.Account.Label}} · {{.T.planHistory}}</h1>
+  </div>
+  <a class="button" href="/admin/accounts/{{.Data.Account.ID}}/capacity">{{.T.capacity}}</a>
+</div>
+
+<section class="card" style="margin-bottom: 1.5rem;">
+  <div class="table-wrap"><table>
+    <thead><tr><th>{{.T.planHistory}}</th><th>{{.T.effectiveAt}}</th><th>{{.T.endedAt}}</th><th>{{.T.reason}}</th><th>{{.T.precision}}</th><th></th></tr></thead>
+    <tbody>
+    {{range .Data.Plans}}
+      <tr>
+        <td><strong>{{.PlanType}}</strong></td>
+        <td>{{when .EffectiveAt}}</td>
+        <td>{{if .EndedAt}}{{when .EndedAt}}{{else}}<span class="tag">{{$.T.inUse}}</span>{{end}}</td>
+        <td class="muted">{{if .Reason}}{{.Reason}}{{else}}—{{end}}</td>
+        <td><span class="tag">{{.Precision}}</span></td>
+        <td style="text-align:right">
+          <form class="inline" method="post" action="/admin/accounts/{{$.Data.Account.ID}}/plans/{{.ID}}/delete" onsubmit="return confirm({{$.T.deletePlanConfirm}})">
+            <button class="danger" type="submit">{{$.T.delete}}</button>
+          </form>
+        </td>
+      </tr>
+    {{else}}
+      <tr><td colspan="6" class="muted">—</td></tr>
+    {{end}}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="card">
+  <h2>{{.T.addPlanInterval}}</h2>
+  <form class="stack" method="post" action="/admin/accounts/{{.Data.Account.ID}}/plans">
+    <div class="row" style="flex-wrap: wrap; gap: 12px;">
+      <div style="flex: 1; min-width: 140px;">
+        <label class="muted small" style="display: block; margin-bottom: 4px;">{{.T.planHistory}}</label>
+        <input type="text" name="plan_type" placeholder="max 5x, max 20x, pro..." required style="width: 100%;">
+      </div>
+      <div style="flex: 1; min-width: 180px;">
+        <label class="muted small" style="display: block; margin-bottom: 4px;">{{.T.effectiveAt}}</label>
+        <input type="datetime-local" name="effective_at" required style="width: 100%;">
+      </div>
+      <div style="flex: 1; min-width: 180px;">
+        <label class="muted small" style="display: block; margin-bottom: 4px;">{{.T.endedAt}}</label>
+        <input type="datetime-local" name="ended_at" style="width: 100%;">
+      </div>
+      <div style="flex: 1; min-width: 140px;">
+        <label class="muted small" style="display: block; margin-bottom: 4px;">{{.T.precision}}</label>
+        <select name="precision" style="width: 100%;">
+          <option value="confirmed">confirmed</option>
+          <option value="inferred">inferred</option>
+        </select>
+      </div>
+      <div style="flex: 2; min-width: 200px;">
+        <label class="muted small" style="display: block; margin-bottom: 4px;">{{.T.reason}}</label>
+        <input type="text" name="reason" placeholder="..." style="width: 100%;">
+      </div>
+    </div>
+    <div class="row" style="justify-content: flex-end; margin-top: 8px;">
+      <button class="primary" type="submit">{{.T.savePlan}}</button>
+    </div>
+  </form>
+</section>
+{{end}}
