@@ -1,0 +1,176 @@
+{{define "capacityreport"}}
+<div class="cells tiles">
+  <div class="tile"><span class="label">{{.T.totalTokens}}</span><strong class="num">{{tokens .R.Demand.Tokens}}</strong></div>
+  <div class="tile"><span class="label">{{.T.estCost}}</span><strong class="num">{{usd .R.Demand.CostUSD}}</strong></div>
+  <div class="tile"><span class="label">{{.T.requests}}</span><strong class="num">{{.R.Demand.Requests}}</strong></div>
+  <div class="tile"><span class="label">{{.T.rollingPeak}}</span><strong class="num">{{usd .R.Demand.RollingPeak}}</strong>{{if .R.Demand.RollingPeak}}<span class="muted small">{{when .R.Demand.RollingPeakAt}}</span>{{end}}</div>
+</div>
+
+<section class="card">
+  <h2>{{.T.navPeople}}</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>{{.T.member}}</th><th class="num">{{.T.tokens}}</th><th class="num">{{.T.requests}}</th><th class="num">{{.T.estCost}}</th><th class="num">{{.T.rollingPeak}}</th></tr></thead>
+    <tbody>
+    {{range .R.Members}}
+      <tr><td>{{.Name}}</td><td class="num">{{tokens .Tokens}}</td><td class="num">{{.Requests}}</td><td class="num">{{usd .CostUSD}}</td><td class="num">{{usd .RollingPeak}}</td></tr>
+    {{else}}
+      <tr><td colspan="5" class="muted">{{.T.noPeople}}</td></tr>
+    {{end}}
+    </tbody>
+  </table></div>
+</section>
+
+{{if .R.Reason}}
+<section class="card"><p class="muted" style="margin:0">{{code .T "reason" .R.Reason}}</p></section>
+{{else}}
+
+<section class="card">
+  <h2>{{.T.planHistory}}</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>{{.T.plan}}</th><th>{{.T.effectiveAt}}</th><th>{{.T.endedAt}}</th><th>{{.T.precision}}</th></tr></thead>
+    <tbody>
+    {{range .R.Plans}}
+      <tr><td><strong>{{.PlanType}}</strong></td><td>{{when .EffectiveAt}}</td><td>{{if .EndedAt}}{{when .EndedAt}}{{else}}<span class="tag">{{$.T.inUse}}</span>{{end}}</td><td><span class="tag">{{code $.T "precision" .Precision}}</span></td></tr>
+    {{else}}
+      <tr><td colspan="4" class="muted">—</td></tr>
+    {{end}}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="card">
+  <h2>{{.T.calibration}}</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>{{.T.limit}}</th><th>{{.T.plan}}</th><th class="num">{{.T.samples}}</th><th class="num">{{.T.rate}}</th><th class="num">{{.T.range}}</th><th class="num">{{.T.capacityColumn}}</th></tr></thead>
+    <tbody>
+    {{range .R.Calibration}}
+      <tr>
+        <td>{{bucket .Bucket 0 $.T}}</td>
+        <td><strong>{{.Plan}}</strong></td>
+        <td class="num">{{.Samples}}</td>
+        <td class="num">{{tf "%.3g" .Rate}}</td>
+        <td class="num">{{tf "%.3g" .RateMin}}–{{tf "%.3g" .RateMax}}</td>
+        <td class="num">{{usd .CapacityUSD}}</td>
+      </tr>
+    {{else}}
+      <tr><td colspan="6" class="muted">—</td></tr>
+    {{end}}
+    </tbody>
+  </table></div>
+  {{range .R.Multiples}}
+  <p class="muted small" style="margin:0">{{bucket .Bucket 0 $.T}} · Max 20x / Max 5x · {{$.T.observedMultiple}} <span class="num">{{tf "%.2f" .Observed}}</span>{{if .Official}} · {{$.T.officialMultiple}} <span class="num">{{tf "%.0f" .Official}}</span>{{end}}</p>
+  {{end}}
+</section>
+
+<section class="card">
+  <h2>{{.T.observedWindows}}</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>{{.T.start}}</th><th>{{.T.plan}}</th><th class="num">{{.T.actual}}</th><th class="num">{{.T.predicted}}</th><th class="num">{{.T.estCost}}</th><th>{{.T.atLimit}}</th><th></th></tr></thead>
+    <tbody>
+    {{range .R.Windows}}
+      <tr>
+        <td>{{when .Start}}</td>
+        <td>{{if .Plan}}<strong>{{.Plan}}</strong>{{else}}<span class="muted">{{$.T.unknownPlan}}</span>{{end}}</td>
+        <td class="num">{{pct .MaxPercent}}</td>
+        <td class="num">{{with .PredictedPercent}}{{pct .}}{{else}}—{{end}}</td>
+        <td class="num">{{usd .CostUSD}}</td>
+        <td>{{if .Saturated}}{{when .FirstFull}}{{else}}—{{end}}</td>
+        <td>{{if .Excluded}}<span class="tag off">{{code $.T "excluded" .Excluded}}</span>{{end}}</td>
+      </tr>
+    {{else}}
+      <tr><td colspan="7" class="muted">—</td></tr>
+    {{end}}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="card">
+  <h2>{{.T.saturation}}</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>{{.T.limit}}</th><th>{{.T.plan}}</th><th class="num">{{.T.windows}}</th><th class="num">{{.T.atLimit}}</th></tr></thead>
+    <tbody>
+    {{range .R.Saturation}}
+      <tr>
+        <td>{{bucket .Bucket 0 $.T}}</td>
+        <td>{{if .Plan}}<strong>{{.Plan}}</strong>{{else}}<span class="muted">{{$.T.unknownPlan}}</span>{{end}}</td>
+        <td class="num">{{.Windows}}</td>
+        <td class="num">{{.Saturated}}</td>
+      </tr>
+    {{else}}
+      <tr><td colspan="4" class="muted">—</td></tr>
+    {{end}}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="card">
+  <h2>{{.T.scenarios}} · {{.T.fiveHour}}</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>{{.T.scenario}}</th><th></th><th class="num">{{.T.capacityColumn}}</th><th class="num">{{.T.windows}}</th><th class="num">{{.T.limitHits}}</th><th>{{.T.firstHit}}</th><th class="num">{{.T.peak}}</th><th class="num">{{.T.blocked}}</th><th class="num">{{.T.rollingPeak}}</th><th class="num">P50 / P95</th><th></th></tr></thead>
+    <tbody>
+    {{range .R.Scenarios}}
+      {{template "fiveHourRow" (scenarioRow $.T (code $.T "scenario" .ID) false .FiveHour .Weekly)}}
+      {{range .Members}}{{template "fiveHourRow" (scenarioRow $.T .Name true .FiveHour .Weekly)}}{{end}}
+    {{end}}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="card">
+  <h2>{{.T.scenarios}} · {{.T.weekly}}</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>{{.T.scenario}}</th><th></th><th class="num">{{.T.capacityColumn}}</th><th class="num">{{.T.limitHits}}</th><th class="num">{{.T.peak}}</th><th></th></tr></thead>
+    <tbody>
+    {{range .R.Scenarios}}
+      {{template "weeklyRow" (scenarioRow $.T (code $.T "scenario" .ID) false .FiveHour .Weekly)}}
+      {{range .Members}}{{template "weeklyRow" (scenarioRow $.T .Name true .FiveHour .Weekly)}}{{end}}
+    {{end}}
+    </tbody>
+  </table></div>
+  {{range .R.Scenarios}}{{if .Weekly.Windows}}
+  <details class="small muted">
+    <summary>{{code $.T "scenario" .ID}} · {{$.T.formula}}</summary>
+    <p>{{$.T.formulaCapacity}}</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>{{$.T.start}}</th><th class="num">{{$.T.peak}}</th><th>{{$.T.atLimit}}</th></tr></thead>
+      <tbody>
+      {{range .Weekly.Windows}}<tr><td>{{when .Start}}</td><td class="num">{{pct .PeakPercent}}</td><td>{{when .HitAt}}</td></tr>{{end}}
+      </tbody>
+    </table></div>
+  </details>
+  {{end}}{{end}}
+  <p class="muted small" style="margin:0">{{.T.replayNote}}</p>
+</section>
+{{end}}
+{{end}}
+
+{{define "fiveHourRow"}}
+<tr{{if .Member}} class="muted"{{end}}>
+  <td>{{if .Member}}↳ {{end}}{{if .Member}}{{.Name}}{{else}}<strong>{{.Name}}</strong>{{end}}</td>
+  <td>{{basisTag .T .Five.Basis}}</td>
+  {{if eq .Five.Basis "insufficient"}}<td class="muted" colspan="9">—</td>{{else}}
+  <td class="num">{{usd .Five.CapacityUSD}}</td>
+  <td class="num">{{.Five.Windows}}</td>
+  <td class="num">{{.Five.HitWindows}}</td>
+  <td>{{when .Five.FirstHit}}</td>
+  <td class="num">{{pct .Five.PeakPercent}}</td>
+  <td class="num">{{pct .Five.BlockedPercent}}</td>
+  <td class="num">{{pct .Five.RollingPeakPercent}}</td>
+  <td class="num">{{pct .Five.RollingP50Percent}} / {{pct .Five.RollingP95Percent}}</td>
+  <td>{{fitTag .T .Five.Fit}}</td>
+  {{end}}
+</tr>
+{{end}}
+
+{{define "weeklyRow"}}
+<tr{{if .Member}} class="muted"{{end}}>
+  <td>{{if .Member}}↳ {{end}}{{if .Member}}{{.Name}}{{else}}<strong>{{.Name}}</strong>{{end}}</td>
+  <td>{{basisTag .T .Week.Basis}}</td>
+  {{if eq .Week.Basis "insufficient"}}<td class="muted" colspan="4">—</td>{{else}}
+  <td class="num">{{usd .Week.CapacityUSD}}</td>
+  <td class="num">{{.Week.HitWindows}}</td>
+  <td class="num">{{pct .Week.PeakPercent}}</td>
+  <td>{{fitTag .T .Week.Fit}}</td>
+  {{end}}
+</tr>
+{{end}}

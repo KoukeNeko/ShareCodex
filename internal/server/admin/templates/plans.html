@@ -9,7 +9,7 @@
 
 <section class="card" style="margin-bottom: 1.5rem;">
   <div class="table-wrap"><table>
-    <thead><tr><th>{{.T.planHistory}}</th><th>{{.T.effectiveAt}}</th><th>{{.T.endedAt}}</th><th>{{.T.reason}}</th><th>{{.T.precision}}</th><th></th></tr></thead>
+    <thead><tr><th>{{.T.plan}}</th><th>{{.T.effectiveAt}}</th><th>{{.T.endedAt}}</th><th>{{.T.reason}}</th><th>{{.T.precision}}</th><th></th></tr></thead>
     <tbody>
     {{range .Data.Plans}}
       <tr>
@@ -17,7 +17,7 @@
         <td>{{when .EffectiveAt}}</td>
         <td>{{if .EndedAt}}{{when .EndedAt}}{{else}}<span class="tag">{{$.T.inUse}}</span>{{end}}</td>
         <td class="muted">{{if .Reason}}{{.Reason}}{{else}}—{{end}}</td>
-        <td><span class="tag">{{.Precision}}</span></td>
+        <td><span class="tag">{{code $.T "precision" .Precision}}</span></td>
         <td style="text-align:right">
           <form class="inline" method="post" action="/admin/accounts/{{$.Data.Account.ID}}/plans/{{.ID}}/delete" onsubmit="return confirm({{$.T.deletePlanConfirm}})">
             <button class="danger" type="submit">{{$.T.delete}}</button>
@@ -33,30 +33,38 @@
 
 <section class="card">
   <h2>{{.T.addPlanInterval}}</h2>
-  <form class="stack" method="post" action="/admin/accounts/{{.Data.Account.ID}}/plans">
+  <form class="stack" method="post" action="/admin/accounts/{{.Data.Account.ID}}/plans" data-local-times>
     <div class="row" style="flex-wrap: wrap; gap: 12px;">
       <div style="flex: 1; min-width: 140px;">
-        <label class="muted small" style="display: block; margin-bottom: 4px;">{{.T.planHistory}}</label>
-        <input type="text" name="plan_type" placeholder="max 5x, max 20x, pro..." required style="width: 100%;">
+        <label class="muted small" style="display: block; margin-bottom: 4px;">{{.T.plan}}</label>
+        {{if .Data.Choices}}
+        <select name="plan_type" required style="width: 100%;">
+          {{range .Data.Choices}}<option value="{{.}}"{{if eq . $.Data.Form.Plan}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+        {{else}}
+        <input type="text" name="plan_type" value="{{.Data.Form.Plan}}" required style="width: 100%;">
+        {{end}}
       </div>
       <div style="flex: 1; min-width: 180px;">
         <label class="muted small" style="display: block; margin-bottom: 4px;">{{.T.effectiveAt}}</label>
-        <input type="datetime-local" name="effective_at" required style="width: 100%;">
+        <input type="datetime-local" name="effective_local" value="{{.Data.Form.EffectiveLocal}}" data-instant="effective_at" required style="width: 100%;">
+        <input type="hidden" name="effective_at">
       </div>
       <div style="flex: 1; min-width: 180px;">
         <label class="muted small" style="display: block; margin-bottom: 4px;">{{.T.endedAt}}</label>
-        <input type="datetime-local" name="ended_at" style="width: 100%;">
+        <input type="datetime-local" name="ended_local" value="{{.Data.Form.EndedLocal}}" data-instant="ended_at" style="width: 100%;">
+        <input type="hidden" name="ended_at">
       </div>
       <div style="flex: 1; min-width: 140px;">
         <label class="muted small" style="display: block; margin-bottom: 4px;">{{.T.precision}}</label>
         <select name="precision" style="width: 100%;">
-          <option value="confirmed">confirmed</option>
-          <option value="inferred">inferred</option>
+          <option value="confirmed"{{if eq .Data.Form.Precision "confirmed"}} selected{{end}}>{{code .T "precision" "confirmed"}}</option>
+          <option value="inferred"{{if eq .Data.Form.Precision "inferred"}} selected{{end}}>{{code .T "precision" "inferred"}}</option>
         </select>
       </div>
       <div style="flex: 2; min-width: 200px;">
         <label class="muted small" style="display: block; margin-bottom: 4px;">{{.T.reason}}</label>
-        <input type="text" name="reason" placeholder="..." style="width: 100%;">
+        <input type="text" name="reason" value="{{.Data.Form.Reason}}" style="width: 100%;">
       </div>
     </div>
     <div class="row" style="justify-content: flex-end; margin-top: 8px;">
@@ -64,4 +72,16 @@
     </div>
   </form>
 </section>
+<script>
+// The date and time fields are in this browser's time zone, which the
+// server cannot know; the form submits the instant they name.
+document.querySelectorAll('form[data-local-times]').forEach(function (form) {
+  form.addEventListener('submit', function () {
+    form.querySelectorAll('input[data-instant]').forEach(function (local) {
+      var at = new Date(local.value)
+      form.elements[local.getAttribute('data-instant')].value = local.value && !isNaN(at) ? at.toISOString() : ''
+    })
+  })
+})
+</script>
 {{end}}

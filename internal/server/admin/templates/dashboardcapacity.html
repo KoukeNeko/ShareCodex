@@ -1,0 +1,24 @@
+{{define "content"}}
+<div class="row spread">
+  <h1>{{.T.capacity}}</h1>
+  <div class="row">
+    <span class="muted small">{{tfh .T.updatedAt (when .Data.GeneratedAt)}}</span>
+    {{if .Data.AccountID}}
+    <nav class="periods" aria-label="{{.T.capacity}}">
+      {{range .Data.Periods}}<a href="{{$.Data.Path}}?account={{$.Data.AccountID}}&amp;period={{.ID}}" class="{{if eq .ID $.Data.Period}}active{{end}}">{{if .Days}}{{tf $.T.days .Days}}{{else}}{{tf $.T.hours .Hours}}{{end}}</a>{{end}}
+    </nav>
+    {{end}}
+  </div>
+</div>
+{{if .Data.Preview}}<p class="notice">{{.T.previewNote}}</p>{{end}}
+{{if .Data.Accounts}}
+<nav class="periods" aria-label="{{.T.navAccounts}}">
+  {{range .Data.Accounts}}<a href="{{$.Data.Path}}?account={{.ID}}&amp;period={{$.Data.Period}}" class="{{if eq .ID $.Data.AccountID}}active{{end}}">{{.Name}}</a>{{end}}
+</nav>
+{{end}}
+{{if .Data.AccountID}}
+{{template "capacityreport" (capacityOf .Data.Report .T)}}
+{{else}}
+<div class="card"><p class="muted" style="margin:0">{{.T.noAccounts}}</p></div>
+{{end}}
+{{end}}

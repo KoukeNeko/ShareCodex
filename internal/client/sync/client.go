@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -103,12 +102,9 @@ func (c *Client) MemberUsage(ctx context.Context, personID, period string) (sync
 }
 
 // AccountCapacity fetches an account's capacity analysis and scenario simulation over a period.
-func (c *Client) AccountCapacity(ctx context.Context, accountID, period string, ratio float64) (syncapi.CapacityReport, error) {
+func (c *Client) AccountCapacity(ctx context.Context, accountID, period string) (syncapi.CapacityReport, error) {
 	var r syncapi.CapacityReport
 	q := url.Values{syncapi.QueryPeriod: {period}}
-	if ratio > 0 {
-		q.Set(syncapi.QueryRatio, strconv.FormatFloat(ratio, 'f', -1, 64))
-	}
 	err := c.do(ctx, http.MethodGet, syncapi.PathAccounts+url.PathEscape(accountID)+"/capacity?"+q.Encode(), nil, &r)
 	if errors.Is(err, errNotFound) {
 		return syncapi.CapacityReport{}, ErrServerTooOld

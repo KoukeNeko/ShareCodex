@@ -25,6 +25,7 @@ import (
 
 	"github.com/KoukeNeko/ShareCodex/internal/account"
 	"github.com/KoukeNeko/ShareCodex/internal/identity"
+	"github.com/KoukeNeko/ShareCodex/internal/quota"
 	"github.com/KoukeNeko/ShareCodex/internal/server/query"
 	"github.com/KoukeNeko/ShareCodex/internal/server/storage"
 	"github.com/KoukeNeko/ShareCodex/internal/syncapi"
@@ -118,6 +119,7 @@ func New(store *storage.Store, log *slog.Logger, cfg Config) (http.Handler, erro
 	mux.HandleFunc("GET /{$}", c.root)
 	mux.HandleFunc("GET "+dashboardPath, c.dashboard)
 	mux.HandleFunc("GET "+dashboardUsagePath, c.dashboardUsage)
+	mux.HandleFunc("GET "+dashboardCapacityPath, c.dashboardCapacity)
 	mux.HandleFunc("GET /manifest.webmanifest", c.manifest)
 	mux.HandleFunc("GET /icons/{name}", c.icon)
 
@@ -149,6 +151,9 @@ func parsePages() (map[string]*template.Template, error) {
 		"svgX":    func(pct float64) string { return strconv.FormatFloat(pct*chartWidth/100, 'f', 1, 64) },
 		"join":    strings.Join,
 		"usageOf": func(u usageData, t map[string]string) usageArgs { return usageArgs{U: u, T: t} },
+		"capacityOf": func(r syncapi.CapacityReport, t map[string]string) capacityArgs {
+			return capacityArgs{R: r, T: t}
+		},
 		"card": func(a accountView, t map[string]string, admin bool) cardData {
 			return cardData{A: a, T: t, Admin: admin}
 		},
@@ -161,17 +166,48 @@ func parsePages() (map[string]*template.Template, error) {
 		},
 		"iso":      func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
 		"timeText": func(format string, t time.Time) string { return t.Local().Format(timeFormats[format]) },
+
+		// The capacity page's codes, tags and rows.
+		"code":        codeText,
+		"basisTag":    basisTag,
+		"fitTag":      fitTag,
+		"scenarioRow": newScenarioRow,
 	}
 	pages := map[string]*template.Template{}
-	for _, name := range []string{"login", "overview", "people", "accounts", "devices", "usage", "settings", "dashboard", "dashboardusage", "plans", "capacity"} {
+	for _, name := range []string{"login", "overview", "people", "accounts", "devices", "usage", "settings", "dashboard", "dashboardusage", "dashboardcapacity", "plans", "capacity"} {
 		t, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS,
-			"templates/layout.html", "templates/account.html", "templates/report.html", "templates/"+name+".html")
+			"templates/layout.html", "templates/account.html", "templates/report.html", "templates/capacityreport.html", "templates/"+name+".html")
 		if err != nil {
 			return nil, err
 		}
 		pages[name] = t
 	}
 	return pages, nil
+}
+
+// scenarioRow is one plan's, or one member's, row of the capacity tables.
+type scenarioRow struct {
+	T      map[string]string
+	Name   string
+	Member bool
+	Five   syncapi.FiveHourResult
+	Week   syncapi.WeeklyResult
+}
+
+func newScenarioRow(t map[string]string, name string, member bool, five syncapi.FiveHourResult, week syncapi.WeeklyResult) scenarioRow {
+	return scenarioRow{T: t, Name: name, Member: member, Five: five, Week: week}
+}
+
+// basisTag and fitTag mark where a capacity came from and how a replay's
+// peak reads.
+func basisTag(t map[string]string, basis string) template.HTML {
+	tone := map[string]string{string(quota.BasisDerived): " warn", string(quota.BasisInsufficient): " off"}[basis]
+	return template.HTML(`<span class="tag` + tone + `">` + template.HTMLEscapeString(codeText(t, "basis", basis)) + `</span>`)
+}
+
+func fitTag(t map[string]string, fit string) template.HTML {
+	tone := map[string]string{quota.FitBorderline: " warn", quota.FitOver: " danger"}[fit]
+	return template.HTML(`<span class="tag` + tone + `">` + template.HTMLEscapeString(codeText(t, "fit", fit)) + `</span>`)
 }
 
 // cardData is what the shared account card receives; Admin adds what only
@@ -185,6 +221,12 @@ type cardData struct {
 // usageArgs is what the shared usage report templates receive.
 type usageArgs struct {
 	U usageData
+	T map[string]string
+}
+
+// capacityArgs is what the shared capacity report template receives.
+type capacityArgs struct {
+	R syncapi.CapacityReport
 	T map[string]string
 }
 
@@ -211,7 +253,7 @@ type page struct {
 var navPaths = map[string]string{
 	"overview": "/admin/", "usage": "/admin/usage", "people": "/admin/people", "accounts": "/admin/accounts",
 	"devices": "/admin/devices", "settings": "/admin/settings", "dashboard": dashboardPath,
-	"dashboardUsage": dashboardUsagePath,
+	"dashboardUsage": dashboardUsagePath, "dashboardCapacity": dashboardCapacityPath,
 }
 
 func (c *Console) render(w http.ResponseWriter, r *http.Request, name string, status int, p page) {
@@ -681,12 +723,30 @@ func (c *Console) deleteAccount(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/accounts", http.StatusSeeOther)
 }
 
+// plansData is the plan history page: the account's intervals, the plans a
+// Claude account can be given, and the form as last submitted so an error
+// leaves it filled in.
 type plansData struct {
 	Account account.Account
 	Plans   []account.PlanInterval
+	// Choices are the plans to pick from; empty for a provider whose plans
+	// are not known, which type one in.
+	Choices []string
+	Form    planForm
+}
+
+type planForm struct {
+	Plan, Precision, Reason string
+	// EffectiveLocal and EndedLocal are the browser's own date and time
+	// fields, in its time zone.
+	EffectiveLocal, EndedLocal string
 }
 
 func (c *Console) accountPlans(w http.ResponseWriter, r *http.Request) {
+	c.renderPlans(w, r, http.StatusOK, "", planForm{Precision: account.PrecisionConfirmed})
+}
+
+func (c *Console) renderPlans(w http.ResponseWriter, r *http.Request, status int, formErr string, form planForm) {
 	ctx := r.Context()
 	accID := r.PathValue("id")
 	acc, err := c.store.Account(ctx, accID)
@@ -703,60 +763,85 @@ func (c *Console) accountPlans(w http.ResponseWriter, r *http.Request) {
 		c.fail(w, "list plan history", err)
 		return
 	}
-	c.render(w, r, "plans", http.StatusOK, page{
-		Title: "planHistory", Nav: "accounts", Authed: true,
-		Data: plansData{Account: acc, Plans: plans},
+	data := plansData{Account: acc, Plans: plans, Form: form}
+	if acc.Provider == account.ProviderAnthropic {
+		data.Choices = quota.KnownPlans()
+	}
+	c.render(w, r, "plans", status, page{
+		Title: "planHistory", Nav: "accounts", Authed: true, Error: formErr, Data: data,
 	})
 }
 
+// saveAccountPlan saves a plan interval. The form's times are RFC 3339,
+// which the page's script writes from the date and time the admin entered
+// in the browser's time zone; the server's own zone says nothing about it.
 func (c *Console) saveAccountPlan(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
-	accID := r.PathValue("id")
-	planType := strings.TrimSpace(r.PostFormValue("plan_type"))
-	effRaw := strings.TrimSpace(r.PostFormValue("effective_at"))
-	endRaw := strings.TrimSpace(r.PostFormValue("ended_at"))
-	reason := strings.TrimSpace(r.PostFormValue("reason"))
-	precision := strings.TrimSpace(r.PostFormValue("precision"))
-	if precision == "" {
-		precision = account.PrecisionConfirmed
-	}
-
-	eff, err := time.Parse("2006-01-02T15:04", effRaw)
-	if err != nil {
-		eff, err = time.Parse(time.RFC3339, effRaw)
-	}
-	if err != nil {
-		http.Redirect(w, r, "/admin/accounts/"+accID+"/plans", http.StatusSeeOther)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Malformed form", http.StatusBadRequest)
 		return
 	}
+	accID := r.PathValue("id")
+	if _, err := c.store.Account(r.Context(), accID); errors.Is(err, storage.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	} else if err != nil {
+		c.fail(w, "find account", err)
+		return
+	}
+	form := planForm{
+		Plan:           strings.TrimSpace(r.PostFormValue("plan_type")),
+		Precision:      strings.TrimSpace(r.PostFormValue("precision")),
+		Reason:         strings.TrimSpace(r.PostFormValue("reason")),
+		EffectiveLocal: r.PostFormValue("effective_local"),
+		EndedLocal:     r.PostFormValue("ended_local"),
+	}
+	if form.Precision == "" {
+		form.Precision = account.PrecisionConfirmed
+	}
+	invalid := func(key string) { c.renderPlans(w, r, http.StatusUnprocessableEntity, key, form) }
 
+	if form.Plan == "" {
+		invalid("planRequired")
+		return
+	}
+	eff, err := time.Parse(time.RFC3339, strings.TrimSpace(r.PostFormValue("effective_at")))
+	if err != nil {
+		invalid("planTimeInvalid")
+		return
+	}
 	var endedAt *time.Time
-	if endRaw != "" {
-		endT, err := time.Parse("2006-01-02T15:04", endRaw)
+	if endRaw := strings.TrimSpace(r.PostFormValue("ended_at")); endRaw != "" {
+		end, err := time.Parse(time.RFC3339, endRaw)
 		if err != nil {
-			endT, err = time.Parse(time.RFC3339, endRaw)
-		}
-		if err != nil {
-			http.Redirect(w, r, "/admin/accounts/"+accID+"/plans", http.StatusSeeOther)
+			invalid("planTimeInvalid")
 			return
 		}
-		endedAt = &endT
+		endedAt = &end
 	}
 
 	in := account.PlanInterval{
 		ID:          strings.TrimSpace(r.PostFormValue("interval_id")),
 		AccountID:   accID,
-		PlanType:    planType,
+		PlanType:    form.Plan,
 		EffectiveAt: eff,
 		EndedAt:     endedAt,
-		Reason:      reason,
+		Reason:      form.Reason,
 		Source:      "admin",
-		Precision:   precision,
+		Precision:   form.Precision,
 	}
-
-	if _, err := c.store.SavePlanInterval(r.Context(), in); err != nil {
-		c.log.Warn("save plan interval failed", "err", err)
-		http.Redirect(w, r, "/admin/accounts/"+accID+"/plans", http.StatusSeeOther)
+	switch _, err := c.store.SavePlanInterval(r.Context(), in); {
+	case errors.Is(err, storage.ErrPlanIntervalOverlap):
+		invalid("planOverlap")
+		return
+	case errors.Is(err, storage.ErrInvalidPlanInterval):
+		invalid("planEndInvalid")
+		return
+	case errors.Is(err, storage.ErrNotFound):
+		http.NotFound(w, r)
+		return
+	case err != nil:
+		c.fail(w, "save plan interval", err)
 		return
 	}
 	http.Redirect(w, r, "/admin/accounts/"+accID+"/plans", http.StatusSeeOther)
@@ -774,13 +859,7 @@ func (c *Console) deleteAccountPlan(w http.ResponseWriter, r *http.Request) {
 func (c *Console) accountCapacity(w http.ResponseWriter, r *http.Request) {
 	accID := r.PathValue("id")
 	period := query.PeriodByID(r.URL.Query().Get(syncapi.QueryPeriod))
-	ratio := 4.0
-	if raw := r.URL.Query().Get(syncapi.QueryRatio); raw != "" {
-		if v, err := strconv.ParseFloat(raw, 64); err == nil && v > 0 {
-			ratio = v
-		}
-	}
-	rep, err := query.AccountCapacity(r.Context(), c.store, accID, period, ratio, time.Now())
+	rep, err := query.AccountCapacity(r.Context(), c.store, accID, period, time.Now())
 	if errors.Is(err, storage.ErrNotFound) {
 		http.NotFound(w, r)
 		return
@@ -986,6 +1065,22 @@ func timeHTML(t any, format string) template.HTML {
 	}
 	return template.HTML(fmt.Sprintf(`<time datetime="%s" data-dt="%[1]s" data-f="%s">%s</time>`,
 		v.UTC().Format(time.RFC3339), format, v.Local().Format(timeFormats[format])))
+}
+
+// codeText translates a code a report carries, such as "unknown_plan" under
+// "excluded", from the dictionary key "excludedUnknownPlan"; an unknown code
+// shows as it is.
+func codeText(t map[string]string, prefix, code string) string {
+	key := prefix
+	for _, part := range strings.Split(code, "_") {
+		if part != "" {
+			key += strings.ToUpper(part[:1]) + part[1:]
+		}
+	}
+	if text, ok := t[key]; ok {
+		return text
+	}
+	return code
 }
 
 // tfHTML fills a translated format with arguments that may be markup, such

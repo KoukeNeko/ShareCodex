@@ -209,7 +209,7 @@ func (a *Agent) MemberUsage(ctx context.Context, personID, period string) (synca
 }
 
 // AccountCapacity fetches an account's capacity analysis and scenario simulation over a period.
-func (a *Agent) AccountCapacity(ctx context.Context, accountID, period string, ratio float64) (syncapi.CapacityReport, error) {
+func (a *Agent) AccountCapacity(ctx context.Context, accountID, period string) (syncapi.CapacityReport, error) {
 	a.mu.Lock()
 	client, revoked := a.client, a.revoked
 	a.mu.Unlock()
@@ -219,7 +219,7 @@ func (a *Agent) AccountCapacity(ctx context.Context, accountID, period string, r
 	if revoked {
 		return syncapi.CapacityReport{}, sync.ErrRevoked
 	}
-	return client.AccountCapacity(ctx, accountID, period, ratio)
+	return client.AccountCapacity(ctx, accountID, period)
 }
 
 // LeaveAccount takes this person out of a shared account's allotment; the

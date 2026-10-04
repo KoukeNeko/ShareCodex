@@ -10,10 +10,12 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/KoukeNeko/ShareCodex/internal/account"
 	"github.com/KoukeNeko/ShareCodex/internal/server/admin"
 	"github.com/KoukeNeko/ShareCodex/internal/server/httpapi"
 	"github.com/KoukeNeko/ShareCodex/internal/server/storage"
@@ -44,6 +46,7 @@ func newServer(t *testing.T) (*storage.Store, browser) {
 	mux.Handle("/admin/", console)
 	mux.Handle("GET /dashboard", console)
 	mux.Handle("GET /dashboard/usage", console)
+	mux.Handle("GET /dashboard/capacity", console)
 	mux.Handle("GET /lang/{lang}", console)
 	mux.Handle("GET /manifest.webmanifest", console)
 	mux.Handle("GET /icons/{name}", console)
@@ -662,5 +665,287 @@ func TestDashboardIsInstallable(t *testing.T) {
 	}
 	if st, _ := b.get("/icons/../admin.go"); st == http.StatusOK {
 		t.Error("the icon route serves files outside the icons")
+	}
+}
+
+func seededAccountID(t *testing.T, store *storage.Store) string {
+	t.Helper()
+	accounts, err := store.Accounts(context.Background())
+	if err != nil || len(accounts) != 1 {
+		t.Fatalf("accounts = %v, %v", accounts, err)
+	}
+	return accounts[0].ID
+}
+
+// The form's times name instants with an offset, the browser's own; the
+// server's zone has no say in them.
+func TestPlanFormHonoursTheSubmittedOffset(t *testing.T) {
+	store, b := newServer(t)
+	seedUsage(t, store)
+	id := seededAccountID(t, store)
+	b.post("/admin/login", url.Values{"password": {password}})
+
+	st, _ := b.post("/admin/accounts/"+id+"/plans", url.Values{"plan_type": {"max 5x"}, "precision": {"confirmed"},
+		"effective_at": {"2026-09-30T01:10:00+08:00"}, "ended_at": {"2026-09-30T23:29:00+08:00"}})
+	if st != http.StatusSeeOther {
+		t.Fatalf("saving a plan returned %d, want a redirect", st)
+	}
+	plans, err := store.PlanHistory(context.Background(), id)
+	if err != nil || len(plans) != 1 {
+		t.Fatalf("plans = %v, %v", plans, err)
+	}
+	if want := time.Date(2026, 9, 29, 17, 10, 0, 0, time.UTC); !plans[0].EffectiveAt.Equal(want) {
+		t.Errorf("effective at %v, want %v", plans[0].EffectiveAt, want)
+	}
+	if want := time.Date(2026, 9, 30, 15, 29, 0, 0, time.UTC); plans[0].EndedAt == nil || !plans[0].EndedAt.Equal(want) {
+		t.Errorf("ended at %v, want %v", plans[0].EndedAt, want)
+	}
+
+	_, page := b.get("/admin/accounts/" + id + "/plans")
+	if !strings.Contains(page, `<select name="plan_type"`) || !strings.Contains(page, `data-instant="effective_at"`) {
+		t.Error("the form of a Claude account lacks a plan choice or the field the script converts")
+	}
+}
+
+// A form that cannot be saved comes back with why, not a silent redirect.
+func TestPlanFormShowsWhyItWasRefused(t *testing.T) {
+	store, b := newServer(t)
+	seedUsage(t, store)
+	id := seededAccountID(t, store)
+	b.post("/admin/login", url.Values{"password": {password}})
+	path := "/admin/accounts/" + id + "/plans"
+	save := func(form url.Values) (int, string) {
+		form.Set("precision", "confirmed")
+		return b.post(path, form)
+	}
+
+	if st, _ := save(url.Values{"plan_type": {"pro"}, "effective_at": {"2026-09-01T00:00:00Z"}, "ended_at": {"2026-10-01T00:00:00Z"}}); st != http.StatusSeeOther {
+		t.Fatalf("first interval returned %d", st)
+	}
+	tests := []struct {
+		name string
+		form url.Values
+		want string
+	}{
+		{"overlap", url.Values{"plan_type": {"max 5x"}, "effective_at": {"2026-09-15T00:00:00Z"}}, "This interval overlaps an existing one"},
+		{"no offset", url.Values{"plan_type": {"max 5x"}, "effective_at": {"2026-10-02T01:10"}}, "Enter a valid time"},
+		{"no time", url.Values{"plan_type": {"max 5x"}}, "Enter a valid time"},
+		{"bad end", url.Values{"plan_type": {"max 5x"}, "effective_at": {"2026-10-02T00:00:00Z"}, "ended_at": {"later"}}, "Enter a valid time"},
+		{"end before start", url.Values{"plan_type": {"max 5x"}, "effective_at": {"2026-10-02T00:00:00Z"}, "ended_at": {"2026-10-01T00:00:00Z"}}, "The end must be after the start"},
+		{"no plan", url.Values{"plan_type": {" "}, "effective_at": {"2026-10-02T00:00:00Z"}}, "Enter a plan"},
+	}
+	for _, tt := range tests {
+		tt.form.Set("reason", "kept "+tt.name)
+		st, page := save(tt.form)
+		if st != http.StatusUnprocessableEntity || !strings.Contains(page, tt.want) {
+			t.Errorf("%s: returned %d, want 422 saying %q", tt.name, st, tt.want)
+		}
+		if !strings.Contains(page, "kept "+tt.name) {
+			t.Errorf("%s: the form lost what was typed", tt.name)
+		}
+	}
+	if plans, _ := store.PlanHistory(context.Background(), id); len(plans) != 1 {
+		t.Errorf("a refused form saved: %d intervals, want 1", len(plans))
+	}
+	if st, _ := b.post("/admin/accounts/nope/plans", url.Values{"plan_type": {"pro"}, "effective_at": {"2026-10-02T00:00:00Z"}}); st != http.StatusNotFound {
+		t.Errorf("an unknown account returned %d, want 404", st)
+	}
+}
+
+func TestCapacityPageIsTranslated(t *testing.T) {
+	store, b := newServer(t)
+	seedUsage(t, store)
+	id := seededAccountID(t, store)
+	b.post("/admin/login", url.Values{"password": {password}})
+
+	st, page := b.get("/admin/accounts/" + id + "/capacity?period=7d")
+	if st != http.StatusOK {
+		t.Fatalf("capacity page returned %d", st)
+	}
+	for _, want := range []string{"Calibration", "Shared Max 5x", "Insufficient data", "Recorded demand stops where"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("capacity page lacks %q", want)
+		}
+	}
+	b.get("/lang/zh-TW?next=/admin/")
+	_, page = b.get("/admin/accounts/" + id + "/capacity")
+	for _, want := range []string{"校準", "共用 Max 5x", "資料不足"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("zh-TW capacity page lacks %q", want)
+		}
+	}
+	if st, _ := b.get("/admin/accounts/nope/capacity"); st != http.StatusNotFound {
+		t.Errorf("an unknown account returned %d, want 404", st)
+	}
+}
+
+// The page lays out every figure of a report that has samples, replays and
+// a week; a template that cannot would stop part way.
+func TestCapacityPageShowsMeasuredPlans(t *testing.T) {
+	ctx := context.Background()
+	store, b := newServer(t)
+	device := seedUsage(t, store)
+	id := seededAccountID(t, store)
+	now := time.Now().UTC()
+	if _, err := store.SavePlanInterval(ctx, account.PlanInterval{AccountID: id, PlanType: "max 5x", EffectiveAt: now.Add(-20 * 24 * time.Hour), Source: "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	five, week := 300, 10080
+	var events []syncapi.Event
+	var snapshots []syncapi.Snapshot
+	for i := range 2 {
+		start := now.Add(-time.Duration(6*i+8) * time.Hour)
+		resets, observed, used := start.Add(5*time.Hour), start.Add(2*time.Hour), 20.0
+		events = append(events, syncapi.Event{DedupeKey: "w" + strconv.Itoa(i), AccountRefHash: "acct", Provider: "anthropic", Product: "claude-code",
+			Model: "claude-opus-5-5", OccurredAt: start.Add(30 * time.Minute), Output: 2_000_000})
+		snapshots = append(snapshots, syncapi.Snapshot{Provider: "anthropic", AccountRefHash: "acct", Source: "claude-oauth-usage", ObservedAt: observed,
+			Buckets: []syncapi.Bucket{{Key: "five_hour", UsedPercent: &used, ResetsAt: &resets, WindowMinutes: &five}}})
+	}
+	weekUsed, weekResets := 30.0, now.Add(4*24*time.Hour)
+	snapshots = append(snapshots, syncapi.Snapshot{Provider: "anthropic", AccountRefHash: "acct", Source: "claude-oauth-usage", ObservedAt: now.Add(-time.Hour),
+		Buckets: []syncapi.Bucket{{Key: "weekly", UsedPercent: &weekUsed, ResetsAt: &weekResets, WindowMinutes: &week}}})
+	if _, err := store.Ingest(ctx, device, syncapi.SyncRequest{Version: syncapi.Version, Events: events, Snapshots: snapshots}); err != nil {
+		t.Fatal(err)
+	}
+	b.post("/admin/login", url.Values{"password": {password}})
+
+	st, page := b.get("/admin/accounts/" + id + "/capacity?period=24h")
+	if st != http.StatusOK {
+		t.Fatalf("capacity page returned %d", st)
+	}
+	for _, want := range []string{"Measured", "Derived", "Reached 100%", "Recorded demand stops where", "Peak"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("capacity page lacks %q", want)
+		}
+	}
+	if !strings.HasSuffix(strings.TrimSpace(page), "</html>") {
+		t.Error("the capacity page was cut short")
+	}
+}
+
+func publishDashboard(t *testing.T, admin browser) browser {
+	t.Helper()
+	admin.post("/admin/login", url.Values{"password": {password}})
+	admin.post("/admin/settings", url.Values{"public_dashboard": {"on"}})
+	jar, _ := cookiejar.New(nil)
+	return browser{t: t, base: admin.base, c: &http.Client{Jar: jar, CheckRedirect: admin.c.CheckRedirect}}
+}
+
+func TestDashboardCapacityAccess(t *testing.T) {
+	store, admin := newServer(t)
+	seedUsage(t, store)
+	id := seededAccountID(t, store)
+	jar, _ := cookiejar.New(nil)
+	visitor := browser{t: t, base: admin.base, c: &http.Client{Jar: jar, CheckRedirect: admin.c.CheckRedirect}}
+
+	if st, _ := visitor.get("/dashboard/capacity"); st != http.StatusNotFound {
+		t.Fatalf("unpublished capacity returned %d to a visitor, want 404", st)
+	}
+	admin.post("/admin/login", url.Values{"password": {password}})
+	if st, page := admin.get("/dashboard/capacity"); st != http.StatusOK || !strings.Contains(page, "Preview") {
+		t.Fatalf("an admin's preview returned %d without the notice", st)
+	}
+	admin.post("/admin/settings", url.Values{"public_dashboard": {"on"}})
+
+	st, page := visitor.get("/dashboard/capacity?period=24h")
+	if st != http.StatusOK {
+		t.Fatalf("published capacity returned %d", st)
+	}
+	for _, want := range []string{`href="/dashboard/capacity" class="active"`, "Account 1",
+		`account=` + id + `&amp;period=30d"`, `account=` + id + `&amp;period=24h" class="active"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("capacity page lacks %q", want)
+		}
+	}
+	if strings.Contains(page, `href="/admin`) {
+		t.Error("the public capacity page links into /admin")
+	}
+	if _, home := visitor.get("/dashboard"); !strings.Contains(home, `href="/dashboard/capacity"`) {
+		t.Error("the dashboard does not link the capacity page")
+	}
+	if st, _ := visitor.get("/dashboard/capacity?account=nope"); st != http.StatusNotFound {
+		t.Errorf("an unknown account returned %d, want 404", st)
+	}
+
+	admin.post("/admin/settings", url.Values{})
+	if st, _ := visitor.get("/dashboard/capacity"); st != http.StatusNotFound {
+		t.Errorf("unpublished again, capacity returned %d, want 404", st)
+	}
+}
+
+// Without an account the page opens on the first Claude account of the
+// public order; a period switch keeps the account.
+func TestDashboardCapacityPicksAnAccount(t *testing.T) {
+	ctx := context.Background()
+	store, admin := newServer(t)
+	seedUsage(t, store)
+	persons, _ := store.Persons(ctx)
+	code, _, _ := store.CreateInvite(ctx, persons[0].ID, storage.InviteTTL)
+	device, _, err := store.Pair(ctx, code, "alice-pc", "windows")
+	if err != nil {
+		t.Fatal(err)
+	}
+	obs := syncapi.Observation{Provider: "openai", AccountRefHash: "codex", Hint: "co***@example.com", ObservedAt: time.Now()}
+	if _, err := store.Ingest(ctx, device, syncapi.SyncRequest{Version: syncapi.Version, Observations: []syncapi.Observation{obs}}); err != nil {
+		t.Fatal(err)
+	}
+	accounts, _ := store.Accounts(ctx)
+	claude, codex := accounts[0], accounts[1]
+	if claude.Provider != "anthropic" || codex.Provider != "openai" {
+		t.Fatalf("accounts = %+v, want Claude then Codex", accounts)
+	}
+	if err := store.SetAccountOrder(ctx, []string{codex.ID, claude.ID}); err != nil {
+		t.Fatal(err)
+	}
+	visitor := publishDashboard(t, admin)
+
+	_, page := visitor.get("/dashboard/capacity")
+	if !regexp.MustCompile(`account=` + claude.ID + `&amp;period=\w+" class="active">Account 2<`).MatchString(page) {
+		t.Error("the page did not open on the Claude account")
+	}
+	_, page = visitor.get("/dashboard/capacity?account=" + codex.ID + "&period=30d")
+	for _, want := range []string{"Only Claude plans are modelled", `account=` + codex.ID + `&amp;period=30d" class="active"`,
+		`account=` + codex.ID + `&amp;period=7d"`, `account=` + claude.ID + `&amp;period=30d"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("Codex capacity page lacks %q", want)
+		}
+	}
+}
+
+// The dashboard names the account as the overview does and leaves out the
+// reason an admin gave a plan; the console keeps both.
+func TestDashboardCapacityHidesWhatOnlyTheConsoleShows(t *testing.T) {
+	ctx := context.Background()
+	store, admin := newServer(t)
+	seedUsage(t, store)
+	id := seededAccountID(t, store)
+	if _, err := store.SavePlanInterval(ctx, account.PlanInterval{AccountID: id, PlanType: "max 5x", Precision: account.PrecisionInferred,
+		EffectiveAt: time.Now().Add(-48 * time.Hour), Reason: "billing-dispute-7731", Source: "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	visitor := publishDashboard(t, admin)
+
+	// The second request is served from the cache.
+	for range 2 {
+		st, page := visitor.get("/dashboard/capacity?account=" + id)
+		if st != http.StatusOK || !strings.Contains(page, "max 5x") || !strings.Contains(page, "Inferred") {
+			t.Fatalf("capacity returned %d without the plan interval", st)
+		}
+		for _, private := range []string{"billing-dispute-7731", "al***@example.com", "alice-laptop"} {
+			if strings.Contains(page, private) {
+				t.Errorf("capacity page shows %q, which only the console may", private)
+			}
+		}
+	}
+	_, page := admin.get("/admin/accounts/" + id + "/capacity")
+	if !strings.Contains(page, "al***@example.com") || !strings.Contains(page, "Inferred") {
+		t.Error("the console's capacity page lost its account label")
+	}
+	if _, page := admin.get("/admin/accounts/" + id + "/plans"); !strings.Contains(page, "billing-dispute-7731") {
+		t.Error("the plan history lost its reason")
+	}
+	admin.get("/lang/zh-TW?next=/admin/")
+	if _, page := admin.get("/admin/accounts/" + id + "/plans"); !strings.Contains(page, "推定") {
+		t.Error("the plan history does not translate the precision")
 	}
 }

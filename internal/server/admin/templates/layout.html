@@ -95,6 +95,7 @@ h2 { font-size: 15px; font-weight: 600; margin: 0; }
 .tag { font: 10.5px/1.6 var(--mono); letter-spacing: .06em; text-transform: uppercase; padding: 0 6px;
   border: 1px solid currentColor; color: var(--accent); white-space: nowrap; }
 .tag.warn { color: var(--warn); }
+.tag.danger { color: var(--danger); }
 .tag.off { color: var(--muted); }
 table { width: 100%; border-collapse: collapse; }
 .table-wrap { overflow-x: auto; }
@@ -105,7 +106,7 @@ th { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercas
 tr:last-child td, tr:last-child th { border-bottom: none; }
 th.num, td.num { text-align: right; }
 td.actions { text-align: right; white-space: nowrap; }
-input[type=text], input[type=password], input[type=number], select {
+input[type=text], input[type=password], input[type=number], input[type=datetime-local], select {
   font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); padding: 6px 9px; }
 input[type=number] { width: 84px; font-family: var(--mono); }
 input:focus, select:focus { outline: 1px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
@@ -238,6 +239,7 @@ try { if (localStorage.getItem('sharecodex.cumulative') === '1') document.docume
     <nav>
       <a href="/dashboard" class="{{if eq .Nav "dashboard"}}active{{end}}">{{.T.navOverview}}</a>
       <a href="/dashboard/usage" class="{{if eq .Nav "dashboardUsage"}}active{{end}}">{{.T.navUsage}}</a>
+      <a href="/dashboard/capacity" class="{{if eq .Nav "dashboardCapacity"}}active{{end}}">{{.T.capacity}}</a>
     </nav>
     {{else}}<span class="spacer"></span>{{end}}
     <nav class="langs" aria-label="{{.T.language}}">

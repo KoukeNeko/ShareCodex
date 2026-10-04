@@ -205,7 +205,7 @@
     {:else if view === 'member' && member}
       <MemberUsage personId={member.id} />
     {:else if view === 'capacity' && capacityAccount}
-      <CapacityAnalysis accountId={capacityAccount.id} accountLabel={capacityAccount.label} />
+      <CapacityAnalysis accountId={capacityAccount.id} />
     {:else}
       {#if app.update}
         <p class="banner update">

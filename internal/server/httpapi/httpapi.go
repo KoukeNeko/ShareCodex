@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -204,12 +203,6 @@ func (s *Server) memberUsage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) accountCapacity(w http.ResponseWriter, r *http.Request) {
 	period := query.PeriodByID(r.URL.Query().Get(syncapi.QueryPeriod))
-	ratio := 4.0
-	if raw := r.URL.Query().Get(syncapi.QueryRatio); raw != "" {
-		if v, err := strconv.ParseFloat(raw, 64); err == nil && v > 0 {
-			ratio = v
-		}
-	}
 	accountID := r.PathValue("id")
 	if _, err := s.store.Account(r.Context(), accountID); errors.Is(err, storage.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "account not found")
@@ -231,7 +224,7 @@ func (s *Server) accountCapacity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	report, err := query.AccountCapacity(r.Context(), s.store, accountID, period, ratio, time.Now())
+	report, err := query.AccountCapacity(r.Context(), s.store, accountID, period, time.Now())
 	if err != nil {
 		s.internalError(w, "build account capacity", err)
 		return

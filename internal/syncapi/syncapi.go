@@ -32,8 +32,6 @@ const (
 	// QueryPeriod names the span of a member's usage: 24h, 7d or 30d, the
 	// last by default.
 	QueryPeriod = "period"
-	// QueryRatio is the scenario multiplier (e.g. 4 for 20x -> 5x).
-	QueryRatio = "ratio"
 )
 
 type Event struct {
@@ -465,34 +463,49 @@ func FromObservation(o account.Observation) Observation {
 	}
 }
 
-type CapacityScenario struct {
-	Name        string   `json:"name"`
-	Label       string   `json:"label"`
-	Capacity    float64  `json:"capacity"`
-	PeakDemand  float64  `json:"peak_demand"`
-	PeakPercent float64  `json:"peak_percent"`
-	Headroom    float64  `json:"headroom_percent"`
-	Exceedances []Span   `json:"exceedances"`
-	Fit         string   `json:"fit"`
-}
+// CapacityReasonUnsupportedProvider is the reason a report has no
+// calibration or scenarios: only Claude's plans are modelled.
+const CapacityReasonUnsupportedProvider = "unsupported_provider"
 
-type PersonCapacity struct {
-	PersonID    string             `json:"person_id"`
-	Name        string             `json:"name"`
-	Tokens      int64              `json:"tokens"`
-	CostUSD     float64            `json:"cost_usd"`
-	Requests    int                `json:"requests"`
-	PeakRolling float64            `json:"peak_rolling_cost"`
-	PeakAt      time.Time          `json:"peak_at"`
-	P50         float64            `json:"p50_rolling_cost"`
-	P90         float64            `json:"p90_rolling_cost"`
-	P95         float64            `json:"p95_rolling_cost"`
+// CapacityReport is an account's recorded demand, how its plans' limits were
+// measured against it, and that demand replayed under other plans. Costs are
+// API-equivalent USD, a weight and not a bill. Basis, fit and exclusion
+// values are codes the viewers translate.
+type CapacityReport struct {
+	AccountID    string    `json:"account_id"`
+	AccountLabel string    `json:"account_label"`
+	Provider     string    `json:"provider"`
+	CurrentPlan  string    `json:"current_plan"`
+	Period       string    `json:"period"`
+	Start        time.Time `json:"start"`
+	End          time.Time `json:"end"`
+	// Reason says why there is no calibration or scenario.
+	Reason      string             `json:"reason,omitempty"`
+	Demand      CapacityDemand     `json:"demand"`
+	Members     []CapacityMember   `json:"members"`
+	Plans       []PlanIntervalDTO  `json:"plans"`
+	Calibration []CalibrationRow   `json:"calibration"`
+	Multiples   []CapacityMultiple `json:"multiples"`
+	Windows     []ObservedWindow   `json:"windows"`
+	Saturation  []SaturationRow    `json:"saturation"`
 	Scenarios   []CapacityScenario `json:"scenarios"`
 }
 
-type Span struct {
-	Start time.Time `json:"start"`
-	End   time.Time `json:"end"`
+type CapacityDemand struct {
+	Tokens        int64     `json:"tokens"`
+	Requests      int       `json:"requests"`
+	CostUSD       float64   `json:"cost_usd"`
+	RollingPeak   float64   `json:"rolling_peak_usd"`
+	RollingPeakAt time.Time `json:"rolling_peak_at"`
+}
+
+type CapacityMember struct {
+	PersonID    string  `json:"person_id"`
+	Name        string  `json:"name"`
+	Tokens      int64   `json:"tokens"`
+	Requests    int     `json:"requests"`
+	CostUSD     float64 `json:"cost_usd"`
+	RollingPeak float64 `json:"rolling_peak_usd"`
 }
 
 type PlanIntervalDTO struct {
@@ -505,41 +518,105 @@ type PlanIntervalDTO struct {
 	Precision   string     `json:"precision"`
 }
 
-type LimitEventDTO struct {
-	OccurredAt time.Time `json:"occurred_at"`
-	PersonName string    `json:"person_name,omitempty"`
-	Kind       string    `json:"kind"`
-	Source     string    `json:"source"`
-	Evidence   string    `json:"evidence"`
-	HTTPStatus int       `json:"http_status,omitempty"`
+// CalibrationRow is how much of a plan's limit one USD of demand used,
+// measured over its windows. Plan is empty for windows no plan could be
+// told for.
+type CalibrationRow struct {
+	Bucket  string `json:"bucket"`
+	Plan    string `json:"plan"`
+	Samples int    `json:"samples"`
+	// Rate is the median percent per USD, RateMin and RateMax its range.
+	Rate    float64 `json:"rate"`
+	RateMin float64 `json:"rate_min"`
+	RateMax float64 `json:"rate_max"`
+	// CapacityUSD is the demand that uses the whole limit, 100 / Rate.
+	CapacityUSD float64 `json:"capacity_usd"`
 }
 
-type SaturationStatsDTO struct {
-	FiveHourSaturatedCount int        `json:"five_hour_saturated_count"`
-	WeeklySaturatedCount   int        `json:"weekly_saturated_count"`
-	FirstFiveHour100       *time.Time `json:"first_five_hour_100,omitempty"`
-	FirstWeekly100         *time.Time `json:"first_weekly_100,omitempty"`
+// CapacityMultiple compares Max 20x with Max 5x. Official is what
+// Anthropic publishes, zero where it publishes none.
+type CapacityMultiple struct {
+	Bucket   string  `json:"bucket"`
+	Observed float64 `json:"observed"`
+	Official float64 `json:"official"`
 }
 
-type CapacityReport struct {
-	AccountID       string             `json:"account_id"`
-	AccountLabel    string             `json:"account_label"`
-	Provider        string             `json:"provider"`
-	CurrentPlan     string             `json:"current_plan"`
-	Period          string             `json:"period"`
-	Start           time.Time          `json:"start"`
-	End             time.Time          `json:"end"`
-	Ratio           float64            `json:"ratio"`
-	TotalTokens     int64              `json:"total_tokens"`
-	TotalCostUSD    float64            `json:"total_cost_usd"`
-	CombinedPeak    float64            `json:"combined_peak_cost"`
-	CombinedPeakAt  time.Time          `json:"combined_peak_at"`
-	CombinedP50     float64            `json:"combined_p50_cost"`
-	CombinedP95     float64            `json:"combined_p95_cost"`
-	Members         []PersonCapacity   `json:"members"`
-	Scenarios       []CapacityScenario `json:"scenarios"`
-	ObservedPlans   []PlanIntervalDTO  `json:"observed_plans"`
-	LimitEvents     []LimitEventDTO    `json:"limit_events"`
-	SaturationStats SaturationStatsDTO `json:"saturation_stats"`
-	DataNotes       []string           `json:"data_notes"`
+// ObservedWindow is one 5-hour window readings saw, to check a plan's
+// calibration against what happened.
+type ObservedWindow struct {
+	Start      time.Time  `json:"start"`
+	ResetsAt   time.Time  `json:"resets_at"`
+	Plan       string     `json:"plan"`
+	MaxPercent float64    `json:"max_percent"`
+	Saturated  bool       `json:"saturated"`
+	FirstFull  *time.Time `json:"first_full,omitempty"`
+	// CostUSD is the demand recorded from the window's start to its peak.
+	CostUSD float64 `json:"cost_usd"`
+	// PredictedPercent is CostUSD at the plan's measured rate.
+	PredictedPercent *float64 `json:"predicted_percent,omitempty"`
+	// Excluded says why the window gives no calibration sample.
+	Excluded string `json:"excluded,omitempty"`
+}
+
+// SaturationRow counts a plan's windows in the period that reached 100%.
+type SaturationRow struct {
+	Bucket    string `json:"bucket"`
+	Plan      string `json:"plan"`
+	Windows   int    `json:"windows"`
+	Saturated int    `json:"saturated"`
+}
+
+// CapacityScenario replays the account's demand under a plan: shared by
+// everyone, or one plan for each member.
+type CapacityScenario struct {
+	ID       string           `json:"id"`
+	Plan     string           `json:"plan"`
+	Shared   bool             `json:"shared"`
+	FiveHour FiveHourResult   `json:"five_hour"`
+	Weekly   WeeklyResult     `json:"weekly"`
+	Members  []ScenarioMember `json:"members,omitempty"`
+}
+
+// ScenarioMember is one member's own plan in a separate scenario.
+type ScenarioMember struct {
+	PersonID string         `json:"person_id"`
+	Name     string         `json:"name"`
+	FiveHour FiveHourResult `json:"five_hour"`
+	Weekly   WeeklyResult   `json:"weekly"`
+}
+
+// FiveHourResult is demand replayed against a 5-hour limit. Basis says
+// where the capacity came from, Fit how the peak reads. A scenario of
+// separate plans sums its members' windows and takes their worst figures.
+type FiveHourResult struct {
+	Basis       string     `json:"basis"`
+	CapacityUSD float64    `json:"capacity_usd"`
+	Fit         string     `json:"fit,omitempty"`
+	Windows     int        `json:"windows"`
+	HitWindows  int        `json:"hit_windows"`
+	FirstHit    *time.Time `json:"first_hit,omitempty"`
+	// PeakPercent is the most use of any session's allowance.
+	PeakPercent float64 `json:"peak_percent"`
+	// BlockedPercent is the share of demand after a session's limit was hit.
+	BlockedPercent     float64 `json:"blocked_percent"`
+	RollingPeakPercent float64 `json:"rolling_peak_percent"`
+	RollingP50Percent  float64 `json:"rolling_p50_percent"`
+	RollingP95Percent  float64 `json:"rolling_p95_percent"`
+}
+
+// WeeklyResult is demand replayed against a weekly limit.
+type WeeklyResult struct {
+	Basis       string         `json:"basis"`
+	CapacityUSD float64        `json:"capacity_usd"`
+	Fit         string         `json:"fit,omitempty"`
+	PeakPercent float64        `json:"peak_percent"`
+	HitWindows  int            `json:"hit_windows"`
+	Windows     []WeeklyWindow `json:"windows"`
+}
+
+type WeeklyWindow struct {
+	Start       time.Time  `json:"start"`
+	End         time.Time  `json:"end"`
+	PeakPercent float64    `json:"peak_percent"`
+	HitAt       *time.Time `json:"hit_at,omitempty"`
 }

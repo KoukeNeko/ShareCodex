@@ -58,15 +58,22 @@ type PlanInterval struct {
 	CreatedAt   time.Time  `json:"created_at"`
 }
 
+// IntervalAt returns the interval of a set of non-overlapping intervals that
+// covers t.
+func IntervalAt(intervals []PlanInterval, t time.Time) (PlanInterval, bool) {
+	for _, in := range intervals {
+		if !t.Before(in.EffectiveAt) && (in.EndedAt == nil || t.Before(*in.EndedAt)) {
+			return in, true
+		}
+	}
+	return PlanInterval{}, false
+}
+
 // ResolvePlanAt returns the plan active at t from a set of non-overlapping intervals,
 // or "" when none covers t.
 func ResolvePlanAt(intervals []PlanInterval, t time.Time) string {
-	for _, in := range intervals {
-		if !t.Before(in.EffectiveAt) && (in.EndedAt == nil || t.Before(*in.EndedAt)) {
-			return in.PlanType
-		}
-	}
-	return ""
+	in, _ := IntervalAt(intervals, t)
+	return in.PlanType
 }
 
 // HashExternalRef is the single place that turns a provider-reported account

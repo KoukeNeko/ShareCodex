@@ -20,8 +20,9 @@ import (
 // and models. Email hints and device names stay in the console.
 
 const (
-	dashboardPath      = "/dashboard"
-	dashboardUsagePath = "/dashboard/usage"
+	dashboardPath         = "/dashboard"
+	dashboardUsagePath    = "/dashboard/usage"
+	dashboardCapacityPath = "/dashboard/capacity"
 )
 
 // dashboardTTL bounds how often anyone opening the dashboard can make the
@@ -32,6 +33,8 @@ type dashboardCache struct {
 	overview ttlCache[syncapi.Overview]
 	// usage holds a report per period ID, and per member and period.
 	usage ttlCache[query.UsageReport]
+	// capacity holds a report per account and period ID.
+	capacity ttlCache[syncapi.CapacityReport]
 }
 
 // ttlCache keeps each value for dashboardTTL after building it.
@@ -217,6 +220,71 @@ func (c *Console) dashboardUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	data := dashboardUsageData{publicData: pd, Usage: usageData{Path: dashboardUsagePath, Period: period.ID, Periods: query.Periods, Report: report, Member: member}}
 	c.render(w, r, "dashboardusage", http.StatusOK, page{Title: "navUsage", Nav: "dashboardUsage", Public: true, Data: data})
+}
+
+type dashboardCapacityData struct {
+	publicData
+	Path    string
+	Period  string
+	Periods []query.Period
+	// Accounts are the public overview's, under their public names;
+	// AccountID is the one the report is of, empty when there is none to show.
+	Accounts  []publicAccount
+	AccountID string
+	Report    syncapi.CapacityReport
+}
+
+type publicAccount struct{ ID, Name string }
+
+func (c *Console) dashboardCapacity(w http.ResponseWriter, r *http.Request) {
+	o, names, pd, ok := c.publicView(w, r)
+	if !ok {
+		return
+	}
+	period := periodOf(r)
+	data := dashboardCapacityData{publicData: pd, Path: dashboardCapacityPath, Period: period.ID, Periods: query.Periods}
+	for _, a := range o.Accounts {
+		data.Accounts = append(data.Accounts, publicAccount{ID: a.ID, Name: names[a.ID]})
+	}
+	// Anthropic is the one provider with capacity scenarios, so it is the
+	// default.
+	accID := r.URL.Query().Get("account")
+	if accID == "" {
+		for _, a := range o.Accounts {
+			if a.Provider == string(account.ProviderAnthropic) {
+				accID = a.ID
+				break
+			}
+		}
+	} else if !slices.ContainsFunc(o.Accounts, func(a syncapi.AccountOverview) bool { return a.ID == accID }) {
+		http.NotFound(w, r)
+		return
+	}
+	if accID != "" {
+		data.AccountID = accID
+		report, err := c.dash.capacity.get(r.Context(), accID+"/"+period.ID, func(ctx context.Context) (syncapi.CapacityReport, error) {
+			return query.AccountCapacity(ctx, c.store, accID, period, time.Now())
+		})
+		if err != nil {
+			c.fail(w, "build dashboard capacity", err)
+			return
+		}
+		data.Report = publicCapacity(report, names[accID])
+	}
+	c.render(w, r, "dashboardcapacity", http.StatusOK, page{Title: "capacity", Nav: "dashboardCapacity", Public: true, Data: data})
+}
+
+// publicCapacity is a capacity report as the dashboard publishes it. The
+// cached report is shared, so what changes is on a copy: the account is
+// named as the dashboard names it, and the plan intervals lose the admin's
+// reason and source.
+func publicCapacity(report syncapi.CapacityReport, name string) syncapi.CapacityReport {
+	report.AccountLabel = name
+	report.Plans = slices.Clone(report.Plans)
+	for i := range report.Plans {
+		report.Plans[i].Reason, report.Plans[i].Source = "", ""
+	}
+	return report
 }
 
 // publicOverview is the overview without what the dashboard does not

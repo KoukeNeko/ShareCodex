@@ -157,7 +157,8 @@ beside its lists. Like
 the popup's, its charts switch between tokens per span and running totals with **Cumulative**. Accounts
 follow the order set in the console, or put the most used 5-hour or weekly window first. Its Usage
 page, at `/dashboard/usage`, has everyone's usage by member, account and model over 24 hours, 7 days
-or 30 days, and each member's by account and model. On a phone, Chrome can install the dashboard as an app of its own. It leaves out email addresses and
+or 30 days, and each member's by account and model. Its Capacity page, at `/dashboard/capacity`,
+shows the same capacity analysis as the console, without plan notes. On a phone, Chrome can install the dashboard as an app of its own. It leaves out email addresses and
 device names; an account still named by its email shows as Account 1, Account 2 and so on. It is off
 until turned on under **Settings**.
 
