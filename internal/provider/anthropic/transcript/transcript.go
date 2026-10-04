@@ -19,8 +19,14 @@ import (
 	"github.com/KoukeNeko/ShareCodex/internal/usage"
 )
 
+// LimitSource labels limit events read from Claude Code transcripts.
+const LimitSource = "claude-transcript"
+
 type Result struct {
 	Events []usage.Event
+	// LimitEvents are rate-limit, overload, and authentication failures that
+	// Claude Code logged as synthetic error messages.
+	LimitEvents []usage.LimitEvent
 	// BadLines counts complete lines that were not valid JSON.
 	BadLines int
 }
@@ -31,10 +37,20 @@ type line struct {
 	RequestID  string    `json:"requestId"`
 	Timestamp  time.Time `json:"timestamp"`
 	Entrypoint string    `json:"entrypoint"`
-	Message    *struct {
-		ID    string `json:"id"`
-		Model string `json:"model"`
-		Usage *struct {
+	UUID       string    `json:"uuid"`
+	// PerTurnEffort is the effort level of the turn, null when none was set.
+	PerTurnEffort  *string `json:"perTurnEffort"`
+	IsAPIError     bool    `json:"isApiErrorMessage"`
+	Error          string  `json:"error"`
+	APIErrorStatus int     `json:"apiErrorStatus"`
+	QuotaLimits    *struct {
+		RateLimitType string `json:"rateLimitType"`
+	} `json:"quotaLimits"`
+	Message *struct {
+		ID      string          `json:"id"`
+		Model   string          `json:"model"`
+		Content json.RawMessage `json:"content"`
+		Usage   *struct {
 			InputTokens              int64 `json:"input_tokens"`
 			OutputTokens             int64 `json:"output_tokens"`
 			CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
@@ -110,7 +126,16 @@ func Parse(r io.Reader) (Result, error) {
 			res.BadLines++
 			continue
 		}
-		if l.Type != "assistant" || l.Message == nil || l.Message.Usage == nil {
+		if l.Type != "assistant" || l.Message == nil {
+			continue
+		}
+		if l.IsAPIError {
+			if le, ok := limitEvent(l); ok {
+				res.LimitEvents = append(res.LimitEvents, le)
+			}
+			continue
+		}
+		if l.Message.Usage == nil {
 			continue
 		}
 		// "<synthetic>" messages are made up by Claude Code and never reach
@@ -136,6 +161,7 @@ func Parse(r io.Reader) (Result, error) {
 			SessionID:  l.SessionID,
 			RequestID:  l.RequestID,
 			Model:      l.Message.Model,
+			Effort:     effort(l.PerTurnEffort),
 			OccurredAt: l.Timestamp,
 			// Claude Code can be pointed at other vendors' models through a
 			// gateway; only Anthropic models draw on a Claude subscription.
@@ -156,6 +182,83 @@ func Parse(r io.Reader) (Result, error) {
 		res.Events = append(res.Events, e)
 	}
 	return res, nil
+}
+
+func effort(level *string) string {
+	if level == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(*level))
+}
+
+// limitEvent turns an error message into a limit event, or reports false for
+// errors that say nothing about limits (network failures, bad requests). Only
+// codes are kept; the message text is never stored.
+func limitEvent(l line) (usage.LimitEvent, bool) {
+	var blocks []struct {
+		Text string `json:"text"`
+	}
+	// The text only refines the classification; without it the codes decide.
+	_ = json.Unmarshal(l.Message.Content, &blocks)
+	var text string
+	if len(blocks) > 0 {
+		text = blocks[0].Text
+	}
+	var rateLimitType string
+	if l.QuotaLimits != nil {
+		rateLimitType = l.QuotaLimits.RateLimitType
+	}
+	kind, evidence, ok := classifyLimit(l.Error, l.APIErrorStatus, rateLimitType, text)
+	if !ok || l.UUID == "" {
+		return usage.LimitEvent{}, false
+	}
+	return usage.LimitEvent{
+		DedupeKey:  "claude-limit:" + l.UUID,
+		Provider:   account.ProviderAnthropic,
+		Originator: l.Entrypoint,
+		OccurredAt: l.Timestamp,
+		SessionID:  l.SessionID,
+		RequestID:  l.RequestID,
+		Kind:       kind,
+		Source:     LimitSource,
+		Evidence:   evidence,
+		HTTPStatus: l.APIErrorStatus,
+	}, true
+}
+
+// classifyLimit names the limit behind an error message. The evidence is a
+// code for how it was told: Claude's rate limit type, a fixed marker for
+// messages logged without one, or "gateway" for throttling by a proxy, which
+// is never a subscription limit.
+func classifyLimit(errCode string, status int, rateLimitType, text string) (usage.LimitKind, string, bool) {
+	text = strings.ReplaceAll(text, "’", "'")
+	if errCode == "rate_limit" {
+		switch {
+		case rateLimitType == "five_hour":
+			return usage.LimitFiveHour, rateLimitType, true
+		case rateLimitType == "seven_day":
+			return usage.LimitWeekly, rateLimitType, true
+		case strings.HasPrefix(rateLimitType, "seven_day_") || strings.HasPrefix(rateLimitType, "five_hour_"):
+			return usage.LimitModelSpecific, rateLimitType, true
+		case rateLimitType != "":
+			return usage.LimitUnknown, rateLimitType, true
+		case strings.HasPrefix(text, "You've hit your session limit"):
+			return usage.LimitFiveHour, "session_limit", true
+		case strings.HasPrefix(text, "You've hit your weekly limit"):
+			return usage.LimitWeekly, "weekly_limit", true
+		case strings.Contains(text, "monthly spend limit") || strings.Contains(text, "out of extra usage"):
+			return usage.LimitUnknown, "extra_usage", true
+		case strings.Contains(text, "not your usage limit") || strings.Contains(text, "Request rejected (429)"):
+			return usage.LimitProvider429, "gateway", true
+		}
+	}
+	switch {
+	case status == 529 || strings.Contains(text, "Overloaded"):
+		return usage.LimitOverload, "overloaded", true
+	case errCode == "authentication_failed" || status == 401 || status == 403:
+		return usage.LimitAuth, "auth", true
+	}
+	return "", "", false
 }
 
 // Roots returns the directories holding transcripts. CLAUDE_CONFIG_DIR may

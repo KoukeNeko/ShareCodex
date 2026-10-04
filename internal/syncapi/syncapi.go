@@ -489,6 +489,21 @@ type CapacityReport struct {
 	Windows     []ObservedWindow   `json:"windows"`
 	Saturation  []SaturationRow    `json:"saturation"`
 	Scenarios   []CapacityScenario `json:"scenarios"`
+	// LimitHits are the limits and refusals Claude Code logged in the
+	// period, newest first.
+	LimitHits []LimitHit `json:"limit_hits"`
+}
+
+// LimitHit is one limit or refusal an account's member hit. Kind and
+// Evidence are codes the viewers translate; Evidence "gateway" marks a
+// throttle by a proxy, not by the plan. Plan is the account's plan at the
+// time, empty when unknown.
+type LimitHit struct {
+	At       time.Time `json:"at"`
+	Kind     string    `json:"kind"`
+	Evidence string    `json:"evidence,omitempty"`
+	Plan     string    `json:"plan"`
+	Member   string    `json:"member"`
 }
 
 type CapacityDemand struct {
@@ -556,14 +571,18 @@ type ObservedWindow struct {
 	PredictedPercent *float64 `json:"predicted_percent,omitempty"`
 	// Excluded says why the window gives no calibration sample.
 	Excluded string `json:"excluded,omitempty"`
+	// LimitHit is whether a 5-hour limit was logged inside the window.
+	LimitHit bool `json:"limit_hit,omitempty"`
 }
 
-// SaturationRow counts a plan's windows in the period that reached 100%.
+// SaturationRow counts a plan's windows in the period that reached 100%, and
+// the limit hits logged for it.
 type SaturationRow struct {
 	Bucket    string `json:"bucket"`
 	Plan      string `json:"plan"`
 	Windows   int    `json:"windows"`
 	Saturated int    `json:"saturated"`
+	Hits      int    `json:"hits"`
 }
 
 // CapacityScenario replays the account's demand under a plan: shared by

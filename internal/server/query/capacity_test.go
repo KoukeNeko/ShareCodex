@@ -2,7 +2,9 @@ package query_test
 
 import (
 	"context"
+	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -359,5 +361,61 @@ func TestAccountCapacityOfAnotherProviderHasNoScenarios(t *testing.T) {
 	}
 	if rep.Demand.Requests != 1 || len(rep.Members) != 1 || rep.Members[0].Name != "alice" {
 		t.Errorf("demand and members = %+v, %+v, want alice's request", rep.Demand, rep.Members)
+	}
+}
+
+func TestAccountCapacityListsLoggedLimitsAndCountsConfirmedOnes(t *testing.T) {
+	ctx := context.Background()
+	store, id, now := seedCapacity(t)
+	carol := pair(t, store, "carol")
+	hit := func(key string, hours float64, kind usage.LimitKind, evidence string) syncapi.LimitEvent {
+		return syncapi.LimitEvent{DedupeKey: key, AccountRefHash: "acct", Provider: "anthropic", OccurredAt: at(hours), ObservedAt: at(hours),
+			SessionID: "secret-session", RequestID: "secret-request", Kind: string(kind), Source: "claude-transcript", Evidence: evidence}
+	}
+	req := syncapi.SyncRequest{Version: syncapi.Version, LimitEvents: []syncapi.LimitEvent{
+		hit("a", 37, usage.LimitFiveHour, "five_hour"), hit("b", 40, usage.LimitProvider429, "gateway"), hit("c", 60, usage.LimitWeekly, "seven_day"),
+	}}
+	if _, err := store.Ingest(ctx, carol, req); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := query.AccountCapacity(ctx, store, id, query.PeriodByID("7d"), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(rep.LimitHits) != 3 {
+		t.Fatalf("limit hits = %+v, want three, newest first", rep.LimitHits)
+	}
+	for i, want := range []struct{ kind, evidence, plan string }{
+		{"weekly", "seven_day", "max 20x"}, {"provider429", "gateway", "max 5x"}, {"5h", "five_hour", "max 5x"},
+	} {
+		h := rep.LimitHits[i]
+		if h.Kind != want.kind || h.Evidence != want.evidence || h.Plan != want.plan || h.Member != "carol" {
+			t.Errorf("hit %d = %+v, want %+v by carol", i, h, want)
+		}
+	}
+	// The gateway throttle is listed but is no plan limit.
+	sat := map[string]syncapi.SaturationRow{}
+	for _, s := range rep.Saturation {
+		sat[s.Bucket+"/"+s.Plan] = s
+	}
+	if sat["five_hour/max 5x"].Hits != 1 || sat["weekly/max 20x"].Hits != 1 || sat["five_hour/max 20x"].Hits != 0 {
+		t.Errorf("hits per plan = %+v", sat)
+	}
+	marked := 0
+	for _, w := range rep.Windows {
+		if w.LimitHit {
+			marked++
+			if !w.Start.Equal(at(33)) {
+				t.Errorf("window %v is marked, want the one holding the 5-hour limit", w.Start)
+			}
+		}
+	}
+	if marked != 1 {
+		t.Errorf("%d windows marked, want 1", marked)
+	}
+	raw, err := json.Marshal(rep.LimitHits)
+	if err != nil || strings.Contains(string(raw), "secret") || strings.Contains(string(raw), "laptop") {
+		t.Errorf("limit hits %s carry a session, request, or device", raw)
 	}
 }

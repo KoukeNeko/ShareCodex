@@ -139,7 +139,7 @@ func (s *Store) Observations(ctx context.Context, provider account.Provider, sou
 // scanned, atomically, so a crash never leaves a file marked but unsaved.
 // Events are upserted: a response re-read later with a larger output count
 // (Claude streams partial counts) replaces the smaller one and is re-queued.
-func (s *Store) IngestFile(ctx context.Context, path string, st scan.FileState, events []usage.Event, snapshots []quota.Snapshot) (int, error) {
+func (s *Store) IngestFile(ctx context.Context, path string, st scan.FileState, events []usage.Event, snapshots []quota.Snapshot, limits []usage.LimitEvent) (int, error) {
 	changed := 0
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
 		for _, e := range events {
@@ -162,7 +162,8 @@ func (s *Store) IngestFile(ctx context.Context, path string, st scan.FileState, 
 					effort = CASE WHEN events.effort = '' THEN excluded.effort ELSE events.effort END,
 					status = CASE WHEN events.status = '' THEN excluded.status ELSE events.status END,
 					aggregated = events.aggregated OR excluded.aggregated
-				WHERE (excluded.account_ref_hash = events.account_ref_hash AND (excluded.output > events.output OR (events.request_id = '' AND excluded.request_id != ''))) OR
+				WHERE (excluded.account_ref_hash = events.account_ref_hash AND (excluded.output > events.output OR (events.request_id = '' AND excluded.request_id != '') OR
+						(events.effort = '' AND excluded.effort != ''))) OR
 					(excluded.account_ref_hash != events.account_ref_hash AND
 					 excluded.session_id = events.session_id AND excluded.originator = events.originator)`,
 				e.DedupeKey, e.AccountRefHash, e.Provider, e.Product, e.Originator, e.SessionID, e.Model,
@@ -186,6 +187,13 @@ func (s *Store) IngestFile(ctx context.Context, path string, st scan.FileState, 
 		}
 		for _, snap := range snapshots {
 			n, err := insertSnapshot(ctx, tx, snap)
+			if err != nil {
+				return err
+			}
+			changed += n
+		}
+		for _, l := range limits {
+			n, err := insertLimitEvent(ctx, tx, l)
 			if err != nil {
 				return err
 			}
@@ -400,9 +408,6 @@ func (s *Store) ResetLedger(ctx context.Context) error {
 		if err := requeueObservations(ctx, tx); err != nil {
 			return err
 		}
-		if err := requeueLimitEvents(ctx, tx); err != nil {
-			return err
-		}
 		return requeueSnapshots(ctx, tx)
 	})
 }
@@ -469,55 +474,20 @@ func requeueSnapshots(ctx context.Context, tx *sql.Tx) error {
 	return nil
 }
 
-func requeueLimitEvents(ctx context.Context, tx *sql.Tx) error {
-	rows, err := tx.QueryContext(ctx, `SELECT dedupe_key, provider, account_ref_hash, occurred_at, observed_at,
-		session_id, request_id, kind, source, evidence, http_status FROM limit_events ORDER BY occurred_at`)
+func insertLimitEvent(ctx context.Context, tx *sql.Tx, l usage.LimitEvent) (int, error) {
+	res, err := tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO limit_events (dedupe_key, provider, account_ref_hash, occurred_at, observed_at,
+			session_id, request_id, kind, source, evidence, http_status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		l.DedupeKey, l.Provider, l.AccountRefHash, l.OccurredAt.UnixMilli(), l.ObservedAt.UnixMilli(),
+		l.SessionID, l.RequestID, string(l.Kind), l.Source, l.Evidence, l.HTTPStatus)
 	if err != nil {
-		return err
+		return 0, fmt.Errorf("save limit event: %w", err)
 	}
-	var events []syncapi.LimitEvent
-	for rows.Next() {
-		var l syncapi.LimitEvent
-		var occ, obs int64
-		if err := rows.Scan(&l.DedupeKey, &l.Provider, &l.AccountRefHash, &occ, &obs,
-			&l.SessionID, &l.RequestID, &l.Kind, &l.Source, &l.Evidence, &l.HTTPStatus); err != nil {
-			rows.Close()
-			return err
-		}
-		l.OccurredAt = time.UnixMilli(occ).UTC()
-		l.ObservedAt = time.UnixMilli(obs).UTC()
-		events = append(events, l)
+	if n, _ := res.RowsAffected(); n == 0 {
+		return 0, nil
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, l := range events {
-		if err := enqueue(ctx, tx, KindLimitEvent, l); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// RecordLimitEvent stores a rate-limit, refusal, or failure event in the local ledger
-// and enqueues it for the server.
-func (s *Store) RecordLimitEvent(ctx context.Context, l usage.LimitEvent) error {
-	return s.inTx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `
-			INSERT OR IGNORE INTO limit_events (dedupe_key, provider, account_ref_hash, occurred_at, observed_at,
-				session_id, request_id, kind, source, evidence, http_status)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			l.DedupeKey, l.Provider, l.AccountRefHash, l.OccurredAt.UnixMilli(), l.ObservedAt.UnixMilli(),
-			l.SessionID, l.RequestID, string(l.Kind), l.Source, l.Evidence, l.HTTPStatus)
-		if err != nil {
-			return fmt.Errorf("save limit event: %w", err)
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return nil
-		}
-		return enqueue(ctx, tx, KindLimitEvent, syncapi.FromLimitEvent(l))
-	})
+	return 1, enqueue(ctx, tx, KindLimitEvent, syncapi.FromLimitEvent(l))
 }
 
 func (s *Store) EventCount(ctx context.Context) (int, error) {

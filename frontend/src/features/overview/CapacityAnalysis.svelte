@@ -22,6 +22,25 @@
     separate_max5: 'scenarioSeparateMax5',
     shared_max20: 'scenarioSharedMax20',
   }
+  const kindText: Record<string, MessageKey> = {
+    '5h': 'limitKind5h',
+    weekly: 'limitKindWeekly',
+    'model-specific': 'limitKindModelSpecific',
+    overload: 'limitKindOverload',
+    provider429: 'limitKindProvider429',
+    auth: 'limitKindAuth',
+    unknown: 'limitKindUnknown',
+  }
+  const evidenceText: Record<string, MessageKey> = {
+    five_hour: 'limitEvidenceFiveHour',
+    seven_day: 'limitEvidenceSevenDay',
+    session_limit: 'limitEvidenceSessionLimit',
+    weekly_limit: 'limitEvidenceWeeklyLimit',
+    extra_usage: 'limitEvidenceExtraUsage',
+    gateway: 'limitEvidenceGateway',
+    overloaded: 'limitEvidenceOverloaded',
+    auth: 'limitEvidenceAuth',
+  }
   const reasonText: Record<string, MessageKey> = { unsupported_provider: 'reasonUnsupportedProvider' }
   const label = (texts: Record<string, MessageKey>, code: string) => (code in texts ? t(texts[code]) : code)
 
@@ -212,8 +231,13 @@
                 <td class="num">{w.predicted_percent == null ? '—' : percent(w.predicted_percent)}</td>
                 <td class="num">{usd(w.cost_usd)}</td>
               </tr>
-              {#if w.excluded}
-                <tr class="sub"><td colspan="5">{@render tag('off', label(excludedText, w.excluded))}</td></tr>
+              {#if w.excluded || w.limit_hit}
+                <tr class="sub">
+                  <td colspan="5">
+                    {#if w.limit_hit}{@render tag('over', t('limitLogged'))}{/if}
+                    {#if w.excluded}{@render tag('off', label(excludedText, w.excluded))}{/if}
+                  </td>
+                </tr>
               {/if}
             {:else}
               <tr><td colspan="5" class="muted">—</td></tr>
@@ -233,6 +257,7 @@
               <th>{t('plan')}</th>
               <th class="num">{t('windows')}</th>
               <th class="num">{t('atLimit')}</th>
+              <th class="num">{t('loggedLimits')}</th>
             </tr>
           </thead>
           <tbody>
@@ -242,9 +267,40 @@
                 <td>{@render planName(s.plan)}</td>
                 <td class="num">{s.windows}</td>
                 <td class="num">{s.saturated}</td>
+                <td class="num">{s.hits}</td>
               </tr>
             {:else}
-              <tr><td colspan="4" class="muted">—</td></tr>
+              <tr><td colspan="5" class="muted">—</td></tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 class="muted small">{t('loggedLimits')}</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>{t('loggedAt')}</th>
+              <th>{t('limit')}</th>
+              <th></th>
+              <th>{t('plan')}</th>
+              <th>{t('member')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each report.limit_hits ?? [] as h}
+              <tr>
+                <td>{dateTime(h.at)}</td>
+                <td>{@render tag(h.kind === 'provider429' ? 'off' : '', label(kindText, h.kind))}</td>
+                <td class="muted">{h.evidence ? label(evidenceText, h.evidence) : ''}</td>
+                <td>{@render planName(h.plan)}</td>
+                <td>{h.member}</td>
+              </tr>
+            {:else}
+              <tr><td colspan="5" class="muted">—</td></tr>
             {/each}
           </tbody>
         </table>

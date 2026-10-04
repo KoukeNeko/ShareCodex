@@ -25,12 +25,15 @@ type LimitEvent struct {
 	DeviceID       string
 	PersonID       string
 	Provider       account.Provider
-	OccurredAt     time.Time
-	ObservedAt     time.Time
-	SessionID      string
-	RequestID      string
-	Kind           LimitKind
-	Source         string
-	Evidence       string
-	HTTPStatus     int
+	// Originator is the entrypoint of the session, used to tell which app's
+	// account the event belongs to. It is not synced.
+	Originator string
+	OccurredAt time.Time
+	ObservedAt time.Time
+	SessionID  string
+	RequestID  string
+	Kind       LimitKind
+	Source     string
+	Evidence   string
+	HTTPStatus int
 }

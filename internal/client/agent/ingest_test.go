@@ -88,7 +88,7 @@ func TestIngestStatusLineCorrectsKnownCLIReading(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := store.IngestFile(ctx, "s.jsonl", scan.FileState{}, []usage.Event{{DedupeKey: "e", Provider: account.ProviderAnthropic,
-		AccountRefHash: "correct", Originator: "cli", SessionID: "s", OccurredAt: at.Add(-time.Second)}}, nil); err != nil {
+		AccountRefHash: "correct", Originator: "cli", SessionID: "s", OccurredAt: at.Add(-time.Second)}}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	items, err := store.PendingOutbox(ctx, 10)
@@ -146,7 +146,7 @@ func TestIngestStatusLineDoesNotMoveReadingWithoutDesktopMetadata(t *testing.T) 
 		{DedupeKey: "desk", AccountRefHash: "wrong", Provider: account.ProviderAnthropic, Originator: "claude-desktop", SessionID: "desk", OccurredAt: at.Add(-time.Minute)},
 		{DedupeKey: "cli", AccountRefHash: "cli", Provider: account.ProviderAnthropic, Originator: "cli", SessionID: "desk", OccurredAt: at.Add(time.Second)},
 	}
-	if _, err := store.IngestFile(ctx, "s.jsonl", scan.FileState{}, events, nil); err != nil {
+	if _, err := store.IngestFile(ctx, "s.jsonl", scan.FileState{}, events, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	items, err := store.PendingOutbox(ctx, 10)
@@ -201,7 +201,7 @@ func TestIngestStatusLineDoesNotMoveAmbiguousReadings(t *testing.T) {
 	}
 	for _, session := range []string{"s1", "s2"} {
 		if _, err := store.IngestFile(ctx, session, scan.FileState{}, []usage.Event{{DedupeKey: session, Provider: account.ProviderAnthropic,
-			AccountRefHash: "correct", Originator: "cli", SessionID: session, OccurredAt: at.Add(-time.Second)}}, nil); err != nil {
+			AccountRefHash: "correct", Originator: "cli", SessionID: session, OccurredAt: at.Add(-time.Second)}}, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -250,7 +250,7 @@ func TestIngestFileCorrectsAttributionForTheOriginalSession(t *testing.T) {
 	correct := account.HashExternalRef(account.ProviderAnthropic, "correct-org")
 	wrongEvent := e
 	wrongEvent.AccountRefHash = wrong
-	if _, err := store.IngestFile(ctx, path, scan.FileState{}, []usage.Event{wrongEvent}, nil); err != nil {
+	if _, err := store.IngestFile(ctx, path, scan.FileState{}, []usage.Event{wrongEvent}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.DeleteOutboxThrough(ctx, 1); err != nil {
@@ -444,5 +444,67 @@ func TestIngestFileBooksOtherProvidersUsageToTheirAccount(t *testing.T) {
 	}
 	if e := got["claude"]; e.AccountRefHash != "max" {
 		t.Errorf("claude = %+v, want the Claude account", e)
+	}
+}
+
+// A limit event goes with the account of the same session and time as usage
+// would, and is skipped when none can be told.
+func TestIngestFileResolvesLimitEventAccounts(t *testing.T) {
+	ctx := context.Background()
+	store, err := storage.Open(ctx, filepath.Join(t.TempDir(), "local.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	a := &Agent{store: store, log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+
+	t0 := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
+	limit := func(key, session, originator string, at time.Time) usage.LimitEvent {
+		return usage.LimitEvent{DedupeKey: key, Provider: account.ProviderAnthropic, Originator: originator, SessionID: session,
+			OccurredAt: at, Kind: usage.LimitFiveHour, Source: "claude-transcript", Evidence: "five_hour"}
+	}
+	limits := []usage.LimitEvent{
+		limit("cli", "s", "cli", t0.Add(time.Minute)),
+		limit("before-join", "s", "cli", t0.Add(-time.Minute)),
+		limit("api-key", "s", "cli", t0.Add(2*time.Hour)),
+		limit("desktop", "dsk", "claude-desktop", t0.Add(time.Minute)),
+		limit("unknown-desktop", "gone", "claude-desktop", t0.Add(time.Minute)),
+	}
+	src := source{
+		provider: account.ProviderAnthropic,
+		parse:    func(string) (parsed, error) { return parsed{limits: limits}, nil },
+	}
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ac := accounts{
+		provider: account.ProviderAnthropic, since: t0, desktopSeen: true,
+		cli: []account.Observation{
+			{Provider: account.ProviderAnthropic, ExternalRefHash: "max", ObservedAt: t0},
+			{Provider: account.ProviderAnthropic, ExternalRefHash: "", ObservedAt: t0.Add(time.Hour)},
+		},
+		desktop: map[string]string{"dsk": "org"},
+	}
+	if n, err := a.ingestFile(ctx, src, path, scan.FileState{ModTime: t0}, ac); err != nil || n != 2 {
+		t.Fatalf("ingested %d, %v; want the CLI's and Desktop's limit events", n, err)
+	}
+	items, err := store.PendingOutbox(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := batchRequest(items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, l := range req.LimitEvents {
+		got[l.DedupeKey] = l.AccountRefHash
+		if l.ObservedAt.IsZero() {
+			t.Errorf("%s has no observation time", l.DedupeKey)
+		}
+	}
+	if len(got) != 2 || got["cli"] != "max" || got["desktop"] != account.HashExternalRef(account.ProviderAnthropic, "org") {
+		t.Fatalf("queued limit events = %v", got)
 	}
 }

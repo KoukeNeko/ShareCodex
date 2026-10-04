@@ -1068,14 +1068,13 @@ func timeHTML(t any, format string) template.HTML {
 }
 
 // codeText translates a code a report carries, such as "unknown_plan" under
-// "excluded", from the dictionary key "excludedUnknownPlan"; an unknown code
-// shows as it is.
+// "excluded", from the dictionary key "excludedUnknownPlan"; "model-specific"
+// under "limitKind" is "limitKindModelSpecific". An unknown code shows as it
+// is.
 func codeText(t map[string]string, prefix, code string) string {
 	key := prefix
-	for _, part := range strings.Split(code, "_") {
-		if part != "" {
-			key += strings.ToUpper(part[:1]) + part[1:]
-		}
+	for _, part := range strings.FieldsFunc(code, func(r rune) bool { return r == '_' || r == '-' }) {
+		key += strings.ToUpper(part[:1]) + part[1:]
 	}
 	if text, ok := t[key]; ok {
 		return text

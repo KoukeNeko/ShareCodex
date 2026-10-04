@@ -34,18 +34,18 @@ func TestIngestFileIsIdempotentAndKeepsLargerOutput(t *testing.T) {
 		Tokens: usage.Tokens{Input: 10, Output: 12},
 	}
 
-	if n, err := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil); err != nil || n != 1 {
+	if n, err := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil, nil); err != nil || n != 1 {
 		t.Fatalf("first ingest = %d, %v; want 1", n, err)
 	}
-	if n, _ := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil); n != 0 {
+	if n, _ := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil, nil); n != 0 {
 		t.Fatalf("re-ingesting the same event changed %d rows; want 0", n)
 	}
 	e.Tokens.Output = 200
-	if n, _ := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil); n != 1 {
+	if n, _ := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil, nil); n != 1 {
 		t.Fatalf("larger output should update the event, changed %d", n)
 	}
 	e.Tokens.Output = 50
-	if n, _ := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil); n != 0 {
+	if n, _ := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil, nil); n != 0 {
 		t.Fatalf("smaller output must not overwrite, changed %d", n)
 	}
 
@@ -191,14 +191,14 @@ func TestReattributeRecordedUsage(t *testing.T) {
 	e := usage.Event{DedupeKey: "claude:m1:r1", AccountRefHash: "wrong", Provider: account.ProviderAnthropic,
 		Product: usage.ProductClaudeCode, Originator: "claude-desktop", SessionID: "desk", Model: "claude-opus-5-5",
 		OccurredAt: time.Unix(50, 0), Tokens: usage.Tokens{Input: 10, Output: 12}}
-	if _, err := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil); err != nil {
+	if _, err := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.DeleteOutboxThrough(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
 	e.AccountRefHash = "correct"
-	if n, err := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil); err != nil || n != 1 {
+	if n, err := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil, nil); err != nil || n != 1 {
 		t.Fatalf("corrected event = %d, %v; want one update", n, err)
 	}
 	items, err := s.PendingOutbox(ctx, 10)
@@ -218,7 +218,7 @@ func TestResetLedgerKeepsSignInTimeline(t *testing.T) {
 	at := time.Unix(50, 0)
 	e := usage.Event{DedupeKey: "claude:m1:r1", AccountRefHash: "acct", Provider: account.ProviderAnthropic,
 		Product: usage.ProductClaudeCode, Model: "claude-opus-5-5", OccurredAt: at, Tokens: usage.Tokens{Input: 10, Output: 12}}
-	if _, err := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil); err != nil {
+	if _, err := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.AddObservation(ctx, account.Observation{Provider: account.ProviderAnthropic, ExternalRefHash: "acct", Hint: "ac***@example.com", ObservedAt: at}); err != nil {
@@ -284,7 +284,7 @@ func TestSessionOriginatorAndLastUse(t *testing.T) {
 		event("e3", "cli-max", "desk", "cli", 400),
 		event("e4", "org-b", "cowork", "local-agent", 200),
 	}
-	if _, err := s.IngestFile(ctx, "f.jsonl", scan.FileState{}, events, nil); err != nil {
+	if _, err := s.IngestFile(ctx, "f.jsonl", scan.FileState{}, events, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -332,5 +332,65 @@ func TestClaudeLoginsReplaceBySameAccount(t *testing.T) {
 	}
 	if logins, _ := s.ClaudeLogins(ctx); len(logins) != 0 {
 		t.Fatalf("logins after removal = %+v", logins)
+	}
+}
+
+func TestIngestFileStoresLimitEventsOnceAndRescanRestoresThemAfterReset(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	st := scan.FileState{Size: 10, ModTime: time.Unix(100, 0)}
+	l := usage.LimitEvent{DedupeKey: "claude-limit:u1", AccountRefHash: "acct", Provider: account.ProviderAnthropic, OccurredAt: time.Unix(50, 0),
+		ObservedAt: time.Unix(60, 0), SessionID: "s", Kind: usage.LimitFiveHour, Source: "claude-transcript", Evidence: "five_hour", HTTPStatus: 429}
+	if n, err := s.IngestFile(ctx, "f.jsonl", st, nil, nil, []usage.LimitEvent{l}); err != nil || n != 1 {
+		t.Fatalf("first ingest = %d, %v; want 1", n, err)
+	}
+	if n, err := s.IngestFile(ctx, "f.jsonl", st, nil, nil, []usage.LimitEvent{l}); err != nil || n != 0 {
+		t.Fatalf("second ingest = %d, %v; want 0", n, err)
+	}
+	items, err := s.PendingOutbox(ctx, 10)
+	if err != nil || len(items) != 1 || items[0].Kind != KindLimitEvent {
+		t.Fatalf("outbox = %+v, %v; want the limit event once", items, err)
+	}
+	var sent syncapi.LimitEvent
+	if err := json.Unmarshal(items[0].Payload, &sent); err != nil || sent.DedupeKey != l.DedupeKey || sent.Kind != "5h" || sent.Evidence != "five_hour" || sent.HTTPStatus != 429 {
+		t.Errorf("queued = %+v, %v", sent, err)
+	}
+
+	if err := s.ResetLedger(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// The reset clears the ledger like the events; the rescan stores the
+	// limit event again and queues it.
+	if items, err = s.PendingOutbox(ctx, 10); err != nil || len(items) != 0 {
+		t.Fatalf("outbox after reset = %+v, %v; want it empty", items, err)
+	}
+	if n, err := s.IngestFile(ctx, "f.jsonl", st, nil, nil, []usage.LimitEvent{l}); err != nil || n != 1 {
+		t.Fatalf("rescan = %d, %v; want 1", n, err)
+	}
+	if items, err = s.PendingOutbox(ctx, 10); err != nil || len(items) != 1 || items[0].Kind != KindLimitEvent {
+		t.Errorf("outbox after rescan = %+v, %v; want the limit event again", items, err)
+	}
+}
+
+func TestIngestFileFillsEffortOfStoredEvent(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	st := scan.FileState{Size: 10, ModTime: time.Unix(100, 0)}
+	e := usage.Event{DedupeKey: "claude:m1:r1", AccountRefHash: "acct", Provider: account.ProviderAnthropic, Model: "claude-opus-5-5",
+		OccurredAt: time.Unix(50, 0), Tokens: usage.Tokens{Output: 12}}
+	if _, err := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	e.Effort = "high"
+	if n, err := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil, nil); err != nil || n != 1 {
+		t.Fatalf("re-read with effort = %d, %v; want 1", n, err)
+	}
+	e.Effort = "low"
+	if n, err := s.IngestFile(ctx, "f.jsonl", st, []usage.Event{e}, nil, nil); err != nil || n != 0 {
+		t.Fatalf("re-read with another effort = %d, %v; want 0, a set effort is kept", n, err)
+	}
+	var effort string
+	if err := s.db.QueryRowContext(ctx, `SELECT effort FROM events WHERE dedupe_key = ?`, e.DedupeKey).Scan(&effort); err != nil || effort != "high" {
+		t.Errorf("effort = %q, %v; want high", effort, err)
 	}
 }

@@ -338,7 +338,8 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 					status = CASE WHEN usage_events.status = '' THEN excluded.status ELSE usage_events.status END,
 					aggregated = usage_events.aggregated OR excluded.aggregated
 				WHERE usage_events.person_id = excluded.person_id AND
-					((usage_events.account_id = excluded.account_id AND (excluded.output > usage_events.output OR (usage_events.request_id = '' AND excluded.request_id != ''))) OR
+					((usage_events.account_id = excluded.account_id AND (excluded.output > usage_events.output OR (usage_events.request_id = '' AND excluded.request_id != '') OR
+						(usage_events.effort = '' AND excluded.effort != ''))) OR
 					 (usage_events.session_id = excluded.session_id AND usage_events.originator = excluded.originator AND
 					  usage_events.account_id != excluded.account_id AND $16 != '' AND
 					  usage_events.account_id = (SELECT id FROM accounts WHERE provider = $15 AND ref_hash = $16)))`,

@@ -12,6 +12,7 @@ import (
 	"github.com/KoukeNeko/ShareCodex/internal/quota"
 	"github.com/KoukeNeko/ShareCodex/internal/server/storage"
 	"github.com/KoukeNeko/ShareCodex/internal/syncapi"
+	"github.com/KoukeNeko/ShareCodex/internal/usage"
 )
 
 // capacityLookback is how far back readings and demand calibrate a plan's
@@ -63,7 +64,7 @@ func AccountCapacity(ctx context.Context, st *storage.Store, accountID string, p
 		Period: period.ID, Start: start.UTC(), End: end.UTC(),
 		Members: []syncapi.CapacityMember{}, Plans: []syncapi.PlanIntervalDTO{}, Calibration: []syncapi.CalibrationRow{},
 		Multiples: []syncapi.CapacityMultiple{}, Windows: []syncapi.ObservedWindow{}, Saturation: []syncapi.SaturationRow{},
-		Scenarios: []syncapi.CapacityScenario{},
+		Scenarios: []syncapi.CapacityScenario{}, LimitHits: []syncapi.LimitHit{},
 	}
 	for _, p := range plans {
 		report.Plans = append(report.Plans, syncapi.PlanIntervalDTO{ID: p.ID, PlanType: p.PlanType, EffectiveAt: p.EffectiveAt,
@@ -113,6 +114,21 @@ func AccountCapacity(ctx context.Context, st *storage.Store, accountID string, p
 		}
 		return quota.NormalizePlan(snapshotPlan)
 	}
+	// A window that began before the period can hold a hit of its own start.
+	limitEvents, err := st.HistoricalLimitEvents(ctx, accountID, start.Add(-quota.FiveHourSpan), end)
+	if err != nil {
+		return syncapi.CapacityReport{}, err
+	}
+	var hits []syncapi.LimitHit
+	for _, l := range limitEvents {
+		hits = append(hits, syncapi.LimitHit{At: l.OccurredAt.UTC(), Kind: string(l.Kind), Evidence: l.Evidence,
+			Plan: planAt(l.OccurredAt, ""), Member: l.PersonName})
+	}
+	for _, h := range slices.Backward(hits) {
+		if !h.At.Before(start) {
+			report.LimitHits = append(report.LimitHits, h)
+		}
+	}
 	fiveHourReadings := readings(snaps, quota.BucketFiveHour, quota.FiveHourSpan)
 	weeklyReadings := readings(snaps, quota.BucketWeekly, quota.WeeklySpan)
 	fiveHour := quota.FiveHourWindows(fiveHourReadings, planAt, d.all)
@@ -121,8 +137,9 @@ func AccountCapacity(ctx context.Context, st *storage.Store, accountID string, p
 
 	report.Calibration = append(calibrationRows(quota.BucketFiveHour, fiveHourCal), calibrationRows(quota.BucketWeekly, weeklyCal)...)
 	report.Multiples = multiples(fiveHourCal, weeklyCal)
-	report.Windows = observedWindows(fiveHour, fiveHourCal, start, end)
-	report.Saturation = append(saturationRows(quota.BucketFiveHour, fiveHour, start, end), saturationRows(quota.BucketWeekly, weekly, start, end)...)
+	report.Windows = observedWindows(fiveHour, fiveHourCal, hits, start, end)
+	report.Saturation = append(saturationRows(quota.BucketFiveHour, fiveHour, hits, usage.LimitFiveHour, start, end),
+		saturationRows(quota.BucketWeekly, weekly, hits, usage.LimitWeekly, start, end)...)
 
 	var anchor time.Time
 	if n := len(weeklyReadings); n > 0 {
@@ -271,8 +288,9 @@ func inPeriod(w quota.Window, start, end time.Time) bool {
 }
 
 // observedWindows lists the period's 5-hour windows, newest first, each with
-// what its plan's measured rate predicts for the demand recorded in it.
-func observedWindows(windows []quota.Window, cal map[string]quota.Calibration, start, end time.Time) []syncapi.ObservedWindow {
+// what its plan's measured rate predicts for the demand recorded in it, and
+// whether a 5-hour limit was logged inside it.
+func observedWindows(windows []quota.Window, cal map[string]quota.Calibration, hits []syncapi.LimitHit, start, end time.Time) []syncapi.ObservedWindow {
 	out := []syncapi.ObservedWindow{}
 	for _, w := range windows {
 		if !inPeriod(w, start, end) {
@@ -280,6 +298,9 @@ func observedWindows(windows []quota.Window, cal map[string]quota.Calibration, s
 		}
 		ow := syncapi.ObservedWindow{Start: w.Start.UTC(), ResetsAt: w.ResetsAt.UTC(), Plan: w.Plan, MaxPercent: w.MaxUsed,
 			Saturated: w.Saturated, CostUSD: w.CostAtMax, Excluded: w.Excluded}
+		ow.LimitHit = slices.ContainsFunc(hits, func(h syncapi.LimitHit) bool {
+			return h.Kind == string(usage.LimitFiveHour) && !h.At.Before(w.Start) && h.At.Before(w.ResetsAt)
+		})
 		if !w.FirstFull.IsZero() {
 			t := w.FirstFull.UTC()
 			ow.FirstFull = &t
@@ -296,22 +317,31 @@ func observedWindows(windows []quota.Window, cal map[string]quota.Calibration, s
 	return out
 }
 
-// saturationRows counts the period's windows by plan, and how many of them
-// reached 100%.
-func saturationRows(key quota.BucketKey, windows []quota.Window, start, end time.Time) []syncapi.SaturationRow {
+// saturationRows counts the period's windows by plan, how many of them
+// reached 100%, and the hits of a limit kind logged under the plan.
+func saturationRows(key quota.BucketKey, windows []quota.Window, hits []syncapi.LimitHit, kind usage.LimitKind, start, end time.Time) []syncapi.SaturationRow {
 	counts := map[string]*syncapi.SaturationRow{}
+	rowOf := func(plan string) *syncapi.SaturationRow {
+		row, ok := counts[plan]
+		if !ok {
+			row = &syncapi.SaturationRow{Bucket: string(key), Plan: plan}
+			counts[plan] = row
+		}
+		return row
+	}
 	for _, w := range windows {
 		if !inPeriod(w, start, end) {
 			continue
 		}
-		row, ok := counts[w.Plan]
-		if !ok {
-			row = &syncapi.SaturationRow{Bucket: string(key), Plan: w.Plan}
-			counts[w.Plan] = row
-		}
+		row := rowOf(w.Plan)
 		row.Windows++
 		if w.Saturated {
 			row.Saturated++
+		}
+	}
+	for _, h := range hits {
+		if h.Kind == string(kind) && !h.At.Before(start) {
+			rowOf(h.Plan).Hits++
 		}
 	}
 	var out []syncapi.SaturationRow

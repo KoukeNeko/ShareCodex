@@ -75,7 +75,7 @@
         <td class="num">{{with .PredictedPercent}}{{pct .}}{{else}}—{{end}}</td>
         <td class="num">{{usd .CostUSD}}</td>
         <td>{{if .Saturated}}{{when .FirstFull}}{{else}}—{{end}}</td>
-        <td>{{if .Excluded}}<span class="tag off">{{code $.T "excluded" .Excluded}}</span>{{end}}</td>
+        <td>{{if .LimitHit}}<span class="tag danger">{{$.T.limitLogged}}</span> {{end}}{{if .Excluded}}<span class="tag off">{{code $.T "excluded" .Excluded}}</span>{{end}}</td>
       </tr>
     {{else}}
       <tr><td colspan="7" class="muted">—</td></tr>
@@ -87,7 +87,7 @@
 <section class="card">
   <h2>{{.T.saturation}}</h2>
   <div class="table-wrap"><table>
-    <thead><tr><th>{{.T.limit}}</th><th>{{.T.plan}}</th><th class="num">{{.T.windows}}</th><th class="num">{{.T.atLimit}}</th></tr></thead>
+    <thead><tr><th>{{.T.limit}}</th><th>{{.T.plan}}</th><th class="num">{{.T.windows}}</th><th class="num">{{.T.atLimit}}</th><th class="num">{{.T.loggedLimits}}</th></tr></thead>
     <tbody>
     {{range .R.Saturation}}
       <tr>
@@ -95,9 +95,30 @@
         <td>{{if .Plan}}<strong>{{.Plan}}</strong>{{else}}<span class="muted">{{$.T.unknownPlan}}</span>{{end}}</td>
         <td class="num">{{.Windows}}</td>
         <td class="num">{{.Saturated}}</td>
+        <td class="num">{{.Hits}}</td>
       </tr>
     {{else}}
-      <tr><td colspan="4" class="muted">—</td></tr>
+      <tr><td colspan="5" class="muted">—</td></tr>
+    {{end}}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="card">
+  <h2>{{.T.loggedLimits}}</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>{{.T.loggedAt}}</th><th>{{.T.limit}}</th><th></th><th>{{.T.plan}}</th><th>{{.T.member}}</th></tr></thead>
+    <tbody>
+    {{range .R.LimitHits}}
+      <tr>
+        <td>{{when .At}}</td>
+        <td><span class="tag{{if eq .Kind "provider429"}} off{{end}}">{{code $.T "limitKind" .Kind}}</span></td>
+        <td class="muted">{{code $.T "limitEvidence" .Evidence}}</td>
+        <td>{{if .Plan}}<strong>{{.Plan}}</strong>{{else}}<span class="muted">{{$.T.unknownPlan}}</span>{{end}}</td>
+        <td>{{.Member}}</td>
+      </tr>
+    {{else}}
+      <tr><td colspan="5" class="muted">—</td></tr>
     {{end}}
     </tbody>
   </table></div>

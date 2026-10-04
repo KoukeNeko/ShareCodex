@@ -21,6 +21,7 @@ import (
 
 type parsed struct {
 	events    []usage.Event
+	limits    []usage.LimitEvent
 	snapshots []quota.Snapshot
 	badLines  int
 }
@@ -37,7 +38,7 @@ var sources = []source{
 	{account.ProviderAnthropic, claudeRoots, scan.List, func(path string) (parsed, error) {
 		return parseFile(path, func(f *os.File) (parsed, error) {
 			r, err := transcript.Parse(f)
-			return parsed{events: r.Events, badLines: r.BadLines}, err
+			return parsed{events: r.Events, limits: r.LimitEvents, badLines: r.BadLines}, err
 		})
 	}},
 	{account.ProviderOpenAI, rollout.Roots, scan.List, func(path string) (parsed, error) {
@@ -309,7 +310,17 @@ func (a *Agent) ingestFile(ctx context.Context, src source, path string, st scan
 			snaps = append(snaps, snap)
 		}
 	}
-	return a.store.IngestFile(ctx, path, st, events, snaps)
+	// Limit events belong to the account in use when they were logged,
+	// resolved like usage from the same session.
+	var limits []usage.LimitEvent
+	now := time.Now()
+	for _, l := range res.limits {
+		if ref, ok := ac.resolve(l.SessionID, l.Originator, l.OccurredAt); ok {
+			l.AccountRefHash, l.ObservedAt = ref, now
+			limits = append(limits, l)
+		}
+	}
+	return a.store.IngestFile(ctx, path, st, events, snaps, limits)
 }
 
 func (a *Agent) ingestStatusLine(ctx context.Context) (int, error) {

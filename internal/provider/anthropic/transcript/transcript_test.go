@@ -1,6 +1,7 @@
 package transcript
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -100,5 +101,89 @@ func TestAnthropicModel(t *testing.T) {
 		if third == official {
 			t.Errorf("%s: third party = %v, want %v", model, third, !official)
 		}
+	}
+}
+
+func TestParseEffort(t *testing.T) {
+	line := func(id, effort string) string {
+		return `{"type":"assistant","sessionId":"s","requestId":"r` + id + `","timestamp":"2026-09-30T10:00:00Z",` + effort +
+			`"message":{"id":"m` + id + `","model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":1}}}` + "\n"
+	}
+	res, err := Parse(strings.NewReader(
+		line("1", `"perTurnEffort":"xhigh",`) + line("2", `"perTurnEffort":"High",`) + line("3", `"perTurnEffort":null,`) + line("4", "")))
+	if err != nil || len(res.Events) != 4 {
+		t.Fatalf("Parse = %+v, %v", res, err)
+	}
+	for i, want := range []string{"xhigh", "high", "", ""} {
+		if got := res.Events[i].Effort; got != want {
+			t.Errorf("event %d effort = %q, want %q", i, got, want)
+		}
+	}
+}
+
+func errorLine(uuid string, fields, text string) string {
+	return `{"type":"assistant","isApiErrorMessage":true,"uuid":"` + uuid + `","sessionId":"s","requestId":"req","timestamp":"2026-09-30T10:00:00Z",` +
+		`"entrypoint":"cli",` + fields + `"message":{"id":"x","model":"<synthetic>","content":[{"type":"text","text":"` + text + `"}],` +
+		`"usage":{"input_tokens":0,"output_tokens":0}}}` + "\n"
+}
+
+func TestParseLimitEvents(t *testing.T) {
+	for _, tc := range []struct {
+		name, fields, text string
+		kind               usage.LimitKind
+		evidence           string
+		status             int
+	}{
+		{"five-hour quota", `"error":"rate_limit","apiErrorStatus":429,"quotaLimits":{"status":"rejected","rateLimitType":"five_hour"},`,
+			"You've hit your session limit", usage.LimitFiveHour, "five_hour", 429},
+		{"weekly quota", `"error":"rate_limit","quotaLimits":{"rateLimitType":"seven_day"},`, "x", usage.LimitWeekly, "seven_day", 0},
+		{"model quota", `"error":"rate_limit","quotaLimits":{"rateLimitType":"seven_day_opus"},`, "x", usage.LimitModelSpecific, "seven_day_opus", 0},
+		{"other quota", `"error":"rate_limit","quotaLimits":{"rateLimitType":"daily"},`, "x", usage.LimitUnknown, "daily", 0},
+		{"old session limit", `"error":"rate_limit",`, "You've hit your session limit · resets 5:30pm (Asia/Taipei)", usage.LimitFiveHour, "session_limit", 0},
+		{"curly apostrophe", `"error":"rate_limit",`, "You’ve hit your session limit", usage.LimitFiveHour, "session_limit", 0},
+		{"old weekly limit", `"error":"rate_limit",`, "You've hit your weekly limit · resets Mon", usage.LimitWeekly, "weekly_limit", 0},
+		{"monthly spend", `"error":"rate_limit",`, "You've hit your monthly spend limit", usage.LimitUnknown, "extra_usage", 0},
+		{"extra usage", `"error":"rate_limit",`, "You're out of extra usage · resets 3am", usage.LimitUnknown, "extra_usage", 0},
+		{"gateway throttle", `"error":"rate_limit",`, "API Error: Server is temporarily limiting requests (not your usage limit)", usage.LimitProvider429, "gateway", 0},
+		{"proxy 429", `"error":"rate_limit","apiErrorStatus":429,`, "API Error: Request rejected (429) · All Anthropic OAuth accounts are rate-limited", usage.LimitProvider429, "gateway", 429},
+		{"overload", `"error":"server_error","apiErrorStatus":529,`, "API Error: 529 Overloaded", usage.LimitOverload, "overloaded", 529},
+		{"authentication", `"error":"authentication_failed","apiErrorStatus":403,`, "Please run /login", usage.LimitAuth, "auth", 403},
+	} {
+		res, err := Parse(strings.NewReader(errorLine("u1", tc.fields, tc.text)))
+		if err != nil || len(res.LimitEvents) != 1 || len(res.Events) != 0 {
+			t.Errorf("%s: Parse = %+v, %v", tc.name, res, err)
+			continue
+		}
+		l := res.LimitEvents[0]
+		if l.Kind != tc.kind || l.Evidence != tc.evidence || l.HTTPStatus != tc.status {
+			t.Errorf("%s: got %s/%s/%d, want %s/%s/%d", tc.name, l.Kind, l.Evidence, l.HTTPStatus, tc.kind, tc.evidence, tc.status)
+		}
+		if l.DedupeKey != "claude-limit:u1" || l.Source != LimitSource || l.SessionID != "s" || l.RequestID != "req" ||
+			l.Originator != "cli" || l.Provider != account.ProviderAnthropic || l.OccurredAt.Format("2006-01-02T15:04:05Z") != "2026-09-30T10:00:00Z" {
+			t.Errorf("%s: event = %+v", tc.name, l)
+		}
+	}
+}
+
+// Failures that say nothing about limits are not recorded.
+func TestParseSkipsErrorNoise(t *testing.T) {
+	res, err := Parse(strings.NewReader(
+		errorLine("u1", `"error":"server_error",`, "API Error: Can't reach the API server (ENOTFOUND)") +
+			errorLine("u2", `"error":"unknown","apiErrorStatus":405,`, "API Error: 405 status code (no body)") +
+			errorLine("u3", `"error":"invalid_request","apiErrorStatus":400,`, "API Error: 400") +
+			errorLine("u4", `"error":"rate_limit",`, "Something else") +
+			errorLine("", `"error":"rate_limit","quotaLimits":{"rateLimitType":"five_hour"},`, "no uuid")))
+	if err != nil || len(res.LimitEvents) != 0 || len(res.Events) != 0 {
+		t.Fatalf("Parse = %+v, %v; want nothing recorded", res, err)
+	}
+}
+
+func TestLimitEventKeepsNoMessageText(t *testing.T) {
+	res, err := Parse(strings.NewReader(errorLine("u1", `"error":"rate_limit",`, "You've hit your session limit · resets 5:30pm (Asia/Taipei)")))
+	if err != nil || len(res.LimitEvents) != 1 {
+		t.Fatalf("Parse = %+v, %v", res, err)
+	}
+	if got := fmt.Sprintf("%+v", res.LimitEvents[0]); strings.Contains(got, "Taipei") || strings.Contains(got, "resets") {
+		t.Errorf("event %s holds message text", got)
 	}
 }

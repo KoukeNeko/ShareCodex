@@ -949,3 +949,52 @@ func TestDashboardCapacityHidesWhatOnlyTheConsoleShows(t *testing.T) {
 		t.Error("the plan history does not translate the precision")
 	}
 }
+
+// Logged limits are listed for members and the public, by code, without the
+// session or request they came from.
+func TestCapacityPageListsLoggedLimits(t *testing.T) {
+	ctx := context.Background()
+	store, admin := newServer(t)
+	device := seedUsage(t, store)
+	id := seededAccountID(t, store)
+	now := time.Now().UTC()
+	hit := func(key string, ago time.Duration, kind, evidence string) syncapi.LimitEvent {
+		return syncapi.LimitEvent{DedupeKey: key, AccountRefHash: "acct", Provider: "anthropic", OccurredAt: now.Add(-ago), ObservedAt: now,
+			SessionID: "secret-session", RequestID: "secret-request", Kind: kind, Source: "claude-transcript", Evidence: evidence}
+	}
+	if _, err := store.Ingest(ctx, device, syncapi.SyncRequest{Version: syncapi.Version, LimitEvents: []syncapi.LimitEvent{
+		hit("a", time.Hour, "5h", "five_hour"), hit("b", 2*time.Hour, "provider429", "gateway"),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	admin.post("/admin/login", url.Values{"password": {password}})
+	admin.post("/admin/settings", url.Values{"public_dashboard": {"on"}})
+	jar, _ := cookiejar.New(nil)
+	visitor := browser{t: t, base: admin.base, c: &http.Client{Jar: jar, CheckRedirect: admin.c.CheckRedirect}}
+
+	for name, b := range map[string]browser{"admin": admin, "dashboard": visitor} {
+		path := "/dashboard/capacity?period=24h"
+		if name == "admin" {
+			path = "/admin/accounts/" + id + "/capacity?period=24h"
+		}
+		st, page := b.get(path)
+		if st != http.StatusOK {
+			t.Fatalf("%s capacity page returned %d", name, st)
+		}
+		for _, want := range []string{"Logged limits", "5-hour limit", "Gateway throttle"} {
+			if !strings.Contains(page, want) {
+				t.Errorf("%s capacity page lacks %q", name, want)
+			}
+		}
+		if strings.Contains(page, "secret-session") || strings.Contains(page, "secret-request") {
+			t.Errorf("%s capacity page shows a session or request ID", name)
+		}
+	}
+	visitor.get("/lang/zh-TW?next=/dashboard/")
+	_, page := visitor.get("/dashboard/capacity?period=24h")
+	for _, want := range []string{"已記錄上限", "5 小時上限", "閘道節流"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("zh-TW dashboard lacks %q", want)
+		}
+	}
+}
