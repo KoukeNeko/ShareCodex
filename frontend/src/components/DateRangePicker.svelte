@@ -10,7 +10,12 @@
   const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
   const monthStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1)
 
+  // The panel is about this wide; near the window's right edge it opens
+  // leftwards so it stays in view.
+  const PANEL_WIDTH = 260
+
   let open = $state(false)
+  let alignRight = $state(false)
   let root = $state<HTMLElement>()
   let view = $state(monthStart(new Date()))
   let start = $state<Date | null>(null)
@@ -42,6 +47,7 @@
   function toggle() {
     open = !open
     if (!open) return
+    alignRight = !!root && root.getBoundingClientRect().left + PANEL_WIDTH > window.innerWidth - 8
     start = range ? dayStart(new Date(range.from)) : null
     end = range ? addDays(new Date(range.to), -1) : null
     view = monthStart(start ?? today)
@@ -74,7 +80,7 @@
 <div class="picker" bind:this={root}>
   <button class="trigger" class:active={range} aria-expanded={open} onclick={toggle}>{label}</button>
   {#if open}
-    <div class="panel">
+    <div class="panel" class:right={alignRight} style:width="{PANEL_WIDTH}px">
       <div class="nav">
         <button class="icon" aria-label="‹" disabled={!canPrev} onclick={() => shiftMonth(-1)}>‹</button>
         <span>{monthTitle}</span>
@@ -107,8 +113,7 @@
 </div>
 
 <style>
-  /* Lays the trigger in the parent's row and the panel on its own line. */
-  .picker { display: contents; }
+  .picker { position: relative; display: inline-flex; }
   .trigger {
     font-size: 11.5px;
     padding: 1px 8px;
@@ -116,9 +121,15 @@
     color: var(--muted);
   }
   .trigger.active { color: var(--text); border-color: var(--accent); }
+  /* Floats over the view below, like the charts' tips. */
   .panel {
-    flex: 1 0 100%;
-    max-width: 300px;
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 10;
+    box-sizing: border-box;
+    box-shadow: 0 4px 16px rgb(0 0 0 / .25);
+    backdrop-filter: blur(12px);
     display: grid;
     gap: 6px;
     padding: 8px;
@@ -126,6 +137,7 @@
     border: 1px solid var(--line);
     border-radius: var(--radius);
   }
+  .panel.right { left: auto; right: 0; }
   .nav { display: flex; align-items: center; justify-content: space-between; font-weight: 600; }
   .grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; text-align: center; font-size: 11.5px; }
   .weekday { padding: 2px 0; }
