@@ -420,7 +420,8 @@ func (s *Store) Ingest(ctx context.Context, d Device, req syncapi.SyncRequest) (
 				INSERT INTO quota_snapshots (account_id, device_id, source, observed_at, buckets, plan_type)
 				VALUES ($1, $2, $3, $4, $5, $6)
 				ON CONFLICT (account_id, device_id, source, observed_at) DO UPDATE SET
-					plan_type = CASE WHEN quota_snapshots.plan_type = '' THEN excluded.plan_type ELSE quota_snapshots.plan_type END`,
+					plan_type = excluded.plan_type
+				WHERE quota_snapshots.plan_type = '' AND excluded.plan_type != ''`,
 				id, d.ID, snap.Source, snap.ObservedAt, buckets, snap.PlanType)
 			if err != nil {
 				return fmt.Errorf("save snapshot: %w", err)
