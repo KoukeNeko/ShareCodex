@@ -133,9 +133,14 @@
     display: grid;
     gap: 6px;
     padding: 8px;
-    background: var(--surface);
+    /* The glass themes' surface is see-through; over the view the calendar
+       needs to be nearly solid. These are the solid themes' surface colors. */
+    background: rgb(255 255 255 / .94);
     border: 1px solid var(--line);
     border-radius: var(--radius);
+  }
+  @media (prefers-color-scheme: dark) {
+    .panel { background: rgb(32 35 40 / .94); }
   }
   .panel.right { left: auto; right: 0; }
   .nav { display: flex; align-items: center; justify-content: space-between; font-weight: 600; }
