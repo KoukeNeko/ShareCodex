@@ -2,6 +2,7 @@
   import { Desktop, errorMessage, type CapacityReport, type FiveHourResult, type WeeklyResult } from '../../lib/api'
   import { bucketName, dateTime, percent, tokens, usd } from '../../lib/format'
   import { t, type MessageKey } from '../../lib/i18n.svelte'
+  import DateRangePicker from '../../components/DateRangePicker.svelte'
   import CapacityChart from './CapacityChart.svelte'
 
   let { accountId }: { accountId: string } = $props()
@@ -48,13 +49,8 @@
   const rate = (v: number) => v.toPrecision(3).replace(/\.?0+$/, '')
 
   let period = $state('7d')
-  // The range the inputs hold, in local time; a range in use replaces the
-  // period until a period is picked again.
-  let fromInput = $state('')
-  let toInput = $state('')
+  // A range in use replaces the period until a period is picked again.
   let range = $state<{ from: string; to: string } | null>(null)
-  const inputsValid = $derived(fromInput !== '' && toInput !== '' && new Date(fromInput) < new Date(toInput))
-  const apply = () => (range = { from: new Date(fromInput).toISOString(), to: new Date(toInput).toISOString() })
   const pick = (p: string) => {
     period = p
     range = null
@@ -132,9 +128,7 @@
   {#each periods as p (p)}
     <button class:active={!range && period === p} onclick={() => pick(p)}>{periodLabel(p)}</button>
   {/each}
-  <input type="datetime-local" aria-label={t('start')} class:active={range} bind:value={fromInput} />
-  <input type="datetime-local" aria-label={t('end')} class:active={range} bind:value={toInput} />
-  <button disabled={!inputsValid} onclick={apply}>{t('apply')}</button>
+  <DateRangePicker {range} onapply={(from, to) => (range = { from, to })} />
 </div>
 
 {#if error}
@@ -358,6 +352,7 @@
           <details>
             <summary class="muted small">{t('formula')}</summary>
             <p class="muted small">{t('formulaCapacity')}</p>
+            <div class="table-wrap">
             <table>
               <thead>
                 <tr>
@@ -376,6 +371,7 @@
                 {/each}
               </tbody>
             </table>
+            </div>
           </details>
         {/if}
       </section>
@@ -385,7 +381,7 @@
 {/if}
 
 <style>
-  .periods { display: flex; gap: 4px; align-items: center; margin-bottom: 8px; }
+  .periods { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 8px; }
   .periods button {
     font-size: 11.5px;
     padding: 1px 8px;
@@ -393,8 +389,6 @@
     color: var(--muted);
   }
   .periods button.active { color: var(--text); border-color: var(--accent); }
-  .periods input { font-size: 11.5px; padding: 1px 6px; }
-  .periods input.active { border-color: var(--accent); }
   .card {
     background: var(--surface);
     border: 1px solid var(--line);
@@ -404,6 +398,7 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
+    min-width: 0;
   }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .stat-col { display: flex; flex-direction: column; gap: 2px; }
@@ -419,7 +414,7 @@
   tbody tr:not(:last-child):not(.sub-parent) { border-bottom: 1px solid var(--line); }
   tr.sub td { padding-top: 0; }
   .block-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .figures { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; font-size: 11.5px; }
+  .figures { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; font-size: 11.5px; }
   .figures .num { text-align: right; }
   .tag {
     font-size: 10px;
@@ -432,6 +427,6 @@
   .tag.derived, .tag.borderline { color: var(--warn); background: var(--warn-soft); }
   .tag.over { color: var(--danger); background: var(--line); }
   .tag.insufficient, .tag.off { color: var(--muted); background: var(--line); }
-  details { display: grid; gap: 6px; }
+  details { display: grid; gap: 6px; min-width: 0; }
   summary { cursor: pointer; }
 </style>
