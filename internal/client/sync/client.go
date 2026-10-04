@@ -101,10 +101,16 @@ func (c *Client) MemberUsage(ctx context.Context, personID, period string) (sync
 	return u, err
 }
 
-// AccountCapacity fetches an account's capacity analysis and scenario simulation over a period.
-func (c *Client) AccountCapacity(ctx context.Context, accountID, period string) (syncapi.CapacityReport, error) {
+// AccountCapacity fetches an account's capacity analysis and scenario
+// simulation over a period, or over [from, to) when both RFC 3339 instants
+// are given.
+func (c *Client) AccountCapacity(ctx context.Context, accountID, period, from, to string) (syncapi.CapacityReport, error) {
 	var r syncapi.CapacityReport
 	q := url.Values{syncapi.QueryPeriod: {period}}
+	if from != "" && to != "" {
+		q.Set(syncapi.QueryFrom, from)
+		q.Set(syncapi.QueryTo, to)
+	}
 	err := c.do(ctx, http.MethodGet, syncapi.PathAccounts+url.PathEscape(accountID)+"/capacity?"+q.Encode(), nil, &r)
 	if errors.Is(err, errNotFound) {
 		return syncapi.CapacityReport{}, ErrServerTooOld

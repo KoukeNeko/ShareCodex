@@ -441,14 +441,15 @@ const (
 	FitOver       = "over"
 )
 
-const borderlinePercent = 80
+// BorderlinePercent is the use of a limit from which it reads as borderline.
+const BorderlinePercent = 80
 
 // Fit classifies the highest use of a limit, in percent.
 func Fit(peakPercent float64) string {
 	switch {
 	case peakPercent > 100:
 		return FitOver
-	case peakPercent >= borderlinePercent:
+	case peakPercent >= BorderlinePercent:
 		return FitBorderline
 	}
 	return FitSafe
@@ -497,10 +498,19 @@ func (r SessionReplay) Merge(o SessionReplay) SessionReplay {
 // demand stops where the provider really refused work, so a replay can
 // understate what was wanted.
 func ReplaySessions(demand []Demand, capacity float64, window time.Duration, from, to time.Time) SessionReplay {
+	r, _ := ReplaySessionsSeries(demand, capacity, window, from, to)
+	return r
+}
+
+// ReplaySessionsSeries is ReplaySessions with the use of the session limit
+// over time: each counted session starts at 0 with its first request, rises
+// with each request and falls back to 0 where it ends.
+func ReplaySessionsSeries(demand []Demand, capacity float64, window time.Duration, from, to time.Time) (SessionReplay, []SeriesPoint) {
 	var r SessionReplay
 	if capacity <= 0 {
-		return r
+		return r, nil
 	}
+	var series []SeriesPoint
 	stream := slices.Clone(demand)
 	slices.SortStableFunc(stream, func(a, b Demand) int { return a.At.Compare(b.At) })
 
@@ -513,6 +523,7 @@ func ReplaySessions(demand []Demand, capacity float64, window time.Duration, fro
 	closeSession := func() {
 		if counted {
 			r.PeakPercent = math.Max(r.PeakPercent, used/capacity*100)
+			series = append(series, SeriesPoint{At: end})
 		}
 	}
 	for _, d := range stream {
@@ -536,6 +547,7 @@ func ReplaySessions(demand []Demand, capacity float64, window time.Duration, fro
 			r.Blocked += d.Weight
 		}
 		used += d.Weight
+		series = append(series, SeriesPoint{At: d.At, Percent: used / capacity * 100})
 		if !hit && used > capacity {
 			hit = true
 			r.HitWindows++
@@ -545,7 +557,7 @@ func ReplaySessions(demand []Demand, capacity float64, window time.Duration, fro
 		}
 	}
 	closeSession()
-	return r
+	return r, ThinSeries(clipSeries(series, from, to))
 }
 
 // WeeklyReplay is recorded demand replayed against one week's limit.
@@ -560,9 +572,17 @@ type WeeklyReplay struct {
 // ReplayWeekly replays demand against a weekly limit of capacity for each
 // week, one reset after another from anchor, that overlaps [from, to).
 func ReplayWeekly(demand []Demand, capacity float64, anchor, from, to time.Time) []WeeklyReplay {
+	weeks, _ := ReplayWeeklySeries(demand, capacity, anchor, from, to)
+	return weeks
+}
+
+// ReplayWeeklySeries is ReplayWeekly with each week's running use of the
+// limit over time, which falls back to 0 where the week resets.
+func ReplayWeeklySeries(demand []Demand, capacity float64, anchor, from, to time.Time) ([]WeeklyReplay, []SeriesPoint) {
 	if capacity <= 0 || !to.After(from) {
-		return nil
+		return nil, nil
 	}
+	var series []SeriesPoint
 	// The first reset after from.
 	steps := from.Sub(anchor) / WeeklySpan
 	if from.Sub(anchor)%WeeklySpan < 0 {
@@ -573,8 +593,10 @@ func ReplayWeekly(demand []Demand, capacity float64, anchor, from, to time.Time)
 		w := WeeklyReplay{Start: end.Add(-WeeklySpan), End: end}
 		i := sort.Search(len(demand), func(i int) bool { return !demand[i].At.Before(w.Start) })
 		var used float64
+		series = append(series, SeriesPoint{At: w.Start})
 		for ; i < len(demand) && demand[i].At.Before(end); i++ {
 			used += demand[i].Weight
+			series = append(series, SeriesPoint{At: demand[i].At, Percent: used / capacity * 100})
 			if w.HitAt.IsZero() && used > capacity {
 				w.HitAt = demand[i].At
 			}
@@ -582,7 +604,7 @@ func ReplayWeekly(demand []Demand, capacity float64, anchor, from, to time.Time)
 		w.PeakPercent = used / capacity * 100
 		out = append(out, w)
 	}
-	return out
+	return out, ThinSeries(clipSeries(series, from, to))
 }
 
 // WorstWeekly combines the replays of separate limits over the same weeks:
@@ -600,6 +622,72 @@ func WorstWeekly(replays ...[]WeeklyReplay) []WeeklyReplay {
 				out[i].HitAt = r[i].HitAt
 			}
 		}
+	}
+	return out
+}
+
+// SeriesPoint is the use of a limit, in percent of its allowance, from At
+// until the next point.
+type SeriesPoint struct {
+	At      time.Time
+	Percent float64
+}
+
+// seriesMaxPoints bounds a series, so a month of requests stays small.
+const seriesMaxPoints = 2000
+
+// ThinSeries merges a chronological series down to a point per minute, and to
+// at most seriesMaxPoints. Of the points merged it keeps the highest and the
+// last, so a session's peak and its drop back to 0 both survive: a bucket is
+// narrower than the sessions and weeks a series resets between.
+func ThinSeries(points []SeriesPoint) []SeriesPoint {
+	points = thinBy(points, time.Minute)
+	if len(points) > seriesMaxPoints {
+		span := points[len(points)-1].At.Sub(points[0].At)
+		points = thinBy(points, span/(seriesMaxPoints/2)+1)
+	}
+	return points
+}
+
+// thinBy keeps the highest and the last point of each bucket of width.
+func thinBy(points []SeriesPoint, width time.Duration) []SeriesPoint {
+	var out []SeriesPoint
+	for i := 0; i < len(points); {
+		bucket := points[i].At.UnixNano() / int64(width)
+		peak, j := i, i
+		for ; j < len(points) && points[j].At.UnixNano()/int64(width) == bucket; j++ {
+			if points[j].Percent > points[peak].Percent {
+				peak = j
+			}
+		}
+		if peak != j-1 {
+			out = append(out, points[peak])
+		}
+		out = append(out, points[j-1])
+		i = j
+	}
+	return out
+}
+
+// clipSeries cuts a series to [from, to): the use at from stands for what
+// came before it, and nothing from to on stays.
+func clipSeries(points []SeriesPoint, from, to time.Time) []SeriesPoint {
+	var out []SeriesPoint
+	var before *SeriesPoint
+	for i, p := range points {
+		switch {
+		case p.At.Before(from):
+			before = &points[i]
+		case p.At.Before(to):
+			if before != nil && p.At.After(from) {
+				out = append(out, SeriesPoint{At: from, Percent: before.Percent})
+			}
+			before = nil
+			out = append(out, p)
+		}
+	}
+	if before != nil {
+		out = append(out, SeriesPoint{At: from, Percent: before.Percent})
 	}
 	return out
 }

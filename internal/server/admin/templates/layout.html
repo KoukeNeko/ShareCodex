@@ -171,6 +171,18 @@ tr.sub td { border-bottom: none; padding-top: 2px; padding-bottom: 2px; font-siz
 .tip-row i.dashed { background: repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 5px); }
 .reset-label { position: absolute; top: 0; transform: translateX(calc(-100% - 4px)); font: 10.5px var(--mono); color: var(--muted); pointer-events: none; white-space: nowrap; }
 .reset-label.right { transform: translateX(4px); }
+/* The capacity charts: the use a replay predicts against the limit. */
+.ca { color: var(--accent); } .cx { color: var(--text); }
+.plot rect.band { fill: var(--track); }
+.plot line.cap { stroke: var(--danger); opacity: .5; vector-effect: non-scaling-stroke; }
+.plot line.border { stroke: var(--warn); opacity: .6; stroke-dasharray: 2 4; vector-effect: non-scaling-stroke; }
+.plot line.limit { stroke: var(--danger); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.plot path.dots { fill: none; stroke: var(--text); stroke-width: 4; stroke-linecap: round; opacity: .7; vector-effect: non-scaling-stroke; }
+.legend { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+.swatch.dot { border-radius: 50%; }
+.swatch.limit { width: 2px; height: 10px; background: var(--danger); }
+.swatch.cap { height: 2px; vertical-align: middle; background: var(--danger); opacity: .5; }
+.swatch.border { height: 2px; vertical-align: middle; background: repeating-linear-gradient(90deg, var(--warn) 0 2px, transparent 2px 4px); }
 .ticks { display: flex; justify-content: space-between; }
 /* The chart draws one mode at a time; the toggle switches every chart. */
 .mode-cumulative { display: none; }
@@ -203,6 +215,9 @@ nav.periods a + a { border-left: 1px solid var(--line); }
 nav.periods a.active, nav.periods button[aria-pressed=true] { background: var(--text); color: var(--bg); }
 nav.periods button { border: none; background: none; color: var(--muted); padding: 4px 12px; font-size: 12px; }
 nav.periods button + button { border-left: 1px solid var(--line); }
+form.range { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+form.range input[type=datetime-local] { font-size: 12px; padding: 3px 6px; }
+form.range.active input[type=datetime-local] { border-color: var(--text); }
 button.grip { border: none; background: none; padding: 0 4px; color: var(--muted); cursor: grab; touch-action: none; font-size: 15px; line-height: 1; }
 button.grip:hover { color: var(--text); }
 .dragging { outline: 1px solid var(--accent); outline-offset: -1px; position: relative; z-index: 1; }
@@ -284,6 +299,26 @@ try { if (localStorage.getItem('sharecodex.cumulative') === '1') document.docume
   }
   localize(document)
   document.addEventListener('sharecodex:refresh', function () { localize(document.querySelector('main')) })
+})();
+
+// The date and time fields are in this browser's time zone, which the
+// server cannot know; a form submits the instant they name, and a field the
+// server gave an instant shows it in this zone.
+(function () {
+  var pad = function (n) { return (n < 10 ? '0' : '') + n }
+  document.querySelectorAll('input[data-utc]').forEach(function (local) {
+    var at = new Date(local.getAttribute('data-utc'))
+    if (isNaN(at)) return
+    local.value = at.getFullYear() + '-' + pad(at.getMonth() + 1) + '-' + pad(at.getDate()) + 'T' + pad(at.getHours()) + ':' + pad(at.getMinutes())
+  })
+  document.querySelectorAll('form[data-local-times]').forEach(function (form) {
+    form.addEventListener('submit', function () {
+      form.querySelectorAll('input[data-instant]').forEach(function (local) {
+        var at = new Date(local.value)
+        form.elements[local.getAttribute('data-instant')].value = local.value && !isNaN(at) ? at.toISOString() : ''
+      })
+    })
+  })
 })();
 
 // A chart's tip for the point under the pointer; a tap shows it on a phone,

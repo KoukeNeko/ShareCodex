@@ -7,13 +7,21 @@
     <nav class="periods" aria-label="{{.T.capacity}}">
       {{range .Data.Periods}}<a href="{{$.Data.Path}}?account={{$.Data.AccountID}}&amp;period={{.ID}}" class="{{if eq .ID $.Data.Period}}active{{end}}">{{if .Days}}{{tf $.T.days .Days}}{{else}}{{tf $.T.hours .Hours}}{{end}}</a>{{end}}
     </nav>
+    <form class="range{{if eq .Data.Report.Period "custom"}} active{{end}}" method="get" action="{{.Data.Path}}" data-local-times>
+      <input type="hidden" name="account" value="{{.Data.AccountID}}">
+      <input type="datetime-local" aria-label="{{.T.start}}" data-instant="from" data-utc="{{.Data.Report.Start.Format "2006-01-02T15:04:05Z07:00"}}" required>
+      <input type="hidden" name="from">
+      <input type="datetime-local" aria-label="{{.T.end}}" data-instant="to" data-utc="{{.Data.Report.End.Format "2006-01-02T15:04:05Z07:00"}}" required>
+      <input type="hidden" name="to">
+      <button class="small" type="submit">{{.T.apply}}</button>
+    </form>
     {{end}}
   </div>
 </div>
 {{if .Data.Preview}}<p class="notice">{{.T.previewNote}}</p>{{end}}
 {{if .Data.Accounts}}
 <nav class="periods" aria-label="{{.T.navAccounts}}">
-  {{range .Data.Accounts}}<a href="{{$.Data.Path}}?account={{.ID}}&amp;period={{$.Data.Period}}" class="{{if eq .ID $.Data.AccountID}}active{{end}}">{{.Name}}</a>{{end}}
+  {{range .Data.Accounts}}<a href="{{$.Data.Path}}?account={{.ID}}{{if eq $.Data.Period "custom"}}&amp;from={{$.Data.Report.Start.Format "2006-01-02T15:04:05Z07:00"}}&amp;to={{$.Data.Report.End.Format "2006-01-02T15:04:05Z07:00"}}{{else}}&amp;period={{$.Data.Period}}{{end}}" class="{{if eq .ID $.Data.AccountID}}active{{end}}">{{.Name}}</a>{{end}}
 </nav>
 {{end}}
 {{if .Data.AccountID}}

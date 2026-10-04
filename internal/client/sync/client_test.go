@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/KoukeNeko/ShareCodex/internal/syncapi"
@@ -55,5 +56,30 @@ func TestMemberUsage(t *testing.T) {
 	// A server without the endpoint answers 404, which means it is too old.
 	if _, err := c.MemberUsage(context.Background(), "gone", "7d"); !errors.Is(err, ErrServerTooOld) {
 		t.Errorf("missing endpoint error = %v, want ErrServerTooOld", err)
+	}
+}
+
+// A range is sent as its instants; without one only the period goes.
+func TestAccountCapacitySendsItsRange(t *testing.T) {
+	var got url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.Query()
+		json.NewEncoder(w).Encode(syncapi.CapacityReport{})
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "token")
+
+	from, to := "2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z"
+	if _, err := c.AccountCapacity(context.Background(), "a", "7d", from, to); err != nil {
+		t.Fatal(err)
+	}
+	if got.Get(syncapi.QueryFrom) != from || got.Get(syncapi.QueryTo) != to {
+		t.Errorf("query = %v, want from and to", got)
+	}
+	if _, err := c.AccountCapacity(context.Background(), "a", "7d", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got.Has(syncapi.QueryFrom) || got.Has(syncapi.QueryTo) || got.Get(syncapi.QueryPeriod) != "7d" {
+		t.Errorf("query = %v, want the period alone", got)
 	}
 }

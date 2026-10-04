@@ -202,7 +202,12 @@ func (s *Server) memberUsage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) accountCapacity(w http.ResponseWriter, r *http.Request) {
-	period := query.PeriodByID(r.URL.Query().Get(syncapi.QueryPeriod))
+	now := time.Now()
+	span, err := query.RangeFromQuery(r.URL.Query(), now)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid range")
+		return
+	}
 	accountID := r.PathValue("id")
 	if _, err := s.store.Account(r.Context(), accountID); errors.Is(err, storage.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "account not found")
@@ -224,7 +229,7 @@ func (s *Server) accountCapacity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	report, err := query.AccountCapacity(r.Context(), s.store, accountID, period, time.Now())
+	report, err := query.AccountCapacity(r.Context(), s.store, accountID, span, now)
 	if err != nil {
 		s.internalError(w, "build account capacity", err)
 		return

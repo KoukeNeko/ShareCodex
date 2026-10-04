@@ -779,13 +779,12 @@ func TestCapacityPageIsTranslated(t *testing.T) {
 	}
 }
 
-// The page lays out every figure of a report that has samples, replays and
-// a week; a template that cannot would stop part way.
-func TestCapacityPageShowsMeasuredPlans(t *testing.T) {
+// seedMeasuredCapacity gives the seeded account a plan, two 5-hour windows
+// with a reading each, and a weekly reading: enough to measure max 5x and
+// derive the rest.
+func seedMeasuredCapacity(t *testing.T, store *storage.Store, device storage.Device, id string) {
+	t.Helper()
 	ctx := context.Background()
-	store, b := newServer(t)
-	device := seedUsage(t, store)
-	id := seededAccountID(t, store)
 	now := time.Now().UTC()
 	if _, err := store.SavePlanInterval(ctx, account.PlanInterval{AccountID: id, PlanType: "max 5x", EffectiveAt: now.Add(-20 * 24 * time.Hour), Source: "admin"}); err != nil {
 		t.Fatal(err)
@@ -807,6 +806,15 @@ func TestCapacityPageShowsMeasuredPlans(t *testing.T) {
 	if _, err := store.Ingest(ctx, device, syncapi.SyncRequest{Version: syncapi.Version, Events: events, Snapshots: snapshots}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// The page lays out every figure of a report that has samples, replays and
+// a week; a template that cannot would stop part way.
+func TestCapacityPageShowsMeasuredPlans(t *testing.T) {
+	store, b := newServer(t)
+	device := seedUsage(t, store)
+	id := seededAccountID(t, store)
+	seedMeasuredCapacity(t, store, device, id)
 	b.post("/admin/login", url.Values{"password": {password}})
 
 	st, page := b.get("/admin/accounts/" + id + "/capacity?period=24h")
@@ -820,6 +828,56 @@ func TestCapacityPageShowsMeasuredPlans(t *testing.T) {
 	}
 	if !strings.HasSuffix(strings.TrimSpace(page), "</html>") {
 		t.Error("the capacity page was cut short")
+	}
+}
+
+// Each scenario's prediction is drawn for 5 hours and for a week, on the
+// console and the dashboard alike: a line for the shared limit, one for each
+// member of the separate ones, the readings as dots and the logged limits as
+// marks, without the sessions or requests behind them.
+func TestCapacityPageDrawsThePredictedUse(t *testing.T) {
+	ctx := context.Background()
+	store, admin := newServer(t)
+	device := seedUsage(t, store)
+	id := seededAccountID(t, store)
+	seedMeasuredCapacity(t, store, device, id)
+	now := time.Now().UTC()
+	if _, err := store.Ingest(ctx, device, syncapi.SyncRequest{Version: syncapi.Version, LimitEvents: []syncapi.LimitEvent{{
+		DedupeKey: "hit", AccountRefHash: "acct", Provider: "anthropic", OccurredAt: now.Add(-9 * time.Hour), ObservedAt: now,
+		SessionID: "secret-session", RequestID: "secret-request", Kind: "5h", Source: "claude-transcript", Evidence: "five_hour"}}}); err != nil {
+		t.Fatal(err)
+	}
+	visitor := publishDashboard(t, admin)
+	admin.post("/admin/login", url.Values{"password": {password}})
+
+	for name, b := range map[string]browser{"console": admin, "dashboard": visitor} {
+		path := "/dashboard/capacity?period=24h"
+		if name == "console" {
+			path = "/admin/accounts/" + id + "/capacity?period=24h"
+		}
+		st, page := b.get(path)
+		if st != http.StatusOK {
+			t.Fatalf("%s capacity page returned %d", name, st)
+		}
+		// Three scenarios, the separate one with alice alone, give a line each
+		// for 5 hours; a week is measured for max 5x only, never derived.
+		if n := strings.Count(page, `<path class="line `); n != 5 {
+			t.Errorf("%s page draws %d lines, want 3 for 5 hours and 2 for the week", name, n)
+		}
+		if n := strings.Count(page, `<path class="dots"`); n != 3 {
+			t.Errorf("%s page draws %d sets of readings, want one for each 5-hour chart", name, n)
+		}
+		if n := strings.Count(page, `<line class="limit"`); n != 3 {
+			t.Errorf("%s page marks %d logged limits, want one on each 5-hour chart", name, n)
+		}
+		if !strings.Contains(page, `class="tips series"`) || !strings.Contains(page, `class="hit"`) {
+			t.Errorf("%s charts have no tips", name)
+		}
+		for _, secret := range []string{"secret-session", "secret-request"} {
+			if strings.Contains(page, secret) {
+				t.Errorf("%s capacity page shows %q", name, secret)
+			}
+		}
 	}
 }
 
@@ -995,6 +1053,47 @@ func TestCapacityPageListsLoggedLimits(t *testing.T) {
 	for _, want := range []string{"已記錄上限", "5 小時上限", "閘道節流"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("zh-TW dashboard lacks %q", want)
+		}
+	}
+}
+
+// A custom range replaces the period on the console and on the dashboard;
+// the account links keep it, and a range that cannot be read falls back to
+// the period with the reason.
+func TestCapacityPageHonoursACustomRange(t *testing.T) {
+	store, admin := newServer(t)
+	seedUsage(t, store)
+	id := seededAccountID(t, store)
+	visitor := publishDashboard(t, admin)
+	now := time.Now().UTC().Truncate(time.Second)
+	from, to := now.Add(-72*time.Hour).Format(time.RFC3339), now.Add(-48*time.Hour).Format(time.RFC3339)
+	rng := "from=" + url.QueryEscape(from) + "&to=" + url.QueryEscape(to)
+
+	st, page := admin.get("/admin/accounts/" + id + "/capacity?period=24h&" + rng)
+	if st != http.StatusOK || !strings.Contains(page, `class="range active"`) || !strings.Contains(page, `data-utc="`+from+`"`) {
+		t.Errorf("console with a custom range = %d, lacks the active range", st)
+	}
+	if strings.Contains(page, `class="active">24 hours`) {
+		t.Error("the period stays active beside a custom range")
+	}
+	st, page = visitor.get("/dashboard/capacity?" + rng)
+	if st != http.StatusOK || !strings.Contains(page, `class="range active"`) {
+		t.Errorf("dashboard with a custom range = %d, lacks the active range", st)
+	}
+	// The dashboard builds a custom range to the minute.
+	minute := func(s string) string { return strings.ReplaceAll(s[:17], ":", "%3a") + "00Z" }
+	if want := `account=` + id + `&amp;from=` + minute(from) + `&amp;to=` + minute(to); !strings.Contains(page, want) {
+		t.Errorf("the account link does not keep the range: want %q in %q", want, regexp.MustCompile(`href="[^"]*from=[^"]*"`).FindString(page))
+	}
+
+	for _, path := range []string{"/admin/accounts/" + id + "/capacity", "/dashboard/capacity"} {
+		b := admin
+		if strings.HasPrefix(path, "/dashboard") {
+			b = visitor
+		}
+		st, page := b.get(path + "?period=24h&from=yesterday&to=" + url.QueryEscape(to))
+		if st != http.StatusOK || !strings.Contains(page, "Enter a valid range") || strings.Contains(page, `class="range active"`) {
+			t.Errorf("%s with an unreadable range = %d, want the period with the notice", path, st)
 		}
 	}
 }

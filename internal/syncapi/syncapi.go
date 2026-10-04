@@ -32,6 +32,10 @@ const (
 	// QueryPeriod names the span of a member's usage: 24h, 7d or 30d, the
 	// last by default.
 	QueryPeriod = "period"
+	// QueryFrom and QueryTo bound a capacity report to the range [from, to),
+	// RFC 3339 instants; together they replace QueryPeriod.
+	QueryFrom = "from"
+	QueryTo   = "to"
 )
 
 type Event struct {
@@ -489,6 +493,12 @@ type CapacityReport struct {
 	Windows     []ObservedWindow   `json:"windows"`
 	Saturation  []SaturationRow    `json:"saturation"`
 	Scenarios   []CapacityScenario `json:"scenarios"`
+	// Readings are the provider's own reports of the 5-hour limit's use in
+	// the period, as Series points.
+	Readings [][2]float64 `json:"readings"`
+	// BorderlinePercent is the use of a limit from which its fit reads as
+	// borderline, for the viewers' charts to mark.
+	BorderlinePercent int `json:"borderline_percent"`
 	// LimitHits are the limits and refusals Claude Code logged in the
 	// period, newest first.
 	LimitHits []LimitHit `json:"limit_hits"`
@@ -621,6 +631,10 @@ type FiveHourResult struct {
 	RollingPeakPercent float64 `json:"rolling_peak_percent"`
 	RollingP50Percent  float64 `json:"rolling_p50_percent"`
 	RollingP95Percent  float64 `json:"rolling_p95_percent"`
+	// Series is the use of the session limit over time, as [unix seconds,
+	// percent] points each holding until the next; empty for the sum of
+	// separate limits.
+	Series [][2]float64 `json:"series,omitempty"`
 }
 
 // WeeklyResult is demand replayed against a weekly limit.
@@ -631,6 +645,9 @@ type WeeklyResult struct {
 	PeakPercent float64        `json:"peak_percent"`
 	HitWindows  int            `json:"hit_windows"`
 	Windows     []WeeklyWindow `json:"windows"`
+	// Series is the week's running use of the limit, in the form of
+	// FiveHourResult.Series; empty for the worst of separate limits.
+	Series [][2]float64 `json:"series,omitempty"`
 }
 
 type WeeklyWindow struct {

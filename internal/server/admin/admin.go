@@ -172,6 +172,8 @@ func parsePages() (map[string]*template.Template, error) {
 		"basisTag":    basisTag,
 		"fitTag":      fitTag,
 		"scenarioRow": newScenarioRow,
+		// The capacity page's charts of each scenario, by bucket.
+		"capacityCharts": newCapacityCharts,
 	}
 	pages := map[string]*template.Template{}
 	for _, name := range []string{"login", "overview", "people", "accounts", "devices", "usage", "settings", "dashboard", "dashboardusage", "dashboardcapacity", "plans", "capacity"} {
@@ -858,8 +860,14 @@ func (c *Console) deleteAccountPlan(w http.ResponseWriter, r *http.Request) {
 
 func (c *Console) accountCapacity(w http.ResponseWriter, r *http.Request) {
 	accID := r.PathValue("id")
-	period := query.PeriodByID(r.URL.Query().Get(syncapi.QueryPeriod))
-	rep, err := query.AccountCapacity(r.Context(), c.store, accID, period, time.Now())
+	now := time.Now()
+	// An unreadable range shows the preset, with the reason.
+	span, err := query.RangeFromQuery(r.URL.Query(), now)
+	var notice string
+	if err != nil {
+		span, notice = query.PresetRange(periodOf(r), now), "rangeInvalid"
+	}
+	rep, err := query.AccountCapacity(r.Context(), c.store, accID, span, now)
 	if errors.Is(err, storage.ErrNotFound) {
 		http.NotFound(w, r)
 		return
@@ -869,7 +877,7 @@ func (c *Console) accountCapacity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c.render(w, r, "capacity", http.StatusOK, page{
-		Title: "capacity", Nav: "accounts", Authed: true,
+		Title: "capacity", Nav: "accounts", Authed: true, Error: notice,
 		Data: rep,
 	})
 }

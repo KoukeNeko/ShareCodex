@@ -2,7 +2,9 @@ package query
 
 import (
 	"context"
+	"errors"
 	"math"
+	"net/url"
 	"slices"
 	"sort"
 	"time"
@@ -20,6 +22,50 @@ import (
 // began in.
 const capacityLookback = 90 * 24 * time.Hour
 
+// PeriodCustom is the period a report names when it covers a range the
+// caller chose and not one of Periods.
+const PeriodCustom = "custom"
+
+// ErrInvalidRange is a custom range that is unreadable, empty or ends before
+// the calibration window begins.
+var ErrInvalidRange = errors.New("invalid range")
+
+// Range is the span [Start, End) a capacity report covers, named by Period.
+type Range struct {
+	Period     string
+	Start, End time.Time
+}
+
+// PresetRange is the span of period, ending now.
+func PresetRange(p Period, now time.Time) Range {
+	return Range{Period: p.ID, Start: now.Add(-p.Span()), End: now}
+}
+
+// RangeFromQuery is the range a request asks for: from and to, RFC 3339
+// instants, when it gives them, else the preset its period names. A custom
+// range is clamped to the calibration window, which ends now.
+func RangeFromQuery(q url.Values, now time.Time) (Range, error) {
+	rawFrom, rawTo := q.Get(syncapi.QueryFrom), q.Get(syncapi.QueryTo)
+	if rawFrom == "" && rawTo == "" {
+		return PresetRange(PeriodByID(q.Get(syncapi.QueryPeriod)), now), nil
+	}
+	from, fromErr := time.Parse(time.RFC3339, rawFrom)
+	to, toErr := time.Parse(time.RFC3339, rawTo)
+	if fromErr != nil || toErr != nil || !from.Before(to) {
+		return Range{}, ErrInvalidRange
+	}
+	if to.After(now) {
+		to = now
+	}
+	if oldest := now.Add(-capacityLookback); from.Before(oldest) {
+		from = oldest
+	}
+	if !from.Before(to) {
+		return Range{}, ErrInvalidRange
+	}
+	return Range{Period: PeriodCustom, Start: from.UTC(), End: to.UTC()}, nil
+}
+
 // capacityScenarios are the plans the recorded demand is replayed under: one
 // plan for everyone, one for each member, and a larger one for everyone.
 var capacityScenarios = []struct {
@@ -33,9 +79,9 @@ var capacityScenarios = []struct {
 }
 
 // AccountCapacity measures an account's plan limits against its recorded
-// demand and replays that demand under other plans, over a period. Demand is
+// demand and replays that demand under other plans, over a range. Demand is
 // each official request's API-equivalent cost, a weight and not a bill.
-func AccountCapacity(ctx context.Context, st *storage.Store, accountID string, period Period, now time.Time) (syncapi.CapacityReport, error) {
+func AccountCapacity(ctx context.Context, st *storage.Store, accountID string, span Range, now time.Time) (syncapi.CapacityReport, error) {
 	acc, err := st.Account(ctx, accountID)
 	if err != nil {
 		return syncapi.CapacityReport{}, err
@@ -58,13 +104,13 @@ func AccountCapacity(ctx context.Context, st *storage.Store, accountID string, p
 		return syncapi.CapacityReport{}, err
 	}
 
-	start, end := now.Add(-period.Span()), now
+	start, end := span.Start, span.End
 	report := syncapi.CapacityReport{
 		AccountID: acc.ID, AccountLabel: acc.Label, Provider: string(acc.Provider), CurrentPlan: acc.PlanType,
-		Period: period.ID, Start: start.UTC(), End: end.UTC(),
+		Period: span.Period, Start: start.UTC(), End: end.UTC(),
 		Members: []syncapi.CapacityMember{}, Plans: []syncapi.PlanIntervalDTO{}, Calibration: []syncapi.CalibrationRow{},
 		Multiples: []syncapi.CapacityMultiple{}, Windows: []syncapi.ObservedWindow{}, Saturation: []syncapi.SaturationRow{},
-		Scenarios: []syncapi.CapacityScenario{}, LimitHits: []syncapi.LimitHit{},
+		Scenarios: []syncapi.CapacityScenario{}, LimitHits: []syncapi.LimitHit{}, Readings: [][2]float64{}, BorderlinePercent: quota.BorderlinePercent,
 	}
 	for _, p := range plans {
 		report.Plans = append(report.Plans, syncapi.PlanIntervalDTO{ID: p.ID, PlanType: p.PlanType, EffectiveAt: p.EffectiveAt,
@@ -131,6 +177,7 @@ func AccountCapacity(ctx context.Context, st *storage.Store, accountID string, p
 	}
 	fiveHourReadings := readings(snaps, quota.BucketFiveHour, quota.FiveHourSpan)
 	weeklyReadings := readings(snaps, quota.BucketWeekly, quota.WeeklySpan)
+	report.Readings = readingSeries(fiveHourReadings, start, end)
 	fiveHour := quota.FiveHourWindows(fiveHourReadings, planAt, d.all)
 	weekly := quota.WeeklyWindows(weeklyReadings, plans, d.all)
 	fiveHourCal, weeklyCal := quota.Calibrate(fiveHour), quota.Calibrate(weekly)
@@ -150,36 +197,37 @@ func AccountCapacity(ctx context.Context, st *storage.Store, accountID string, p
 		scenario := syncapi.CapacityScenario{ID: sc.id, Plan: sc.plan, Shared: sc.shared}
 		fiveRate, fiveBasis := quota.FiveHourRate(sc.plan, fiveHourCal)
 		weekRate, weekBasis := quota.WeeklyRate(sc.plan, weeklyCal)
-		replay := func(demand []quota.Demand, rolling quota.RollingUsage) (fiveHourPart, []quota.WeeklyReplay) {
+		replay := func(demand []quota.Demand, rolling quota.RollingUsage) (fiveHourPart, weeklyPart) {
 			var part fiveHourPart
-			var weeks []quota.WeeklyReplay
+			var weeks weeklyPart
 			if fiveBasis != quota.BasisInsufficient {
 				// A rate is percent per USD, so it also turns the rolling
 				// demand into percent of the limit.
-				part = fiveHourPart{replay: quota.ReplaySessions(demand, 100/fiveRate, quota.FiveHourSpan, start, end),
+				sessions, series := quota.ReplaySessionsSeries(demand, 100/fiveRate, quota.FiveHourSpan, start, end)
+				part = fiveHourPart{replay: sessions, series: series,
 					rollingPeak: rolling.Peak * fiveRate, rollingP50: rolling.P50 * fiveRate, rollingP95: rolling.P95 * fiveRate}
 			}
 			if weekBasis != quota.BasisInsufficient {
-				weeks = quota.ReplayWeekly(demand, 100/weekRate, anchor, start, end)
+				weeks.replays, weeks.series = quota.ReplayWeeklySeries(demand, 100/weekRate, anchor, start, end)
 			}
 			return part, weeks
 		}
 		if sc.shared {
 			part, weeks := replay(d.all, rolling)
 			scenario.FiveHour = part.result(fiveBasis, fiveRate)
-			scenario.Weekly = weeklyResult(weekBasis, weekRate, weeks)
+			scenario.Weekly = weeklyResult(weekBasis, weekRate, weeks.replays, weeks.series)
 		} else {
 			var total fiveHourPart
 			var allWeeks [][]quota.WeeklyReplay
 			for _, id := range personIDs {
 				part, weeks := replay(d.byPerson[id], memberRolling[id])
 				total = total.merge(part)
-				allWeeks = append(allWeeks, weeks)
+				allWeeks = append(allWeeks, weeks.replays)
 				scenario.Members = append(scenario.Members, syncapi.ScenarioMember{PersonID: id, Name: names[id],
-					FiveHour: part.result(fiveBasis, fiveRate), Weekly: weeklyResult(weekBasis, weekRate, weeks)})
+					FiveHour: part.result(fiveBasis, fiveRate), Weekly: weeklyResult(weekBasis, weekRate, weeks.replays, weeks.series)})
 			}
 			scenario.FiveHour = total.result(fiveBasis, fiveRate)
-			scenario.Weekly = weeklyResult(weekBasis, weekRate, quota.WorstWeekly(allWeeks...))
+			scenario.Weekly = weeklyResult(weekBasis, weekRate, quota.WorstWeekly(allWeeks...), nil)
 		}
 		report.Scenarios = append(report.Scenarios, scenario)
 	}
@@ -251,6 +299,19 @@ func readings(snaps []quota.Snapshot, key quota.BucketKey, span time.Duration) [
 		}
 	}
 	return out
+}
+
+// readingSeries is the provider's 5-hour readings within the period, as the
+// series of what the limit's use actually was.
+func readingSeries(readings []quota.Reading, start, end time.Time) [][2]float64 {
+	var points []quota.SeriesPoint
+	for _, r := range readings {
+		if !r.ObservedAt.Before(start) && r.ObservedAt.Before(end) {
+			points = append(points, quota.SeriesPoint{At: r.ObservedAt, Percent: r.UsedPercent})
+		}
+	}
+	slices.SortStableFunc(points, func(a, b quota.SeriesPoint) int { return a.At.Compare(b.At) })
+	return seriesDTO(quota.ThinSeries(points))
 }
 
 func calibrationRows(key quota.BucketKey, cal map[string]quota.Calibration) []syncapi.CalibrationRow {
@@ -356,6 +417,7 @@ func saturationRows(key quota.BucketKey, windows []quota.Window, hits []syncapi.
 // of the limit.
 type fiveHourPart struct {
 	replay                              quota.SessionReplay
+	series                              []quota.SeriesPoint
 	rollingPeak, rollingP50, rollingP95 float64
 }
 
@@ -380,11 +442,28 @@ func (p fiveHourPart) result(basis quota.Basis, rate float64) syncapi.FiveHourRe
 	}
 	res.PeakPercent, res.BlockedPercent = p.replay.PeakPercent, p.replay.BlockedPercent()
 	res.RollingPeakPercent, res.RollingP50Percent, res.RollingP95Percent = p.rollingPeak, p.rollingP50, p.rollingP95
+	res.Series = seriesDTO(p.series)
 	return res
 }
 
-func weeklyResult(basis quota.Basis, rate float64, weeks []quota.WeeklyReplay) syncapi.WeeklyResult {
-	res := syncapi.WeeklyResult{Basis: string(basis), Windows: []syncapi.WeeklyWindow{}}
+// weeklyPart is one limit's weekly replay and its use over time.
+type weeklyPart struct {
+	replays []quota.WeeklyReplay
+	series  []quota.SeriesPoint
+}
+
+// seriesDTO is a series as [unix seconds, percent to a tenth] points, which
+// keeps a month of them small.
+func seriesDTO(points []quota.SeriesPoint) [][2]float64 {
+	out := [][2]float64{}
+	for _, p := range points {
+		out = append(out, [2]float64{float64(p.At.Unix()), math.Round(p.Percent*10) / 10})
+	}
+	return out
+}
+
+func weeklyResult(basis quota.Basis, rate float64, weeks []quota.WeeklyReplay, series []quota.SeriesPoint) syncapi.WeeklyResult {
+	res := syncapi.WeeklyResult{Basis: string(basis), Windows: []syncapi.WeeklyWindow{}, Series: seriesDTO(series)}
 	if basis == quota.BasisInsufficient {
 		return res
 	}

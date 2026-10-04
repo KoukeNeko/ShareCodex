@@ -11,6 +11,13 @@
       <a href="/admin/accounts/{{.Data.AccountID}}/capacity?period=7d" class="{{if eq .Data.Period "7d"}}active{{end}}">{{tf .T.days 7}}</a>
       <a href="/admin/accounts/{{.Data.AccountID}}/capacity?period=30d" class="{{if eq .Data.Period "30d"}}active{{end}}">{{tf .T.days 30}}</a>
     </nav>
+    <form class="range{{if eq .Data.Period "custom"}} active{{end}}" method="get" action="/admin/accounts/{{.Data.AccountID}}/capacity" data-local-times>
+      <input type="datetime-local" aria-label="{{.T.start}}" data-instant="from" data-utc="{{.Data.Start.Format "2006-01-02T15:04:05Z07:00"}}" required>
+      <input type="hidden" name="from">
+      <input type="datetime-local" aria-label="{{.T.end}}" data-instant="to" data-utc="{{.Data.End.Format "2006-01-02T15:04:05Z07:00"}}" required>
+      <input type="hidden" name="to">
+      <button class="small" type="submit">{{.T.apply}}</button>
+    </form>
   </div>
 </div>
 

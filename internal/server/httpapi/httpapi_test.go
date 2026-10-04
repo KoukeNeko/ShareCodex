@@ -1076,3 +1076,46 @@ func TestOverviewTellsWhetherTheDashboardIsPublished(t *testing.T) {
 		}
 	}
 }
+
+// A range of the caller's own replaces the period; one that cannot be read
+// is refused and not answered with another range.
+func TestAccountCapacityRange(t *testing.T) {
+	ctx := context.Background()
+	store := storagetest.New(t)
+	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	defer srv.Close()
+	alice := pair(t, store, srv.URL, "alice")
+	now := time.Now().UTC().Truncate(time.Second)
+	obs := syncapi.Observation{Provider: "anthropic", AccountRefHash: "max", Hint: "max", ObservedAt: now}
+	if st := alice.do("POST", syncapi.PathSync, syncapi.SyncRequest{Version: syncapi.Version, Observations: []syncapi.Observation{obs}}, nil); st != http.StatusOK {
+		t.Fatalf("sync = %d", st)
+	}
+	accounts, err := store.Accounts(ctx)
+	if err != nil || len(accounts) != 1 {
+		t.Fatalf("accounts = %v, %v", accounts, err)
+	}
+	path := syncapi.PathAccounts + accounts[0].ID + "/capacity?"
+	iso := func(d time.Duration) string { return now.Add(d).Format(time.RFC3339) }
+
+	var report syncapi.CapacityReport
+	custom := url.Values{syncapi.QueryPeriod: {"24h"}, syncapi.QueryFrom: {iso(-72 * time.Hour)}, syncapi.QueryTo: {iso(-48 * time.Hour)}}
+	if st := alice.do("GET", path+custom.Encode(), nil, &report); st != http.StatusOK {
+		t.Fatalf("custom range returned %d", st)
+	}
+	if report.Period != "custom" || !report.Start.Equal(now.Add(-72*time.Hour)) || !report.End.Equal(now.Add(-48*time.Hour)) {
+		t.Errorf("report covers %s %v to %v, want the custom range", report.Period, report.Start, report.End)
+	}
+	if st := alice.do("GET", path+url.Values{syncapi.QueryPeriod: {"24h"}}.Encode(), nil, &report); st != http.StatusOK || report.Period != "24h" {
+		t.Errorf("preset returned %d with period %q", st, report.Period)
+	}
+
+	for name, q := range map[string]url.Values{
+		"unparsable": {syncapi.QueryFrom: {"yesterday"}, syncapi.QueryTo: {iso(0)}},
+		"reversed":   {syncapi.QueryFrom: {iso(0)}, syncapi.QueryTo: {iso(-time.Hour)}},
+		"only from":  {syncapi.QueryFrom: {iso(-time.Hour)}},
+	} {
+		if st := alice.do("GET", path+q.Encode(), nil, nil); st != http.StatusBadRequest {
+			t.Errorf("%s range returned %d, want 400", name, st)
+		}
+	}
+}

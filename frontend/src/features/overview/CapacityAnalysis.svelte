@@ -2,6 +2,7 @@
   import { Desktop, errorMessage, type CapacityReport, type FiveHourResult, type WeeklyResult } from '../../lib/api'
   import { bucketName, dateTime, percent, tokens, usd } from '../../lib/format'
   import { t, type MessageKey } from '../../lib/i18n.svelte'
+  import CapacityChart from './CapacityChart.svelte'
 
   let { accountId }: { accountId: string } = $props()
 
@@ -47,6 +48,17 @@
   const rate = (v: number) => v.toPrecision(3).replace(/\.?0+$/, '')
 
   let period = $state('7d')
+  // The range the inputs hold, in local time; a range in use replaces the
+  // period until a period is picked again.
+  let fromInput = $state('')
+  let toInput = $state('')
+  let range = $state<{ from: string; to: string } | null>(null)
+  const inputsValid = $derived(fromInput !== '' && toInput !== '' && new Date(fromInput) < new Date(toInput))
+  const apply = () => (range = { from: new Date(fromInput).toISOString(), to: new Date(toInput).toISOString() })
+  const pick = (p: string) => {
+    period = p
+    range = null
+  }
   let report = $state<CapacityReport | null>(null)
   let error = $state('')
 
@@ -55,8 +67,9 @@
   $effect(() => {
     const id = accountId
     const span = period
+    const custom = range
     let stale = false
-    Desktop.AccountCapacity(id, span)
+    Desktop.AccountCapacity(id, span, custom?.from ?? '', custom?.to ?? '')
       .then((rep) => {
         if (stale) return
         report = rep
@@ -117,8 +130,11 @@
 
 <div class="periods">
   {#each periods as p (p)}
-    <button class:active={period === p} onclick={() => (period = p)}>{periodLabel(p)}</button>
+    <button class:active={!range && period === p} onclick={() => pick(p)}>{periodLabel(p)}</button>
   {/each}
+  <input type="datetime-local" aria-label={t('start')} class:active={range} bind:value={fromInput} />
+  <input type="datetime-local" aria-label={t('end')} class:active={range} bind:value={toInput} />
+  <button disabled={!inputsValid} onclick={apply}>{t('apply')}</button>
 </div>
 
 {#if error}
@@ -311,7 +327,9 @@
       <section class="card">
         <h2 class="muted small">{t('scenarios')} · {label(scenarioText, s.id)}</h2>
         {@render fiveHourBlock(s.five_hour)}
+        <CapacityChart {report} scenario={s} bucket="five_hour" />
         {@render weeklyBlock(s.weekly)}
+        <CapacityChart {report} scenario={s} bucket="weekly" />
         {#if (s.members ?? []).length > 0}
           <div class="table-wrap">
             <table>
@@ -367,7 +385,7 @@
 {/if}
 
 <style>
-  .periods { display: flex; gap: 4px; margin-bottom: 8px; }
+  .periods { display: flex; gap: 4px; align-items: center; margin-bottom: 8px; }
   .periods button {
     font-size: 11.5px;
     padding: 1px 8px;
@@ -375,6 +393,8 @@
     color: var(--muted);
   }
   .periods button.active { color: var(--text); border-color: var(--accent); }
+  .periods input { font-size: 11.5px; padding: 1px 6px; }
+  .periods input.active { border-color: var(--accent); }
   .card {
     background: var(--surface);
     border: 1px solid var(--line);

@@ -3,7 +3,9 @@ package query_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -157,7 +159,7 @@ func seedCapacity(t *testing.T) (*storage.Store, string, time.Time) {
 
 func TestAccountCapacityCalibratesPlansFromTheirOwnWindows(t *testing.T) {
 	store, id, now := seedCapacity(t)
-	rep, err := query.AccountCapacity(context.Background(), store, id, query.PeriodByID("7d"), now)
+	rep, err := query.AccountCapacity(context.Background(), store, id, query.PresetRange(query.PeriodByID("7d"), now), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +246,7 @@ func TestAccountCapacityCalibratesPlansFromTheirOwnWindows(t *testing.T) {
 
 func TestAccountCapacityReplaysSharedAndSeparatePlans(t *testing.T) {
 	store, id, now := seedCapacity(t)
-	rep, err := query.AccountCapacity(context.Background(), store, id, query.PeriodByID("7d"), now)
+	rep, err := query.AccountCapacity(context.Background(), store, id, query.PresetRange(query.PeriodByID("7d"), now), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,6 +297,38 @@ func TestAccountCapacityReplaysSharedAndSeparatePlans(t *testing.T) {
 		t.Errorf("demand = %+v", rep.Demand)
 	}
 
+	// Each replayed limit carries its use over time: one line shared, one for
+	// each member separately, and none for the sum of separate limits.
+	peakOf := func(series [][2]float64) float64 {
+		peak := 0.0
+		for _, p := range series {
+			peak = math.Max(peak, p[1])
+		}
+		return peak
+	}
+	if len(shared.FiveHour.Series) == 0 || !near(peakOf(shared.FiveHour.Series), shared.FiveHour.PeakPercent, 0.1) {
+		t.Errorf("shared series peaks at %v, want %v", peakOf(shared.FiveHour.Series), shared.FiveHour.PeakPercent)
+	}
+	if len(separate.FiveHour.Series) != 0 || len(separate.Weekly.Series) != 0 {
+		t.Error("the sum of separate limits has a series")
+	}
+	for _, m := range separate.Members {
+		if len(m.FiveHour.Series) == 0 || !near(peakOf(m.FiveHour.Series), m.FiveHour.PeakPercent, 0.1) {
+			t.Errorf("%s series peaks at %v, want %v", m.Name, peakOf(m.FiveHour.Series), m.FiveHour.PeakPercent)
+		}
+	}
+	if len(max20.Weekly.Series) == 0 || !near(peakOf(max20.Weekly.Series), max20.Weekly.PeakPercent, 0.1) {
+		t.Errorf("weekly series peaks at %v, want %v", peakOf(max20.Weekly.Series), max20.Weekly.PeakPercent)
+	}
+	if len(rep.Readings) == 0 {
+		t.Fatal("the report has no readings")
+	}
+	for _, p := range rep.Readings {
+		if at := time.Unix(int64(p[0]), 0); at.Before(rep.Start) || !at.Before(rep.End) {
+			t.Errorf("reading at %v is outside the period", at)
+		}
+	}
+
 	var names []string
 	for _, m := range rep.Members {
 		names = append(names, m.Name)
@@ -324,7 +358,7 @@ func TestAccountCapacityDerivesOnlyTheFiveHourLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	accounts, _ := store.Accounts(ctx)
-	rep, err := query.AccountCapacity(ctx, store, accounts[0].ID, query.PeriodByID("24h"), now)
+	rep, err := query.AccountCapacity(ctx, store, accounts[0].ID, query.PresetRange(query.PeriodByID("24h"), now), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +386,7 @@ func TestAccountCapacityOfAnotherProviderHasNoScenarios(t *testing.T) {
 		t.Fatal(err)
 	}
 	accounts, _ := store.Accounts(ctx)
-	rep, err := query.AccountCapacity(ctx, store, accounts[0].ID, query.PeriodByID("30d"), at(2))
+	rep, err := query.AccountCapacity(ctx, store, accounts[0].ID, query.PresetRange(query.PeriodByID("30d"), at(2)), at(2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +412,7 @@ func TestAccountCapacityListsLoggedLimitsAndCountsConfirmedOnes(t *testing.T) {
 	if _, err := store.Ingest(ctx, carol, req); err != nil {
 		t.Fatal(err)
 	}
-	rep, err := query.AccountCapacity(ctx, store, id, query.PeriodByID("7d"), now)
+	rep, err := query.AccountCapacity(ctx, store, id, query.PresetRange(query.PeriodByID("7d"), now), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -417,5 +451,62 @@ func TestAccountCapacityListsLoggedLimitsAndCountsConfirmedOnes(t *testing.T) {
 	raw, err := json.Marshal(rep.LimitHits)
 	if err != nil || strings.Contains(string(raw), "secret") || strings.Contains(string(raw), "laptop") {
 		t.Errorf("limit hits %s carry a session, request, or device", raw)
+	}
+}
+
+func TestRangeFromQuery(t *testing.T) {
+	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	day := 24 * time.Hour
+	iso := func(d time.Time) string { return d.Format(time.RFC3339) }
+	tests := []struct {
+		name       string
+		q          url.Values
+		period     string
+		start, end time.Time
+		invalid    bool
+	}{
+		{"preset", url.Values{"period": {"24h"}}, "24h", now.Add(-day), now, false},
+		{"unknown period is the last preset", url.Values{"period": {"nope"}}, "30d", now.Add(-30 * day), now, false},
+		{"custom wins over the period", url.Values{"period": {"24h"}, "from": {iso(now.Add(-3 * day))}, "to": {iso(now.Add(-day))}},
+			"custom", now.Add(-3 * day), now.Add(-day), false},
+		{"offset instants are kept as instants", url.Values{"from": {"2026-10-01T08:00:00+08:00"}, "to": {"2026-10-02T00:00:00Z"}},
+			"custom", time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC), false},
+		{"end after now is now", url.Values{"from": {iso(now.Add(-day))}, "to": {iso(now.Add(day))}}, "custom", now.Add(-day), now, false},
+		{"start before the window is the window's", url.Values{"from": {iso(now.Add(-200 * day))}, "to": {iso(now.Add(-day))}},
+			"custom", now.Add(-90 * day), now.Add(-day), false},
+		{"longest range", url.Values{"from": {iso(now.Add(-90 * day))}, "to": {iso(now)}}, "custom", now.Add(-90 * day), now, false},
+		{"empty", url.Values{"from": {iso(now)}, "to": {iso(now)}}, "", time.Time{}, time.Time{}, true},
+		{"reversed", url.Values{"from": {iso(now)}, "to": {iso(now.Add(-day))}}, "", time.Time{}, time.Time{}, true},
+		{"only from", url.Values{"from": {iso(now.Add(-day))}}, "", time.Time{}, time.Time{}, true},
+		{"only to", url.Values{"to": {iso(now)}}, "", time.Time{}, time.Time{}, true},
+		{"unparsable", url.Values{"from": {"yesterday"}, "to": {iso(now)}}, "", time.Time{}, time.Time{}, true},
+		{"entirely in the future", url.Values{"from": {iso(now.Add(day))}, "to": {iso(now.Add(2 * day))}}, "", time.Time{}, time.Time{}, true},
+		{"entirely before the window", url.Values{"from": {iso(now.Add(-300 * day))}, "to": {iso(now.Add(-200 * day))}}, "", time.Time{}, time.Time{}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := query.RangeFromQuery(tt.q, now)
+			if tt.invalid {
+				if !errors.Is(err, query.ErrInvalidRange) {
+					t.Fatalf("range = %+v, %v, want ErrInvalidRange", got, err)
+				}
+				return
+			}
+			if err != nil || got.Period != tt.period || !got.Start.Equal(tt.start) || !got.End.Equal(tt.end) {
+				t.Errorf("range = %+v, %v, want %s %v to %v", got, err, tt.period, tt.start, tt.end)
+			}
+		})
+	}
+}
+
+func TestAccountCapacityReportsItsCustomRange(t *testing.T) {
+	store, id, now := seedCapacity(t)
+	span := query.Range{Period: query.PeriodCustom, Start: now.Add(-48 * time.Hour), End: now.Add(-24 * time.Hour)}
+	rep, err := query.AccountCapacity(context.Background(), store, id, span, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Period != query.PeriodCustom || !rep.Start.Equal(span.Start) || !rep.End.Equal(span.End) {
+		t.Errorf("report covers %s %v to %v, want the custom range", rep.Period, rep.Start, rep.End)
 	}
 }

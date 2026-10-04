@@ -72,16 +72,4 @@
     </div>
   </form>
 </section>
-<script>
-// The date and time fields are in this browser's time zone, which the
-// server cannot know; the form submits the instant they name.
-document.querySelectorAll('form[data-local-times]').forEach(function (form) {
-  form.addEventListener('submit', function () {
-    form.querySelectorAll('input[data-instant]').forEach(function (local) {
-      var at = new Date(local.value)
-      form.elements[local.getAttribute('data-instant')].value = local.value && !isNaN(at) ? at.toISOString() : ''
-    })
-  })
-})
-</script>
 {{end}}

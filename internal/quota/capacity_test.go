@@ -425,3 +425,96 @@ func TestWorstWeekly(t *testing.T) {
 		t.Error("WorstWeekly changed its input")
 	}
 }
+
+func seriesOf(points []SeriesPoint) [][2]float64 {
+	out := make([][2]float64, len(points))
+	for i, p := range points {
+		out[i] = [2]float64{p.At.Sub(t0).Hours(), p.Percent}
+	}
+	return out
+}
+
+func TestReplaySessionsSeriesStepsUpAndResetsWhereASessionEnds(t *testing.T) {
+	demand := []Demand{
+		{At: hours(0), Weight: 30},
+		{At: hours(1), Weight: 30},
+		{At: hours(6), Weight: 50},  // after the first session ended at 5
+		{At: hours(-8), Weight: 90}, // a session before the span only places where sessions begin
+	}
+	r, series := ReplaySessionsSeries(demand, 100, FiveHourSpan, hours(0), hours(24))
+	want := [][2]float64{{0, 30}, {1, 60}, {5, 0}, {6, 50}, {11, 0}}
+	got := seriesOf(series)
+	if len(got) != len(want) {
+		t.Fatalf("series = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("point %d = %v, want %v", i, got[i], want[i])
+		}
+	}
+	if r != ReplaySessions(demand, 100, FiveHourSpan, hours(0), hours(24)) {
+		t.Error("the series changed the replay")
+	}
+	// Nothing past the span stays.
+	_, series = ReplaySessionsSeries(demand, 100, FiveHourSpan, hours(0), hours(8))
+	if got := seriesOf(series); got[len(got)-1] != [2]float64{6, 50} {
+		t.Errorf("series = %v, want it to end with the request at hour 6", got)
+	}
+}
+
+func TestReplayWeeklySeriesRunsUpAndResetsAtTheWeek(t *testing.T) {
+	week := WeeklySpan
+	anchor := t0.Add(week)
+	demand := []Demand{
+		{At: t0.Add(10 * time.Minute), Weight: 20}, // before the span, in its week: still counts
+		{At: t0.Add(time.Hour), Weight: 30},
+		{At: anchor.Add(time.Hour), Weight: 10},
+	}
+	_, series := ReplayWeeklySeries(demand, 100, anchor, t0.Add(30*time.Minute), anchor.Add(2*time.Hour))
+	want := [][2]float64{{0.5, 20}, {1, 50}, {week.Hours(), 0}, {week.Hours() + 1, 10}}
+	got := seriesOf(series)
+	if len(got) != len(want) {
+		t.Fatalf("series = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("point %d = %v, want %v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestThinSeriesKeepsEachSessionsPeak(t *testing.T) {
+	// 40 sessions of 300 requests a minute apart: far over the cap.
+	var demand []Demand
+	for s := range 40 {
+		for i := range 300 {
+			demand = append(demand, Demand{At: t0.Add(time.Duration(s)*6*time.Hour + time.Duration(i)*time.Minute), Weight: 1})
+		}
+	}
+	_, series := ReplaySessionsSeries(demand, 1000, FiveHourSpan, t0, t0.Add(10*24*time.Hour))
+	if len(series) > seriesMaxPoints {
+		t.Fatalf("series has %d points, want at most %d", len(series), seriesMaxPoints)
+	}
+	peaks, resets := 0, 0
+	for _, p := range series {
+		switch {
+		case near(p.Percent, 30):
+			peaks++
+		case p.Percent == 0:
+			resets++
+		}
+	}
+	if peaks != 40 || resets != 40 {
+		t.Errorf("peaks = %d, resets = %d, want 40 of each", peaks, resets)
+	}
+}
+
+func TestThinSeriesMergesAMinuteToItsHighestAndLast(t *testing.T) {
+	s := func(sec int, p float64) SeriesPoint {
+		return SeriesPoint{At: t0.Add(time.Duration(sec) * time.Second), Percent: p}
+	}
+	got := ThinSeries([]SeriesPoint{s(1, 10), s(10, 40), s(20, 0), s(61, 5), s(70, 7)})
+	if want := []SeriesPoint{s(10, 40), s(20, 0), s(70, 7)}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Errorf("thinned = %v, want %v", got, want)
+	}
+}

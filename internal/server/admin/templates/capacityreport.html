@@ -126,6 +126,7 @@
 
 <section class="card">
   <h2>{{.T.scenarios}} · {{.T.fiveHour}}</h2>
+  <div class="stack">{{range capacityCharts .R .T "fiveHour"}}{{template "capacityChart" .}}{{end}}</div>
   <div class="table-wrap"><table>
     <thead><tr><th>{{.T.scenario}}</th><th></th><th class="num">{{.T.capacityColumn}}</th><th class="num">{{.T.windows}}</th><th class="num">{{.T.limitHits}}</th><th>{{.T.firstHit}}</th><th class="num">{{.T.peak}}</th><th class="num">{{.T.blocked}}</th><th class="num">{{.T.rollingPeak}}</th><th class="num">P50 / P95</th><th></th></tr></thead>
     <tbody>
@@ -139,6 +140,7 @@
 
 <section class="card">
   <h2>{{.T.scenarios}} · {{.T.weekly}}</h2>
+  <div class="stack">{{range capacityCharts .R .T "weekly"}}{{template "capacityChart" .}}{{end}}</div>
   <div class="table-wrap"><table>
     <thead><tr><th>{{.T.scenario}}</th><th></th><th class="num">{{.T.capacityColumn}}</th><th class="num">{{.T.limitHits}}</th><th class="num">{{.T.peak}}</th><th></th></tr></thead>
     <tbody>
@@ -194,4 +196,42 @@
   <td>{{fitTag .T .Week.Fit}}</td>
   {{end}}
 </tr>
+{{end}}
+
+{{define "capacityChart"}}{{$T := .T}}{{$tip := .TimeFormat}}
+<div class="chart">
+  <div class="row spread chart-head">
+    <strong class="small">{{.Title}}</strong>
+    <span class="muted small num">{{.Top}}%</span>
+  </div>
+  <div class="plot">
+    <svg viewBox="0 0 1000 100" preserveAspectRatio="none" role="img" aria-label="{{.Title}} · {{if eq .Bucket "weekly"}}{{$T.weekly}}{{else}}{{$T.fiveHour}}{{end}}">
+      {{range .Plans}}{{if .Shade}}<rect class="band" x="{{svgX .X}}" y="0" width="{{svgX .W}}" height="100"></rect>{{end}}{{end}}
+      <line class="grid" x1="0" x2="1000" y1="{{.YZero}}" y2="{{.YZero}}"></line>
+      <line class="border" x1="0" x2="1000" y1="{{.Y80}}" y2="{{.Y80}}"></line>
+      <line class="cap" x1="0" x2="1000" y1="{{.Y100}}" y2="{{.Y100}}"></line>
+      {{range .Limits}}<line class="limit" x1="{{svgX .X}}" x2="{{svgX .X}}" y1="0" y2="100"></line>{{end}}
+      <g class="series">
+        {{range $i, $p := .Points}}<rect class="hit" data-i="{{$i}}" x="{{svgX $p.X}}" y="0" width="{{svgX $p.W}}" height="100"></rect>{{end}}
+        {{range .Lines}}<path class="line c{{.Slot}}" d="{{.Path}}"></path>{{end}}
+        {{if .Actual}}<path class="dots" d="{{.Actual}}"></path>{{end}}
+      </g>
+    </svg>
+    <div class="tips series">{{range .Points}}
+      <div class="tip{{if gt .Mid 50.0}} flip{{end}}" style="left:{{width .Mid}}" hidden>
+        <span class="muted" data-dt="{{iso .At}}" data-f="{{$tip}}">{{timeText $tip .At}}</span>
+        {{range .Rows}}<span class="tip-row"><i class="c{{.Slot}}"></i><strong>{{.Tokens}}</strong><span class="muted">{{.Name}}</span></span>{{end}}
+      </div>{{end}}
+    </div>
+    {{range .Plans}}<span class="reset-label right num" style="left:{{width .X}}">{{.Plan}}</span>{{end}}
+  </div>
+  <div class="ticks muted small num">{{$f := .TickFormat}}{{range .Ticks}}<span>{{timeAs $f .}}</span>{{end}}</div>
+  <div class="legend muted small">
+    {{range .Lines}}<span><i class="swatch c{{.Slot}}"></i>{{.Name}}</span>{{end}}
+    {{if .Actual}}<span><i class="swatch dot cx"></i>{{$T.actual}}</span>{{end}}
+    {{if .Limits}}<span><i class="swatch limit"></i>{{$T.limitLogged}}</span>{{end}}
+    <span><i class="swatch cap"></i>100%</span>
+    <span><i class="swatch border"></i>{{.Borderline}}%</span>
+  </div>
+</div>
 {{end}}

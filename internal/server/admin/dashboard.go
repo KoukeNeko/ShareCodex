@@ -241,8 +241,14 @@ func (c *Console) dashboardCapacity(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	period := periodOf(r)
-	data := dashboardCapacityData{publicData: pd, Path: dashboardCapacityPath, Period: period.ID, Periods: query.Periods}
+	now := time.Now()
+	// An unreadable range shows the preset, with the reason.
+	span, err := query.RangeFromQuery(r.URL.Query(), now)
+	var notice string
+	if err != nil {
+		span, notice = query.PresetRange(periodOf(r), now), "rangeInvalid"
+	}
+	data := dashboardCapacityData{publicData: pd, Path: dashboardCapacityPath, Period: span.Period, Periods: query.Periods}
 	for _, a := range o.Accounts {
 		data.Accounts = append(data.Accounts, publicAccount{ID: a.ID, Name: names[a.ID]})
 	}
@@ -262,16 +268,27 @@ func (c *Console) dashboardCapacity(w http.ResponseWriter, r *http.Request) {
 	}
 	if accID != "" {
 		data.AccountID = accID
-		report, err := c.dash.capacity.get(r.Context(), accID+"/"+period.ID, func(ctx context.Context) (syncapi.CapacityReport, error) {
-			return query.AccountCapacity(ctx, c.store, accID, period, time.Now())
-		})
+		build := func(ctx context.Context) (syncapi.CapacityReport, error) {
+			return query.AccountCapacity(ctx, c.store, accID, span, now)
+		}
+		// Only the presets are cached, so the cache stays at a report per
+		// account and period; a custom range, which anyone can vary without
+		// end, is built each time, to the minute.
+		var report syncapi.CapacityReport
+		var err error
+		if span.Period == query.PeriodCustom {
+			span.Start, span.End = span.Start.Truncate(time.Minute), span.End.Truncate(time.Minute)
+			report, err = build(r.Context())
+		} else {
+			report, err = c.dash.capacity.get(r.Context(), accID+"/"+span.Period, build)
+		}
 		if err != nil {
 			c.fail(w, "build dashboard capacity", err)
 			return
 		}
 		data.Report = publicCapacity(report, names[accID])
 	}
-	c.render(w, r, "dashboardcapacity", http.StatusOK, page{Title: "capacity", Nav: "dashboardCapacity", Public: true, Data: data})
+	c.render(w, r, "dashboardcapacity", http.StatusOK, page{Title: "capacity", Nav: "dashboardCapacity", Public: true, Error: notice, Data: data})
 }
 
 // publicCapacity is a capacity report as the dashboard publishes it. The
