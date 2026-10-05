@@ -88,33 +88,33 @@
         <svg {width} {height} role="img" aria-label={t(bucket === 'weekly' ? 'weekly' : 'fiveHour')} onpointermove={onMove} onpointerleave={() => (hover = null)}>
           <!-- Styled inline, not by class: Copy as image re-renders the chart
                from its elements and would miss class-scoped SVG styles. -->
-          {#each plans as p, i (p.from)}
+          {#each plans as p, i}
             {#if i % 2}<rect x={x(p.from)} y="0" width={x(p.to) - x(p.from)} {height} style:fill="var(--track)" />{/if}
           {/each}
           <line x1="0" x2={width} y1={y(0)} y2={y(0)} style:stroke="var(--line)" style:stroke-width="1" />
           <line x1="0" x2={width} y1={y(report.borderline_percent)} y2={y(report.borderline_percent)} style:stroke="var(--warn)" style:stroke-width="1" style:stroke-dasharray="2 4" style:opacity="0.6" />
           <line x1="0" x2={width} y1={y(100)} y2={y(100)} style:stroke="var(--danger)" style:stroke-width="1" style:opacity="0.5" />
-          {#each marks as s (s)}
+          {#each marks as s}
             <line x1={x(s)} x2={x(s)} y1="0" y2={height} style:stroke="var(--danger)" style:stroke-width="2" />
           {/each}
           {#if hover !== null}
             <line x1={tip?.mid} x2={tip?.mid} y1="0" y2={height} style:stroke="var(--muted)" style:stroke-width="1" />
           {/if}
-          {#each lines as l (l.name)}
+          {#each lines as l}
             <path d={path(l.points)} style:fill="none" style:stroke={l.color} style:stroke-width="2" style:stroke-linejoin="round" />
           {/each}
-          {#each readings as [s, v] (s)}
+          {#each readings as [s, v]}
             <circle cx={x(s)} cy={y(v)} r="2" style:fill="var(--text)" style:opacity="0.7" />
           {/each}
         </svg>
       {/if}
-      {#each plans as p, i (p.from)}
+      {#each plans as p, i}
         <span class="plan-label num" style:left="{x(p.from)}px">{p.plan}</span>
       {/each}
       {#if tip}
         <div class="tip" class:flip={tip.mid > width / 2} style:left="{tip.mid}px">
           <div class="muted">{dateTime(tip.at)}</div>
-          {#each tip.rows as r (r.name)}
+          {#each tip.rows as r}
             <div class="tip-row">
               <i style:color={r.color}></i>
               <strong class="num">{percent(r.value)}</strong>
@@ -128,7 +128,7 @@
       {#each ticks as tick (tick.f)}<span>{tick.text}</span>{/each}
     </div>
     <div class="legend muted">
-      {#each lines as l (l.name)}<span><i class="swatch" style:background={l.color}></i>{l.name}</span>{/each}
+      {#each lines as l}<span><i class="swatch" style:background={l.color}></i>{l.name}</span>{/each}
       {#if readings.length}<span><i class="swatch dot"></i>{t('actual')}</span>{/if}
       {#if marks.length}<span><i class="swatch mark"></i>{t('limitLogged')}</span>{/if}
     </div>
