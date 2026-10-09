@@ -207,6 +207,61 @@ func TestSyncDropsOutOfRangeRecords(t *testing.T) {
 	}
 }
 
+// A device whose clock runs ahead dates what it sends in the future, where its
+// stale reading outranks every real one until the time catches up. The server
+// dates a record no later than it arrives.
+func TestSyncDatesRecordsNoLaterThanTheyArrive(t *testing.T) {
+	ctx := context.Background()
+	store := storagetest.New(t)
+	srv := httptest.NewServer(httpapi.New(store, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	defer srv.Close()
+	alice, bob := pair(t, store, srv.URL, "alice"), pair(t, store, srv.URL, "bob")
+
+	now := time.Now().UTC().Truncate(time.Second)
+	tomorrow := now.Add(15 * time.Hour)
+	reading := func(used float64, resets, at time.Time) syncapi.Snapshot {
+		return syncapi.Snapshot{Provider: "anthropic", AccountRefHash: "acct", Source: "claude-oauth-usage", ObservedAt: at,
+			Buckets: []syncapi.Bucket{{Key: "five_hour", UsedPercent: ptr(used), ResetsAt: &resets, WindowMinutes: ptr(300)}}}
+	}
+	sync := func(c client, req syncapi.SyncRequest) {
+		t.Helper()
+		req.Version = syncapi.Version
+		if st := c.do("POST", syncapi.PathSync, req, nil); st != http.StatusOK {
+			t.Fatalf("sync = %d", st)
+		}
+	}
+
+	// Bob's window ended an hour ago, yet everything he sends is dated tomorrow.
+	sync(bob, syncapi.SyncRequest{
+		Observations: []syncapi.Observation{{Provider: "anthropic", AccountRefHash: "acct", ObservedAt: tomorrow}},
+		Events: []syncapi.Event{{DedupeKey: "e", AccountRefHash: "acct", Provider: "anthropic", Product: "claude-code",
+			Model: "claude-opus-5-5", OccurredAt: tomorrow, Input: 100}},
+		Snapshots:   []syncapi.Snapshot{reading(30, now.Add(-time.Hour), tomorrow)},
+		LimitEvents: []syncapi.LimitEvent{{DedupeKey: "l", AccountRefHash: "acct", Provider: "anthropic", Kind: "5h", OccurredAt: tomorrow, ObservedAt: tomorrow}},
+	})
+	// Alice then reads the account in its current window.
+	sync(alice, syncapi.SyncRequest{Snapshots: []syncapi.Snapshot{reading(10, now.Add(2*time.Hour), time.Now().UTC())}})
+
+	var ov syncapi.Overview
+	if st := alice.do("GET", syncapi.PathOverview, nil, &ov); st != http.StatusOK || len(ov.Accounts) != 1 || len(ov.Accounts[0].Buckets) != 1 {
+		t.Fatalf("overview = %d, %+v", st, ov)
+	}
+	if five := ov.Accounts[0].Buckets[0]; five.Reset || five.UsedPercent != 10 {
+		t.Errorf("5-hour window = %+v, want alice's reading of 10%% over bob's stale one", five)
+	}
+
+	accounts, err := store.Accounts(ctx)
+	if err != nil || len(accounts) != 1 {
+		t.Fatalf("accounts = %+v, %v", accounts, err)
+	}
+	if rows, err := store.Usage(ctx, accounts[0].ID, now.Add(-time.Minute), now.Add(time.Minute)); err != nil || len(rows) != 1 {
+		t.Errorf("usage dated now = %+v, %v; want bob's event counted when it arrived", rows, err)
+	}
+	if hits, err := store.HistoricalLimitEvents(ctx, accounts[0].ID, now.Add(-time.Minute), now.Add(time.Minute)); err != nil || len(hits) != 1 {
+		t.Errorf("limit events dated now = %+v, %v; want bob's logged when it arrived", hits, err)
+	}
+}
+
 // Third-party usage never counts against a quota, so its list covers what the
 // chart shows, not only the current window: an idle account's window restarts
 // at every reading, which would otherwise hide a model used a while ago.
@@ -444,7 +499,7 @@ func TestSyncCorrectsAccountAttributionWithoutChangingOwner(t *testing.T) {
 		if a.ExternalRefHash == "third" && len(rows) != 0 {
 			t.Errorf("rejected account holds usage = %+v", rows)
 		}
-		snaps, err := store.Snapshots(ctx, a.ID, now.Add(-time.Minute))
+		snaps, err := store.HistoricalSnapshots(ctx, a.ID, now.Add(-time.Minute), now.Add(time.Minute))
 		if err != nil {
 			t.Fatal(err)
 		}

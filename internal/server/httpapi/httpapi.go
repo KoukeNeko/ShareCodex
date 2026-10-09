@@ -27,6 +27,9 @@ const (
 	// maxEventTokens bounds each token count of one request, far past any
 	// context window, so the sums of counts the server reads cannot overflow.
 	maxEventTokens = 1 << 31
+	// maxClockSkew is how far ahead of the server's clock a device may date a
+	// record; a record dated further ahead is dated with its arrival instead.
+	maxClockSkew = 5 * time.Minute
 )
 
 type Server struct {
@@ -132,6 +135,9 @@ func (s *Server) sync(w http.ResponseWriter, r *http.Request) {
 	if n := dropInvalid(&req); n > 0 {
 		s.log.Warn("dropped out-of-range sync records", "person", d.Person.DisplayName, "device", d.Name, "records", n)
 	}
+	if ahead := clampFuture(&req, time.Now()); ahead > 0 {
+		s.log.Warn("device clock is ahead; dated its records with their arrival", "person", d.Person.DisplayName, "device", d.Name, "ahead", ahead.Round(time.Second))
+	}
 	res, err := s.store.Ingest(r.Context(), d, req)
 	if err != nil {
 		s.internalError(w, "ingest batch", err)
@@ -165,6 +171,35 @@ func dropInvalid(req *syncapi.SyncRequest) int {
 		return tooLong(l.DedupeKey, l.AccountRefHash, l.Provider, l.SessionID, l.RequestID, l.Kind, l.Source, l.Evidence)
 	})
 	return before - len(req.Observations) - len(req.Events) - len(req.Snapshots) - len(req.LimitEvents)
+}
+
+// clampFuture dates with now every record dated further ahead of it than
+// maxClockSkew, and returns how far ahead the furthest was. A device
+// whose clock runs ahead dates what it sends in the future, where its newest
+// reading outranks every real one until the time catches up. The records are
+// still right as of their arrival, so they are kept rather than dropped.
+func clampFuture(req *syncapi.SyncRequest, now time.Time) time.Duration {
+	var ahead time.Duration
+	clamp := func(t *time.Time) {
+		if d := t.Sub(now); d > maxClockSkew {
+			*t = now
+			ahead = max(ahead, d)
+		}
+	}
+	for i := range req.Observations {
+		clamp(&req.Observations[i].ObservedAt)
+	}
+	for i := range req.Events {
+		clamp(&req.Events[i].OccurredAt)
+	}
+	for i := range req.Snapshots {
+		clamp(&req.Snapshots[i].ObservedAt)
+	}
+	for i := range req.LimitEvents {
+		clamp(&req.LimitEvents[i].OccurredAt)
+		clamp(&req.LimitEvents[i].ObservedAt)
+	}
+	return ahead
 }
 
 func tooLong(fields ...string) bool {

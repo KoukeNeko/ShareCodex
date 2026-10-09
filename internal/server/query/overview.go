@@ -38,7 +38,9 @@ func Overview(ctx context.Context, st *storage.Store, viewerPersonID string, now
 	activeUsers := groupActiveUsers(active, viewerPersonID)
 	out := syncapi.Overview{GeneratedAt: now.UTC(), Accounts: []syncapi.AccountOverview{}}
 	for _, a := range accounts {
-		snaps, err := st.Snapshots(ctx, a.ID, now.Add(-snapshotLookback))
+		// A reading dated after now is a device's mistake, so it never stands
+		// as the current one.
+		snaps, err := st.HistoricalSnapshots(ctx, a.ID, now.Add(-snapshotLookback), now)
 		if err != nil {
 			return syncapi.Overview{}, err
 		}

@@ -594,29 +594,6 @@ func (s *Store) Members(ctx context.Context, accountID string) ([]Member, error)
 	return out, rows.Err()
 }
 
-func (s *Store) Snapshots(ctx context.Context, accountID string, since time.Time) ([]quota.Snapshot, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT source, observed_at, buckets, plan_type FROM quota_snapshots
-		WHERE account_id = $1 AND observed_at >= $2`, accountID, since)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []quota.Snapshot
-	for rows.Next() {
-		var dto syncapi.Snapshot
-		var buckets []byte
-		if err := rows.Scan(&dto.Source, &dto.ObservedAt, &buckets, &dto.PlanType); err != nil {
-			return nil, err
-		}
-		if err := json.Unmarshal(buckets, &dto.Buckets); err != nil {
-			return nil, fmt.Errorf("decode stored buckets: %w", err)
-		}
-		out = append(out, dto.ToDomain())
-	}
-	return out, rows.Err()
-}
-
 // ActiveDevice is the account a device's CLI was last signed into for one
 // provider.
 type ActiveDevice struct {
