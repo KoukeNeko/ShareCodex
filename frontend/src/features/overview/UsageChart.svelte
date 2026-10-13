@@ -15,6 +15,8 @@
   // fine asks for every bin. Models keep the colors and order of the card's
   // Models list, its legend; third-party models, which never count against
   // the quota, are drawn dashed after them in their own list's order.
+  // Beneath it, a short bar chart stacks every model's tokens in each hour,
+  // or each day on a chart of days.
   let { timeline, models, thirdPartyModels = [], color, members, now, fine = false }: {
     timeline: Timeline
     models: { model: string; gateway: string }[]
@@ -32,6 +34,8 @@
   const height = 96
   const start = $derived(new Date(timeline.start).getTime())
   const binMs = $derived(timeline.bin_minutes * 60_000)
+  // A chart of more than a day is labeled in days, and its bars are days.
+  const days = $derived(timeline.bins * timeline.bin_minutes > 1440)
   // Bins after now have not happened yet, so their lines stop at now.
   const lastBin = $derived(Math.min(timeline.bins - 1, Math.max(0, Math.floor((now.getTime() - start) / binMs))))
 
@@ -66,7 +70,7 @@
     return [...byKey.entries()]
       .sort(([a], [b]) => rank(a) - rank(b))
       .map(([key, { model, thirdParty, gateway, perBin }]) => {
-        const m = { model, thirdParty, gateway, key }
+        const m = { model, thirdParty, gateway, key, perBin }
         const points = Array.from({ length: lastPoint + 1 }, (_, i) => binsOf(i))
         if (!cumulative) {
           // The tokens used within each point's span.
@@ -82,13 +86,13 @@
       })
   })
 
-  // A clean top for the axis: 1, 2 or 5 times a power of ten.
-  const top = $derived.by(() => {
-    const max = Math.max(0, ...series.flatMap((s) => s.values))
+  // A clean top for an axis: 1, 2 or 5 times a power of ten.
+  function cleanTop(max: number): number {
     if (max === 0) return 1
     const step = 10 ** Math.floor(Math.log10(max))
     return [1, 2, 5, 10].map((k) => k * step).find((v) => v >= max)!
-  })
+  }
+  const top = $derived(cleanTop(Math.max(0, ...series.flatMap((s) => s.values))))
 
   // A span's amount sits in its middle; a running total at its end.
   const x = (point: number) => {
@@ -110,7 +114,7 @@
 
   function label(ms: number): string {
     const d = new Date(ms)
-    return timeline.bins * timeline.bin_minutes > 1440
+    return days
       ? d.toLocaleDateString(locale(), { month: 'numeric', day: 'numeric' })
       : d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', hour12: false })
   }
@@ -123,16 +127,57 @@
     const to = Math.min(start + toBin * binMs, now.getTime())
     const clock = (ms: number) => new Date(ms).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', hour12: false })
     const text = cumulative ? clock(to) : to - from > 60_000 ? `${clock(from)}–${clock(to)}` : clock(from)
-    return timeline.bins * timeline.bin_minutes > 1440 ? `${label(cumulative ? to : from)} ${text}` : text
+    return days ? `${label(cumulative ? to : from)} ${text}` : text
   }
 
   // A reset is a moment, so it keeps its time even on a chart of days.
   function resetLabel(ms: number): string {
     const time = new Date(ms).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit', hour12: false })
-    return timeline.bins * timeline.bin_minutes > 1440 ? `${label(ms)} ${time}` : time
+    return days ? `${label(ms)} ${time}` : time
   }
 
   const ticks = $derived([0, 0.5, 1].map((f) => ({ f, text: label(start + f * timeline.bins * binMs) })))
+
+  // The bars: every model's tokens in each hour of the viewer's time zone, or
+  // each day on a chart of days, on the line chart's time axis, so an hour or
+  // day the chart starts or ends partway is a narrower bar.
+  const barHeight = 40
+  type Bar = { at: number; from: number; to: number; values: number[]; total: number }
+  const bars = $derived.by(() => {
+    const out: Bar[] = []
+    for (let bin = 0; bin <= lastBin; bin++) {
+      // shortcut: bars follow the viewer's local clock, so the hour a DST change repeats is one bar and a 30-minute bin across midnight (UTC+5:45) counts for the day it starts in; upgrade if exact totals matter there.
+      const d = new Date(start + bin * binMs)
+      if (days) d.setHours(0, 0, 0, 0)
+      else d.setMinutes(0, 0, 0)
+      if (out[out.length - 1]?.at !== d.getTime()) out.push({ at: d.getTime(), from: bin, to: bin, values: series.map(() => 0), total: 0 })
+      const bar = out[out.length - 1]
+      bar.to = bin
+      series.forEach((s, i) => {
+        bar.values[i] += s.perBin[bin]
+        bar.total += s.perBin[bin]
+      })
+    }
+    return out
+  })
+  const barTop = $derived(cleanTop(Math.max(0, ...bars.map((b) => b.total))))
+  const barX = (bin: number) => (bin / timeline.bins) * width
+  const barY = (v: number) => barHeight - (v / barTop) * (barHeight - 4) - 1
+
+  let barHover = $state<number | null>(null)
+  const hoveredBar = $derived(barHover === null ? null : (bars[barHover] ?? null))
+
+  // An hour's bar names the span it covers, ending at now in the current
+  // one; a day's bar names the day.
+  const barSpan = (b: Bar) =>
+    days ? label(b.at) : `${label(start + b.from * binMs)}–${label(Math.min(start + (b.to + 1) * binMs, now.getTime()))}`
+
+  function onBarMove(e: PointerEvent) {
+    const rect = (e.currentTarget as SVGElement).getBoundingClientRect()
+    const bin = ((e.clientX - rect.left) / rect.width) * timeline.bins
+    const i = bars.findIndex((b) => bin < b.to + 1)
+    barHover = i < 0 ? bars.length - 1 : i
+  }
 
   function onMove(e: PointerEvent) {
     const rect = (e.currentTarget as SVGElement).getBoundingClientRect()
@@ -192,22 +237,63 @@
     {#if hover !== null}
       <div class="tip" class:flip={x(hover) > width / 2} style:left="{x(hover)}px">
         <div class="muted">{slot(hover)}</div>
-        {#each series.filter((s) => s.values[hover!] > 0) as s (s.key)}
-          {@const shown = modelName(s.model, s.gateway)}
-          <div class="tip-row">
-            <i class:third={s.thirdParty} style:color={color(s.model, s.thirdParty, s.gateway)}></i>
-            <strong class="num">{tokens(s.values[hover])}</strong>
-            <span class="muted">{shown.name}</span>
-            {#if shown.via}<span class="via">{shown.via}</span>{/if}
-          </div>
-        {/each}
+        {@render tipRows(series.map((s) => s.values[hover!]))}
       </div>
     {/if}
   </div>
   <div class="ticks muted num">
     {#each ticks as tick (tick.f)}<span>{tick.text}</span>{/each}
   </div>
+
+  <span class="axis num">{series.length ? tokens(barTop) : '0'}</span>
+  <div class="plot" style:height="{barHeight}px">
+    {#if width > 0}
+      <svg {width} height={barHeight} role="img" aria-label={t(days ? 'usagePerDay' : 'usagePerHour')} onpointermove={onBarMove} onpointerleave={() => (barHover = null)}>
+        {#if hoveredBar}
+          <rect x={barX(hoveredBar.from)} y="0" width={barX(hoveredBar.to + 1) - barX(hoveredBar.from)} height={barHeight} style:fill="var(--track)" />
+        {/if}
+        <line x1="0" x2={width} y1={barY(barTop)} y2={barY(barTop)} style:stroke="var(--line)" style:stroke-width="1" />
+        <line x1="0" x2={width} y1={barY(0)} y2={barY(0)} style:stroke="var(--line)" style:stroke-width="1" />
+        {#each bars as b}
+          {#each series as s, i}
+            {#if b.values[i] > 0}
+              {@const below = b.values.slice(0, i).reduce((sum, v) => sum + v, 0)}
+              <rect
+                x={barX(b.from) + 1}
+                y={barY(below + b.values[i])}
+                width={Math.max(1, barX(b.to + 1) - barX(b.from) - 2)}
+                height={barY(below) - barY(below + b.values[i])}
+                style:fill={color(s.model, s.thirdParty, s.gateway)}
+                style:opacity={s.thirdParty ? 0.5 : null}
+              />
+            {/if}
+          {/each}
+        {/each}
+      </svg>
+    {/if}
+    {#if hoveredBar}
+      <div class="tip under">
+        <div class="tip-head"><span class="muted">{barSpan(hoveredBar)}</span><strong class="num">{tokens(hoveredBar.total)}</strong></div>
+        {@render tipRows(hoveredBar.values)}
+      </div>
+    {/if}
+  </div>
 </div>
+
+<!-- Each model's amount, in the order of the series, for a tip. -->
+{#snippet tipRows(values: number[])}
+  {#each series as s, i (s.key)}
+    {#if values[i] > 0}
+      {@const shown = modelName(s.model, s.gateway)}
+      <div class="tip-row">
+        <i class:third={s.thirdParty} style:color={color(s.model, s.thirdParty, s.gateway)}></i>
+        <strong class="num">{tokens(values[i])}</strong>
+        <span class="muted">{shown.name}</span>
+        {#if shown.via}<span class="via">{shown.via}</span>{/if}
+      </div>
+    {/if}
+  {/each}
+{/snippet}
 
 <style>
   .chart { display: grid; gap: 6px; }
@@ -255,6 +341,9 @@
     backdrop-filter: blur(12px);
   }
   .tip.flip { transform: translateX(calc(-100% - 8px)); }
+  /* The bars' tip spans the plot below it, so it never covers a bar or leaves the popup. */
+  .tip.under { top: calc(100% + 4px); left: 0; right: 0; transform: none; }
+  .tip-head { display: flex; justify-content: space-between; gap: 12px; }
   .tip-row { display: flex; align-items: center; gap: 6px; }
   .tip-row .via { font-size: 9.5px; letter-spacing: .04em; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; }
   .tip-row i { width: 10px; height: 2px; border-radius: 1px; flex: none; background: currentColor; }

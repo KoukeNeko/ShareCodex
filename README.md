@@ -105,6 +105,10 @@ stays in view after a reset; with it off, the tokens used in each span. Switch i
 a single member, and hover to read the values. **Full chart detail** in Settings draws every minute
 (every half hour on the weekly chart) instead.
 
+Beneath it, short bars stack each model's tokens in every hour (every day on the weekly chart) on the
+same time axis; an hour or day the chart starts or ends partway through is a narrower bar. The bars
+follow the member switch, not **Cumulative**.
+
 ### Third-party models
 
 Claude Code and Claude Desktop can be pointed at other vendors' models through a gateway. Those
