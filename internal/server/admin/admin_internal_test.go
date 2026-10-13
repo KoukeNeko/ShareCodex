@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -106,6 +107,16 @@ func TestChartModes(t *testing.T) {
 	}
 	if got := c.Cumulative.Points[3].Rows; len(got) != 2 || got[1] != (chartTipRow{Tokens: "7", Name: "gpt-6-sol", Via: "OCX", Slot: "1", Dashed: true}) {
 		t.Errorf("running total at 07:15 = %+v, want sonnet and the dashed third-party model", got)
+	}
+	// The bars' data holds every model's tokens per bin up to now, for the
+	// browser to group by its own hours.
+	var bars chartBars
+	if err := json.Unmarshal([]byte(c.Bars), &bars); err != nil {
+		t.Fatalf("bars = %q: %v", c.Bars, err)
+	}
+	if bars.Bins != 300 || bars.Last != 200 || bars.BinMs != 60_000 || bars.Days || len(bars.Series) != 3 ||
+		bars.Series[0].Name != "opus" || bars.Series[0].PerBin[20] != 100 || len(bars.Series[0].PerBin) != 201 || !bars.Series[2].Dashed {
+		t.Errorf("bars = %+v, want 3 models over 201 bins of a 300-bin chart", bars)
 	}
 	if len(c.Resets) != 1 || c.Resets[0].X < 33.3 || c.Resets[0].X > 33.4 {
 		t.Errorf("resets = %+v, want one a third of the way across", c.Resets)

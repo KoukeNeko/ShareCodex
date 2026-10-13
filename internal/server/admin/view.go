@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"regexp"
@@ -265,6 +266,29 @@ type chartView struct {
 	// than a day labels its axis with dates, and keeps the time in reset
 	// labels and hover tips.
 	TickFormat, TimeFormat string
+	// Bars is the JSON the page's script turns into the bars under the
+	// chart; hours and days are the viewer's, which only the browser knows.
+	Bars string
+}
+
+// chartBars is a timeline's tokens per bin and model, for the page to
+// group by the viewer's hours, or days on a chart of days.
+type chartBars struct {
+	Start time.Time `json:"start"`
+	BinMs int64     `json:"bin_ms"`
+	// Bins is the chart's width in bins; Last the last bin up to now.
+	Bins   int              `json:"bins"`
+	Last   int              `json:"last"`
+	Days   bool             `json:"days"`
+	Series []chartBarSeries `json:"series"`
+}
+
+type chartBarSeries struct {
+	Slot   string  `json:"slot"`
+	Dashed bool    `json:"dashed,omitempty"`
+	Name   string  `json:"name"`
+	Via    string  `json:"via,omitempty"`
+	PerBin []int64 `json:"per_bin"`
 }
 
 type chartMode struct {
@@ -452,6 +476,16 @@ func newChart(tl syncapi.Timeline, quotaKeys, thirdKeys []string, now time.Time)
 		c.Resets = append(c.Resets, chartMark{X: float64(r.Sub(start)) / float64(span) * 100, At: r})
 	}
 	c.Ticks = []time.Time{start, start.Add(span / 2), start.Add(span)}
+
+	bars := chartBars{Start: start, BinMs: binDur.Milliseconds(), Bins: tl.Bins, Last: lastBin, Days: tl.Bins*tl.BinMinutes > 1440}
+	for _, s := range all {
+		name, via, _ := modelName(s.model, s.gateway)
+		bars.Series = append(bars.Series, chartBarSeries{Slot: slotFor(s.rank), Dashed: s.third, Name: name, Via: via, PerBin: s.perBin})
+	}
+	// Plain numbers and strings always encode; without bars the chart still draws.
+	if b, err := json.Marshal(bars); err == nil {
+		c.Bars = string(b)
+	}
 	return c
 }
 

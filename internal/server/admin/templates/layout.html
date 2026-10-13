@@ -169,6 +169,14 @@ tr.sub td { border-bottom: none; padding-top: 2px; padding-bottom: 2px; font-siz
 .tip-row { display: flex; align-items: center; gap: 6px; }
 .tip-row i { flex: none; width: 10px; height: 2px; background: currentColor; }
 .tip-row i.dashed { background: repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 5px); }
+.bars { display: grid; gap: 4px; }
+.chart .bars .plot { height: 40px; }
+.bars svg rect.seg { fill: currentColor; pointer-events: none; }
+.bars svg rect.third { opacity: .5; }
+.bars svg rect.bhit { fill: transparent; }
+.bars svg rect.bhit.on { fill: var(--track); }
+.tip.under { top: calc(100% + 4px); left: 0; right: 0; transform: none; }
+.tip-head { display: flex; justify-content: space-between; gap: 12px; }
 .reset-label { position: absolute; top: 0; transform: translateX(calc(-100% - 4px)); font: 10.5px var(--mono); color: var(--muted); pointer-events: none; white-space: nowrap; }
 .reset-label.right { transform: translateX(4px); }
 /* The capacity charts: the use a replay predicts against the limit. */
@@ -353,6 +361,111 @@ try { if (localStorage.getItem('sharecodex.cumulative') === '1') document.docume
   document.addEventListener('pointermove', track)
   document.addEventListener('pointerdown', track)
   document.addEventListener('sharecodex:refresh', hide)
+})();
+
+// Bars under a chart: each model's tokens in every hour, or every day on a
+// chart of days, of this browser's time zone, on the chart's time axis.
+(function () {
+  var NS = 'http://www.w3.org/2000/svg', H = 40, W = 1000
+  var pad = function (n) { return (n < 10 ? '0' : '') + n }
+  var clock = function (d) { return pad(d.getHours()) + ':' + pad(d.getMinutes()) }
+  var tokens = function (n) {
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B'
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M'
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K'
+    return String(n)
+  }
+  // A clean top for the axis: 1, 2 or 5 times a power of ten.
+  var cleanTop = function (peak) {
+    if (peak <= 0) return 1
+    var step = Math.pow(10, Math.floor(Math.log10(peak)))
+    return [1, 2, 5, 10].map(function (k) { return k * step }).filter(function (v) { return v >= peak })[0]
+  }
+  var svg = function (name, attrs, parent) {
+    var e = document.createElementNS(NS, name)
+    for (var k in attrs) e.setAttribute(k, attrs[k])
+    parent.appendChild(e)
+    return e
+  }
+  var html = function (name, cls, parent, text) {
+    var e = document.createElement(name)
+    e.className = cls
+    if (text !== undefined) e.textContent = text
+    parent.appendChild(e)
+    return e
+  }
+  var build = function (box) {
+    var d
+    try { d = JSON.parse(box.getAttribute('data-bars')) } catch (e) { return }
+    if (!d || box.firstChild) return
+    var start = new Date(d.start).getTime(), bars = []
+    for (var bin = 0; bin <= d.last; bin++) {
+      var at = new Date(start + bin * d.bin_ms)
+      if (d.days) at.setHours(0, 0, 0, 0)
+      else at.setMinutes(0, 0, 0)
+      var bar = bars[bars.length - 1]
+      if (!bar || bar.at !== at.getTime()) bars.push(bar = { at: at.getTime(), from: bin, to: bin, values: d.series.map(function () { return 0 }), total: 0 })
+      bar.to = bin
+      d.series.forEach(function (s, i) { bar.values[i] += s.per_bin[bin]; bar.total += s.per_bin[bin] })
+    }
+    var peak = Math.max.apply(null, [0].concat(bars.map(function (b) { return b.total }))), top = cleanTop(peak)
+    var x = function (bin) { return bin / d.bins * W }
+    var y = function (v) { return H - v / top * (H - 4) - 1 }
+    html('span', 'muted small num', box, peak > 0 ? tokens(top) : '0')
+    var plot = html('div', 'plot', box)
+    var chart = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'none', role: 'img' }, plot)
+    var hits = bars.map(function (b) { return svg('rect', { class: 'bhit', x: x(b.from), y: 0, width: x(b.to + 1) - x(b.from), height: H }, chart) })
+    svg('line', { class: 'grid', x1: 0, x2: W, y1: y(top), y2: y(top) }, chart)
+    svg('line', { class: 'grid', x1: 0, x2: W, y1: y(0), y2: y(0) }, chart)
+    bars.forEach(function (b) {
+      var below = 0
+      d.series.forEach(function (s, i) {
+        if (!(b.values[i] > 0)) return
+        svg('rect', { class: 'seg c' + s.slot + (s.dashed ? ' third' : ''), x: x(b.from) + 2, y: y(below + b.values[i]), width: Math.max(1, x(b.to + 1) - x(b.from) - 4), height: y(below) - y(below + b.values[i]) }, chart)
+        below += b.values[i]
+      })
+    })
+    var tip = html('div', 'tip under', plot)
+    tip.hidden = true
+    var select = function (clientX) {
+      var r = chart.getBoundingClientRect(), bin = (clientX - r.left) / r.width * d.bins
+      var i = bars.findIndex(function (b) { return bin < b.to + 1 })
+      if (i < 0) i = bars.length - 1
+      var b = bars[i]
+      hits.forEach(function (h, j) { h.classList.toggle('on', j === i) })
+      var span = d.days ? (new Date(b.at).getMonth() + 1) + '/' + new Date(b.at).getDate() :
+        clock(new Date(start + b.from * d.bin_ms)) + '–' + clock(new Date(Math.min(start + (b.to + 1) * d.bin_ms, Date.now())))
+      tip.textContent = ''
+      var head = html('div', 'tip-head', tip)
+      html('span', 'muted', head, span)
+      html('strong', 'num', head, tokens(b.total))
+      d.series.forEach(function (s, j) {
+        if (!(b.values[j] > 0)) return
+        var row = html('div', 'tip-row', tip)
+        html('i', 'c' + s.slot + (s.dashed ? ' dashed' : ''), row)
+        html('strong', 'num', row, tokens(b.values[j]))
+        html('span', 'muted', row, s.name)
+        if (s.via) html('span', 'via', row, s.via)
+      })
+      tip.hidden = false
+    }
+    var hide = function () {
+      tip.hidden = true
+      hits.forEach(function (h) { h.classList.remove('on') })
+    }
+    plot.addEventListener('pointermove', function (e) { select(e.clientX) })
+    plot.addEventListener('pointerdown', function (e) { select(e.clientX) })
+    plot.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse') hide() })
+    // A refresh replaces the chart, so its listener retires with it.
+    var outside = function (e) {
+      if (!plot.isConnected) document.removeEventListener('pointerdown', outside)
+      else if (!plot.contains(e.target)) hide()
+    }
+    document.addEventListener('pointerdown', outside)
+  }
+  var buildAll = function (root) { root.querySelectorAll('[data-bars]').forEach(build) }
+  buildAll(document)
+  document.addEventListener('sharecodex:refresh', function () { buildAll(document) })
 })();
 
 // One chart mode for every chart, remembered in this browser when it can be.

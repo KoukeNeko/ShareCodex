@@ -51,6 +51,7 @@
         {{range .Resets}}<span class="reset-label num{{if lt .X 8.0}} right{{end}}" style="left:{{width .X}}">{{timeAs $tip .At}}</span>{{end}}
       </div>
       <div class="ticks muted small num">{{$f := .TickFormat}}{{range .Ticks}}<span>{{timeAs $f .}}</span>{{end}}</div>
+      <div class="bars" data-bars="{{.Bars}}"></div>
     </div>
     {{end}}
 
