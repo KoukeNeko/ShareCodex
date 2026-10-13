@@ -32,6 +32,8 @@ cat <<MANIFEST
             "hash": "$arm64"
         }
     },
+    "pre_install": "Get-Process ShareCodex -ErrorAction SilentlyContinue | Stop-Process -Force -PassThru | Wait-Process",
+    "pre_uninstall": "Get-Process ShareCodex -ErrorAction SilentlyContinue | Stop-Process -Force -PassThru | Wait-Process",
     "shortcuts": [
         [
             "ShareCodex.exe",
